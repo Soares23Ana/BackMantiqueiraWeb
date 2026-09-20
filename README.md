@@ -1,33 +1,61 @@
 # Mantiqueira Distribuidora - API e Banco de Dados
 
-Este repositório contém a estrutura base da API (Node.js) e do banco de dados (MySQL) desenvolvidos para o sistema de gerenciamento da distribuidora.
+Este repositório contém a estrutura da API REST (Node.js/Express) e do banco de dados (MySQL) desenvolvidos para o sistema de gerenciamento da distribuidora Mantiqueira, com suporte a autenticação JWT e controle de acesso baseado em funções (RBAC).
 
-## Pré-requisitos
+## 🚀 Tecnologias Utilizadas
+* **Backend**: Node.js, Express
+* **Banco de Dados**: MySQL (`mysql2`)
+* **Segurança**: JWT (`jsonwebtoken`), Criptografia de senhas (`bcrypt`), `dotenv`
+
+## 📋 Pré-requisitos
 * Node.js instalado na máquina.
 * MySQL Server e MySQL Workbench configurados.
 
+---
+
 ## 1. Configuração do Banco de Dados
-* Abra o MySQL Workbench e conecte-se ao seu servidor local.
-* Arraste o arquivo `BancoMantiqueira.sql` para o editor ou abra-o pelo menu **File > Open SQL Script...**.
-* Clique no ícone de raio amarelo para executar o código. Isso criará o banco `mantiqueira_db`, as tabelas e inserirá os dados iniciais.
+1. Abra o MySQL Workbench e conecte-se ao seu servidor local.
+2. Abra o arquivo `BancoMantiqueira.sql` pelo menu **File > Open SQL Script...**.
+3. Execute o script para criar o banco de dados `mantiqueira_db`, as tabelas e a estrutura inicial.
 
-## 2. Instalação das Dependências (Backend)
-A pasta `node_modules` contém os pacotes da aplicação, mas não é enviada ao GitHub por ser muito pesada (ignorada via `.gitignore`). Para recriá-la no seu computador:
-* Abra o terminal na pasta principal onde o arquivo `server.js` está localizado.
-* Execute o comando abaixo. O Node.js lerá o arquivo `package.json` e baixará tudo automaticamente:
+## 2. Instalação das Dependências
+No terminal, na pasta raiz do projeto, execute:
 
-    npm install
+```bash
+npm install
+```
 
-## 3. Vinculação do Banco com a API
-* Dentro da pasta do projeto, localize a pasta `db` e abra o arquivo `conn.js`.
-* Altere o campo de senha colocando a senha real do seu MySQL local para que a API consiga acessar o banco:
+## 3. Configuração de Variáveis de Ambiente (`.env`)
+Crie um arquivo chamado `.env` na raiz do projeto (no mesmo nível do `server.js`) utilizando o arquivo `.env.example` como referência:
 
-    password: 'SUA_SENHA_AQUI'
+```env
+PORT=3000
+DB_HOST=localhost
+DB_USER=root
+DB_PASSWORD=SUA_SENHA_AQUI
+DB_NAME=mantiqueira_db
+JWT_SECRET=sua_chave_secreta_jwt
+```
+
+> **Nota de Segurança**: O arquivo `.env` contém dados sensíveis e é ignorado pelo Git (via `.gitignore`). Para compartilhar a estrutura de variáveis com a equipe, utilize o arquivo `.env.example`.
 
 ## 4. Execução do Servidor
-* Com tudo instalado e a senha configurada, volte ao terminal na pasta do `server.js`.
-* Execute o comando para iniciar a API:
+Para iniciar a API, execute no terminal:
 
-    node server.js
+```bash
+node server.js
+```
 
-* O terminal exibirá a mensagem confirmando que a API está rodando. Teste a conexão acessando `http://localhost:3000/produtos` no navegador ou no Insomnia/Postman.
+O terminal exibirá a mensagem de confirmação do servidor rodando na porta `3000`.
+
+---
+
+## 📌 Principais Endpoints da API
+
+### Autenticação (`/auth`)
+* `POST /auth/register` - Cadastra um novo usuário (`nome`, `email`, `senha`, `tipo`).
+* `POST /auth/login` - Autentica o usuário e retorna o **Token JWT** contendo o perfil de acesso (`tipo`).
+
+### Produtos (`/produtos`)
+* `GET /produtos` - Lista todos os produtos (Requer Token JWT no cabeçalho `Authorization: Bearer <TOKEN>`).
+* `POST /produtos` - Cadastra um novo produto (Requer Token JWT com perfil `admin` ou `gerente`).
