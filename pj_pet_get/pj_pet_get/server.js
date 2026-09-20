@@ -1,12 +1,23 @@
 const express = require('express');
-const app = express();
-const rotasProdutos = require('./routes/produtos');
+const dotenv = require('dotenv');
 
+dotenv.config();
+
+const app = express();
+
+// Middleware para processar JSON nas requisições
 app.use(express.json());
 
-// Configurando a rota principal de produtos
-app.use('/produtos', rotasProdutos);
+// Importação das Rotas
+const authRoutes = require('./routes/auth');
+const produtosRoutes = require('./routes/produtos');
 
-app.listen(3000, () => {
-    console.log('API da Mantiqueira rodando na porta 3000!');
+// Definição dos Endpoints
+app.use('/auth', authRoutes);
+app.use('/produtos', produtosRoutes);
+
+const PORT = process.env.PORT || 3000;
+
+app.listen(PORT, () => {
+    console.log(`Servidor a rodar na porta ${PORT}`);
 });
