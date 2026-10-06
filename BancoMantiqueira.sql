@@ -1,6 +1,5 @@
--- 1. Criação e Seleção da Base de Dados (Reseta a base antiga)
-DROP DATABASE IF EXISTS mantiqueira_db;
-CREATE DATABASE mantiqueira_db;
+-- 1. Criação e Seleção da Base de Dados
+CREATE DATABASE IF NOT EXISTS mantiqueira_db;
 USE mantiqueira_db;
 
 -- 2. Tabela de Utilizadores (Clientes, Funcionários, Gerentes e Administradores)
@@ -56,6 +55,15 @@ CREATE TABLE itens_pedido (
     PRIMARY KEY (id_pedido, id_produto),
     FOREIGN KEY (id_pedido) REFERENCES pedidos(id_pedido) ON DELETE CASCADE,
     FOREIGN KEY (id_produto) REFERENCES produtos(id_produto)
+);
+
+-- 7. Conteúdo de banners gerenciado pelo CMS
+CREATE TABLE conteudo_cms (
+    id_banner INT AUTO_INCREMENT PRIMARY KEY,
+    titulo VARCHAR(150) NOT NULL,
+    link VARCHAR(2048),
+    imagem_url VARCHAR(2048) NOT NULL,
+    ativo BOOLEAN NOT NULL DEFAULT TRUE
 );
 
 -- ===================================================
