@@ -5,6 +5,8 @@ const autenticarToken = require('../middlewares/authMiddleware');
 const { autenticacaoOpcional } = require('../middlewares/authMiddleware');
 const { exigirEquipe } = require('../middlewares/roleMiddleware');
 const { receberImagem, verificarConteudoImagem } = require('../middlewares/uploadImagem');
+const { receberCsv } = require('../middlewares/uploadCsv');
+const importacaoControlador = require('../controllers/importacaoControlador');
 
 const gestao = [autenticarToken, exigirEquipe];
 
@@ -12,6 +14,12 @@ const gestao = [autenticarToken, exigirEquipe];
 router.get('/', autenticacaoOpcional, produtoControlador.listar);
 router.get('/sugestoes', autenticacaoOpcional, produtoControlador.sugestoes);
 router.get('/filtros', autenticacaoOpcional, produtoControlador.filtrosDisponiveis);
+
+// Importação de catálogo por CSV (antes de "/:id" para "importacoes" não ser lido como id).
+router.post('/importar', ...gestao, receberCsv, importacaoControlador.importar);
+router.get('/importacoes', ...gestao, importacaoControlador.listar);
+router.get('/importacoes/:id', ...gestao, importacaoControlador.obter);
+
 router.get('/:id', autenticacaoOpcional, produtoControlador.obter);
 
 router.post('/', ...gestao, produtoControlador.cadastrar);

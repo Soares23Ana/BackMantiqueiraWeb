@@ -24,6 +24,9 @@ const clientesRoutes = require('./routes/clientes');
 const taxonomiasRoutes = require('./routes/taxonomias');
 const adminRoutes = require('./routes/admin');
 const minhaContaRoutes = require('./routes/minhaConta');
+const configuracoesRoutes = require('./routes/configuracoes');
+const autenticarToken = require('./middlewares/authMiddleware');
+const { exigirEquipe } = require('./middlewares/roleMiddleware');
 
 const ORIGENS_PADRAO = ['http://localhost:5173', 'http://localhost:3000', 'http://localhost:3001'];
 
@@ -55,6 +58,7 @@ function criarApp() {
     app.get('/saude', saudeControlador.verificarSaude);
 
     app.use(padronizarErros);
+    app.get('/saude/detalhado', autenticarToken, exigirEquipe, saudeControlador.verificarSaudeDetalhada);
     app.use(express.json({ limit: config.limiteJson }));
     app.use('/arquivos', express.static(path.join(__dirname, 'publico')));
 
@@ -70,6 +74,7 @@ function criarApp() {
     api.use('/clientes', clientesRoutes);
     api.use('/admin', adminRoutes);
     api.use('/minha-conta', minhaContaRoutes);
+    api.use('/configuracoes', configuracoesRoutes);
 
     app.use('/api/v1', limitadorGlobal, api);
 

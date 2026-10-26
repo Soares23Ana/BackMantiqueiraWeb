@@ -98,19 +98,32 @@ async function resolverTaxonomia(Modelo, cache, nome, transacao, contador) {
  * - Cada linha é validada separadamente; linhas com erro são puladas e listadas no relatório.
  * - simular: executa tudo e desfaz no final, devolvendo o mesmo relatório.
  * - desativarAusentes: produtos ativos cujo SKU não aparece no arquivo são desativados (carga completa).
+ * - somenteEstoque: aplica só as colunas sku e estoque (job de estoque); as demais são ignoradas.
  * - Mudanças de estoque geram movimentações do tipo "importacao".
  */
-async function importarCatalogo(conteudo, { simular = false, desativarAusentes = false, idUsuario = null, origem = 'importação' } = {}) {
+async function importarCatalogo(conteudo, {
+    simular = false,
+    desativarAusentes = false,
+    somenteEstoque = false,
+    idUsuario = null,
+    origem = 'importação'
+} = {}) {
     let csv;
     try {
         csv = lerCsv(conteudo);
     } catch (erro) {
         throw new ErroApi(422, 'CSV_INVALIDO', `Não foi possível ler o CSV: ${erro.message}`);
     }
-    const { cabecalho, registros } = csv;
-    if (!cabecalho.includes('sku')) {
+    const { registros } = csv;
+    if (!csv.cabecalho.includes('sku')) {
         throw new ErroApi(422, 'CSV_INVALIDO', 'O CSV precisa de uma coluna "sku".');
     }
+    if (somenteEstoque && !csv.cabecalho.includes('estoque')) {
+        throw new ErroApi(422, 'CSV_INVALIDO', 'O arquivo de estoque precisa de uma coluna "estoque".');
+    }
+    const cabecalho = somenteEstoque
+        ? csv.cabecalho.filter((coluna) => coluna === 'sku' || coluna === 'estoque')
+        : csv.cabecalho;
 
     const relatorio = {
         simulado: simular,
@@ -126,9 +139,11 @@ async function importarCatalogo(conteudo, { simular = false, desativarAusentes =
         erros: [],
         avisos: []
     };
-    const colunasDesconhecidas = cabecalho.filter((coluna) => coluna && !COLUNAS.includes(coluna));
-    if (colunasDesconhecidas.length > 0) {
-        relatorio.avisos.push(`Colunas ignoradas: ${colunasDesconhecidas.join(', ')}.`);
+    // Colunas desconhecidas ou fora do uso atual (ex.: "nome" no job de estoque).
+    const colunasIgnoradas = csv.cabecalho.filter((coluna) =>
+        coluna && !(cabecalho.includes(coluna) && COLUNAS.includes(coluna)));
+    if (colunasIgnoradas.length > 0) {
+        relatorio.avisos.push(`Colunas ignoradas: ${colunasIgnoradas.join(', ')}.`);
     }
     const registrarErros = (linha, sku, erros) => {
         relatorio.com_erro += 1;
@@ -220,7 +235,13 @@ async function importarCatalogo(conteudo, { simular = false, desativarAusentes =
             }
         }
 
-        if (desativarAusentes) {
+        // Proteção: um arquivo vazio, truncado ou com erros desativaria produtos que só "sumiram" por falha
+        // no arquivo. Nesses casos, ninguém é desativado e o relatório avisa.
+        const arquivoIntegro = relatorio.linhas > 0 && relatorio.com_erro === 0;
+        if (desativarAusentes && !arquivoIntegro) {
+            relatorio.avisos.push('Nenhum produto foi desativado: a carga completa só desativa ausentes quando o arquivo não tem erros.');
+        }
+        if (desativarAusentes && arquivoIntegro) {
             const ativos = await Produto.findAll({
                 where: { ativo: true },
                 attributes: ['id_produto', 'sku'],

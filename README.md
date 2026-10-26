@@ -105,9 +105,12 @@ Os testes usam o banco `DB_NAME_TEST` (padrão `mantiqueira_test`), que é **apa
 * `GET /saude` - Público. Responde `200` com `{ status: "ok", banco: "conectado", uptime_segundos, iniciado_em, versao, ultima_sincronizacao }` ou `503` com `status: "degradado"` quando o banco não responde.
 
 ### Painel
-* `GET /api/v1/painel` - Retorna pedidos pendentes, clientes e produtos com estoque baixo. Equipe; a resposta contém apenas indicadores operacionais.
-* `GET /api/v1/painel/contadores` - Retorna os contadores operacionais `pedidosPendentes` e `estoqueBaixo` para os badges do menu. Equipe.
-* `GET /api/v1/painel/alertas-reposicao` - Lista produtos com estoque até 10 unidades e sugestão de compra até o alvo operacional de 50 unidades. Equipe.
+"Estoque baixo" é um produto ativo com estoque menor ou igual ao **`estoque_minimo` do próprio produto** (padrão 10, editável no produto).
+
+* `GET /api/v1/painel` - `{ pedidosPendentes, estoqueBaixo, clientesAtivos }`. Equipe.
+* `GET /api/v1/painel/contadores` - `{ pedidosPendentes, estoqueBaixo }` para os badges do menu. Equipe.
+* `GET /api/v1/painel/alertas-reposicao` - `{ meta_reposicao, alertas: [{ produto, estoque_atual, estoque_minimo, sugestao_compra }] }`. A sugestão completa o estoque até a meta, definida na configuração `meta_reposicao` (padrão 50). Equipe.
+
 ### Pedidos (`/api/v1/pedidos`)
 Nenhuma resposta de pedido tem valores financeiros. Ciclo: `Aguardando Separação` → `Em Separação` → `Saiu para Entrega` → `Entregue`, com cancelamento (`Cancelado`) permitido até `Em Separação`.
 
@@ -126,10 +129,62 @@ Cada pedido nas respostas traz `pode_cancelar` (para quem fez a requisição) e,
 
 > Testando com `curl` no Windows: o terminal pode enviar acentos fora do UTF-8 (`"Em Separação"` chega errado e a API responde `422`). Grave o corpo em um arquivo UTF-8 e use `--data-binary @arquivo.json`, ou use Insomnia/Postman.
 
-### CMS
-* `GET /api/v1/cms` - Lista os banners ativos.
-* `POST /api/v1/cms` - Salva um banner (equipe). Envie multipart/form-data com `titulo`, opcionalmente `link`, e arquivo `imagem` (JPEG, PNG, WEBP ou GIF; até 5 MB).
-* `GET /arquivos/uploads/:arquivo` - Serve as imagens enviadas ao CMS.
+### CMS (`/api/v1/cms`)
+**Banners.** Datas sem fuso (`2026-11-01T08:00`) são consideradas no horário de Brasília.
+* `GET /api/v1/cms` - Público: banners no ar (ativos e dentro da janela `inicio_em`/`fim_em`), na `ordem` definida.
+* `GET /api/v1/cms/todos` - Equipe: todos, com `situacao` (`no_ar`, `agendado`, `expirado` ou `inativo`).
+* `POST /api/v1/cms` - Equipe, multipart: `titulo`, `imagem` (JPEG, PNG, WEBP ou GIF; até 5 MB) e opcionalmente `link`, `ordem`, `ativo`, `inicio_em`, `fim_em`. Sem `ordem`, vai para o fim da fila.
+* `PATCH /api/v1/cms/:id` - Equipe, JSON ou multipart: os mesmos campos; com nova `imagem`, a anterior é apagada. `{ "ativo": false }` desativa; `null` em `inicio_em`/`fim_em` remove a janela.
+* `PUT /api/v1/cms/ordem` - Equipe: `{ "ids": [3, 1, 2] }` com **todos** os banners na nova ordem.
+* `DELETE /api/v1/cms/:id` - Equipe: exclui o banner e a imagem.
+* `GET /arquivos/uploads/:arquivo` - Serve as imagens enviadas.
+
+**Blocos de conteúdo** (textos editáveis do site, identificados por chave, ex.: `sobre`, `politica-de-entrega`):
+* `GET /api/v1/cms/blocos` e `GET /api/v1/cms/blocos/:chave` - Públicos (só ativos; a equipe vê também os inativos).
+* `PUT /api/v1/cms/blocos/:chave` - Equipe: `{ titulo?, conteudo, ativo? }` cria ou substitui. A chave usa letras minúsculas, números e hífens.
+* `DELETE /api/v1/cms/blocos/:chave` - Equipe.
+
+### Configurações (`/api/v1/configuracoes`)
+* `GET /api/v1/configuracoes/publicas` - Público: `{ whatsapp, telefone_contato, email_contato, horario_atendimento, aviso_topo }` (`null` quando não preenchido).
+* `GET /api/v1/configuracoes` - Equipe: todas, com descrição e se são públicas (inclui a privada `meta_reposicao`).
+* `PUT /api/v1/configuracoes/:chave` - Equipe: `{ "valor": ... }`; `null` limpa. Cada chave é validada: `whatsapp` com DDI e DDD (12–13 dígitos), `telefone_contato` com DDD, `email_contato` válido, textos até 200 caracteres, `meta_reposicao` inteiro positivo. Chave desconhecida: `404`.
+
+### Importação de catálogo (CSV)
+O formato é o mesmo do `seeds/catalogo_inicial.csv`: separador `;` (ou `,`), cabeçalho na primeira linha, UTF-8 ou Windows-1252 (o padrão do Excel). Só `sku` é obrigatória; **colunas ausentes não são alteradas**.
+
+| Coluna | Conteúdo |
+|---|---|
+| `sku` | Identificador do produto (upsert por SKU) |
+| `nome` | Obrigatório para produto novo |
+| `categoria`, `marca` | Nome; criadas automaticamente se não existirem |
+| `descricao` | Texto |
+| `destaques` | Itens separados por `|` |
+| `imagem_url` | Caminho do front (`/img/x.webp`) ou URL |
+| `ativo` | `sim` ou `nao` |
+| `estoque_minimo`, `multiplo_venda` | Inteiros |
+| `preco` | Opcional; nunca aparece para clientes |
+| `estoque` | Quantidade atual; vazio mantém o estoque. Mudanças viram movimentações `importacao` |
+
+Cada linha é validada separadamente: as boas são gravadas e as com problema voltam em `relatorio.erros` (`linha`, `sku`, `campo`, `mensagem`).
+
+* `POST /api/v1/produtos/importar` - Equipe, multipart com o arquivo no campo `arquivo` (.csv, até 5 MB). `?simular=true` mostra o resultado sem gravar; `?carga_completa=true` também desativa os produtos que não estão no arquivo. Resposta: `{ id_sincronizacao, status, relatorio: { linhas, criados, atualizados, inalterados, desativados, com_erro, movimentacoes_estoque, erros, avisos } }`.
+* `GET /api/v1/produtos/importacoes?tipo=&pagina=` e `GET /api/v1/produtos/importacoes/:id` - Histórico (`sincronizacoes_log`), incluindo as execuções dos jobs; o detalhe traz o relatório de erros.
+
+`status`: `sucesso`, `parcial` (algumas linhas rejeitadas) ou `falha` (arquivo ilegível ou todas as linhas com erro). **Proteção:** a carga completa só desativa produtos ausentes quando o arquivo não tem nenhum erro; um arquivo vazio ou truncado não esvazia o catálogo.
+
+#### Jobs agendados (fuso America/Sao_Paulo)
+A API lê arquivos colocados em `importacao/entrada/` (pasta configurável em `IMPORTACAO_DIR`):
+
+| Job | Quando | Arquivos | O que faz |
+|---|---|---|---|
+| `carga-completa` | Meia-noite | `catalogo*.csv` | Importa tudo e desativa produtos ausentes |
+| `estoque` | A cada 30 min | `estoque*.csv` | Aplica só `sku` e `estoque` (outras colunas são ignoradas) |
+
+Os arquivos são processados em ordem alfabética (use data/hora no nome, ex.: `estoque_20261026_1430.csv`) e depois movidos para `processados/` ou `rejeitados/`, com um `.relatorio.json` ao lado. Cada execução fica em `sincronizacoes_log`. Uma trava do MySQL (`GET_LOCK`) garante que, com várias instâncias da API, só uma rode cada job, e que job e upload não importem ao mesmo tempo. `JOBS_ATIVOS=false` desliga os jobs.
+
+### Saúde
+* `GET /saude` - Público (ver acima). `ultima_sincronizacao` é a data da última importação gravada (upload ou job).
+* `GET /saude/detalhado` - Equipe: banco (latência e migrations pendentes), processo (uptime, memória, versão do Node), jobs (última e próxima execução, último resultado ou erro) e data da última sincronização de cada tipo.
 
 ### Autenticação e contas
 Plataforma B2B: **clientes entram com CNPJ** e **a equipe entra com e-mail**.

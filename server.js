@@ -12,6 +12,7 @@ const sequelize = require('./db/conn');
 const { conectarComRetry, interromperConexao } = require('./db/conexao');
 const { aoEncerrar, instalarHandlers } = require('./lib/encerramento');
 const { criarApp } = require('./app');
+const { iniciarJobs, pararJobs } = require('./jobs');
 
 instalarHandlers();
 
@@ -28,6 +29,11 @@ aoEncerrar('servidor HTTP', () => new Promise((resolve) => {
     servidor.close(() => resolve());
     servidor.closeIdleConnections();
 }));
+// Registrado por último para ser o primeiro a parar: nenhum job começa enquanto a API fecha.
+aoEncerrar('jobs agendados', pararJobs);
 
 // A API sobe mesmo com o banco fora do ar (o /saude informa o estado) e segue tentando conectar.
-conectarComRetry();
+// Os jobs só começam depois que o banco responde.
+conectarComRetry().then((conectado) => {
+    if (conectado) iniciarJobs();
+});

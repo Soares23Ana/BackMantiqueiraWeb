@@ -1,3 +1,4 @@
+const path = require('node:path');
 const dotenv = require('dotenv');
 
 dotenv.config({ quiet: true });
@@ -76,6 +77,10 @@ function validarAmbiente(env) {
         erros.push('LOGIN_LIMITE e CADASTRO_LIMITE devem ser inteiros maiores que zero.');
     }
 
+    if (env.JOBS_ATIVOS && !['true', 'false'].includes(env.JOBS_ATIVOS)) {
+        erros.push('JOBS_ATIVOS deve ser true ou false.');
+    }
+
     const niveisLog = ['debug', 'info', 'warn', 'error', 'silent'];
     const nivelLog = env.LOG_LEVEL || (teste ? 'silent' : 'info');
     if (!niveisLog.includes(nivelLog)) {
@@ -97,6 +102,9 @@ function validarAmbiente(env) {
             limiteJson: env.JSON_LIMIT || '200kb',
             // Tentativas de login com falha a cada 15 min e cadastros por hora, por IP.
             limites: { login: limiteLogin, cadastro: limiteCadastro },
+            // Jobs agendados (carga do catálogo e estoque). Desligados nos testes.
+            jobs: { ativos: env.JOBS_ATIVOS ? env.JOBS_ATIVOS === 'true' : !teste },
+            importacao: { pasta: path.resolve(env.IMPORTACAO_DIR || path.join(__dirname, '..', 'importacao')) },
             log: {
                 nivel: nivelLog,
                 formato: env.LOG_FORMAT || (producao ? 'json' : 'texto')
