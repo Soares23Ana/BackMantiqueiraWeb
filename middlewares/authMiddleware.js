@@ -30,4 +30,20 @@ function autenticarToken(req, res, next) {
     });
 }
 
+// Para rotas públicas que mostram mais dados a quem está logado: token ausente ou inválido segue como visitante.
+function autenticacaoOpcional(req, res, next) {
+    const authHeader = req.get('Authorization');
+    const match = authHeader && authHeader.match(/^Bearer\s+(\S+)$/i);
+    if (!match) {
+        return next();
+    }
+    jwt.verify(match[1], process.env.JWT_SECRET, (err, usuario) => {
+        if (!err) {
+            req.usuario = usuario;
+        }
+        next();
+    });
+}
+
 module.exports = autenticarToken;
+module.exports.autenticacaoOpcional = autenticacaoOpcional;

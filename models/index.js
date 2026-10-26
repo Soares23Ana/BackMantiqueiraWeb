@@ -5,6 +5,9 @@ const Pedido = require('./Pedido');
 const ItemPedido = require('./ItemPedido');
 const Banner = require('./Banner');
 const Endereco = require('./Endereco');
+const Categoria = require('./Categoria');
+const Marca = require('./Marca');
+const MovimentacaoEstoque = require('./MovimentacaoEstoque');
 
 Fornecedor.hasMany(Produto, {
     foreignKey: 'id_fornecedor',
@@ -13,6 +16,35 @@ Fornecedor.hasMany(Produto, {
 Produto.belongsTo(Fornecedor, {
     foreignKey: 'id_fornecedor',
     as: 'fornecedor'
+});
+
+Categoria.hasMany(Produto, {
+    foreignKey: 'id_categoria',
+    as: 'produtos'
+});
+Produto.belongsTo(Categoria, {
+    foreignKey: 'id_categoria',
+    as: 'categoria'
+});
+Marca.hasMany(Produto, {
+    foreignKey: 'id_marca',
+    as: 'produtos'
+});
+Produto.belongsTo(Marca, {
+    foreignKey: 'id_marca',
+    as: 'marca'
+});
+Produto.hasMany(MovimentacaoEstoque, {
+    foreignKey: 'id_produto',
+    as: 'movimentacoes'
+});
+MovimentacaoEstoque.belongsTo(Produto, {
+    foreignKey: 'id_produto',
+    as: 'produto'
+});
+MovimentacaoEstoque.belongsTo(Usuario, {
+    foreignKey: 'id_usuario',
+    as: 'usuario'
 });
 
 Usuario.hasMany(Pedido, {
@@ -57,4 +89,15 @@ ItemPedido.belongsTo(Produto, {
     as: 'produto'
 });
 
-module.exports = { Usuario, Fornecedor, Produto, Pedido, ItemPedido, Banner, Endereco };
+module.exports = {
+    Usuario,
+    Fornecedor,
+    Produto,
+    Pedido,
+    ItemPedido,
+    Banner,
+    Endereco,
+    Categoria,
+    Marca,
+    MovimentacaoEstoque
+};

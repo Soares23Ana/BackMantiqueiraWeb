@@ -48,6 +48,26 @@ npm run migrar:status   # só lista o que está pendente
 
 Para alterar o banco, **crie uma migration nova** com o próximo número (nunca edite uma já aplicada; o runner detecta pelo checksum) e depois rode `npm run schema:gerar` para atualizar o `BancoMantiqueira.sql`.
 
+### Dados iniciais (seeds)
+
+```bash
+npm run seed:catalogo                         # importa seeds/catalogo_inicial.csv (38 produtos, upsert por SKU)
+npm run seed:catalogo -- --simular            # mostra o que mudaria, sem gravar
+npm run seed:catalogo -- --desativar-ausentes # também desativa produtos que não estão no CSV
+npm run seed:dev                              # usuários de teste (recusa produção e RDS)
+```
+
+O `seed:catalogo` pode rodar quantas vezes quiser: só altera o que mudou e registra mudanças de estoque em `movimentacoes_estoque`. As imagens ficam no front; o CSV guarda só o caminho (`/img/...`).
+
+O `seed:dev` cria os usuários abaixo, com a senha `Mantiqueira@2026` (troque com `SEED_SENHA`; `-- --redefinir-senhas` volta a senha dos já existentes):
+
+| Perfil | Login |
+|---|---|
+| admin | `admin@mantiqueira.com` |
+| gerente | `gerente@mantiqueira.com` |
+| funcionario | `funcionario@mantiqueira.com` |
+| cliente | CNPJ `11.222.333/0001-81` (e-mail `compras@mercadinho-exemplo.com.br`) |
+
 ## 4. Execução do Servidor
 
 ```bash
@@ -103,8 +123,30 @@ Os testes usam o banco `DB_NAME_TEST` (padrão `mantiqueira_test`), que é **apa
 * `GET /api/v1/auth/users` - Lista os usuários sem expor as senhas; restrito a `gerente` e `admin`.
 
 ### Produtos (`/api/v1/produtos`)
-* `GET /api/v1/produtos` - Lista todos os produtos (Requer Token JWT no cabeçalho `Authorization: Bearer <TOKEN>`).
-* `POST /api/v1/produtos` - Cadastra um novo produto (Requer Token JWT com perfil `admin` ou `gerente`).
+As rotas de leitura são **públicas**. O que aparece depende de quem pergunta: o visitante vê `disponibilidade` (`disponivel`, `ultimas_unidades` ou `indisponivel`); quem está logado também vê `estoque` exato; a equipe vê ainda `preco`, `estoque_minimo`, `ativo` e datas. O preço nunca aparece para clientes.
+
+* `GET /api/v1/produtos` - Vitrine com busca e filtros. Parâmetros (todos opcionais):
+  * `busca`: termos separados por espaço; todos precisam aparecer em nome, SKU, descrição, marca ou categoria. Ignora acentos e maiúsculas (`locao` encontra "Loção").
+  * `categoria` e `marca`: slug ou id, vários separados por vírgula (`marca=bic,risque`).
+  * `disponibilidade`: `disponivel`, `ultimas_unidades`, `indisponivel` ou `em_estoque` (as duas primeiras).
+  * `ordenar`: `relevancia` (padrão com busca), `nome` (padrão sem busca), `nome_desc`, `recentes`; a equipe também pode usar `estoque` e `estoque_desc`.
+  * `pagina` e `limite` (padrão 24, máximo 100). A equipe pode enviar `incluir_inativos=true`.
+  * Resposta: `{ produtos: [...], paginacao: { total, pagina, limite, total_paginas } }`.
+* `GET /api/v1/produtos/sugestoes?busca=gran` - Autocomplete: até 8 produtos, 3 categorias e 3 marcas. Exige 2 caracteres ou mais.
+* `GET /api/v1/produtos/filtros` - Categorias e marcas com a contagem de produtos e contagem por disponibilidade. Aceita os mesmos filtros da listagem; cada contagem considera os outros filtros escolhidos.
+* `GET /api/v1/produtos/:id` - Um produto, por id ou SKU (`/produtos/SKU-115`). Produto desativado só aparece para a equipe.
+* `POST /api/v1/produtos` - Cadastra (`gerente`/`admin`). Obrigatórios: `sku` e `nome`. Opcionais: `descricao`, `destaques` (lista de textos), `imagem_url`, `id_categoria`, `id_marca`, `id_fornecedor`, `preco`, `estoque_minimo` (padrão 10), `multiplo_venda` (padrão 1), `ativo` e `quantidade_estoque` inicial.
+* `PUT /api/v1/produtos/:id` - Substitui os dados (`gerente`/`admin`); campos opcionais omitidos voltam ao padrão. `PATCH` altera só os campos enviados. Nenhum dos dois altera o estoque.
+* `PATCH /api/v1/produtos/:id/estoque` - Ajusta o estoque (`funcionario`/`gerente`/`admin`). Envie `{ "quantidade": 120, "observacao": "Inventário" }` para definir o valor, ou `{ "ajuste": -5, "observacao": "Avaria" }` para somar/subtrair. Nunca deixa negativo (`409 ESTOQUE_INSUFICIENTE`).
+* `GET /api/v1/produtos/:id/movimentacoes` - Histórico de estoque com usuário e observação (equipe).
+* `DELETE /api/v1/produtos/:id` - Desativa o produto (não apaga). Para reativar: `PATCH { "ativo": true }`.
+* `POST /api/v1/produtos/:id/imagem` - Envia a imagem (multipart, campo `imagem`, até 5 MB) e atualiza `imagem_url`.
+
+Erros de validação voltam com `422 VALIDACAO` e a lista de todos os campos com problema em `detalhes: [{ campo, mensagem }]`. SKU repetido: `409 SKU_DUPLICADO`.
+
+### Categorias e marcas (`/api/v1/categorias`, `/api/v1/marcas`)
+* `GET` - Públicas, com `total_produtos` ativos. A equipe pode enviar `incluir_inativos=true`.
+* `POST` (`nome`, opcionalmente `slug` e, nas categorias, `ordem`), `PUT`/`PATCH /:id` e `DELETE /:id` - `gerente`/`admin`. O slug é gerado do nome (`Loja do bebê` → `loja-do-bebe`). Só é possível excluir se nenhum produto usar (`409 EM_USO`); caso contrário, desative com `{ "ativo": false }`.
 
 ### Clientes (`/api/v1/clientes`)
 * `GET /api/v1/clientes?busca=texto&pagina=1&limite=20` - Lista clientes com busca por nome, razão social ou CNPJ/CPF e paginação. Restrito a `gerente` e `admin`.

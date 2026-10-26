@@ -10,6 +10,18 @@ USE mantiqueira_db;
 
 SET FOREIGN_KEY_CHECKS = 0;
 
+CREATE TABLE `categorias` (
+  `id_categoria` int NOT NULL AUTO_INCREMENT,
+  `nome` varchar(100) NOT NULL,
+  `slug` varchar(120) NOT NULL,
+  `ordem` int NOT NULL DEFAULT '0',
+  `ativo` tinyint(1) NOT NULL DEFAULT '1',
+  `criado_em` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `atualizado_em` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id_categoria`),
+  UNIQUE KEY `uk_categorias_slug` (`slug`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
 CREATE TABLE `conteudo_cms` (
   `id_banner` int NOT NULL AUTO_INCREMENT,
   `titulo` varchar(150) NOT NULL,
@@ -55,6 +67,37 @@ CREATE TABLE `itens_pedido` (
   CONSTRAINT `fk_itens_produto` FOREIGN KEY (`id_produto`) REFERENCES `produtos` (`id_produto`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
+CREATE TABLE `marcas` (
+  `id_marca` int NOT NULL AUTO_INCREMENT,
+  `nome` varchar(100) NOT NULL,
+  `slug` varchar(120) NOT NULL,
+  `ativo` tinyint(1) NOT NULL DEFAULT '1',
+  `criado_em` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `atualizado_em` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id_marca`),
+  UNIQUE KEY `uk_marcas_slug` (`slug`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE `movimentacoes_estoque` (
+  `id_movimentacao` int NOT NULL AUTO_INCREMENT,
+  `id_produto` int NOT NULL,
+  `tipo` enum('ajuste','pedido','cancelamento','importacao') NOT NULL,
+  `quantidade` int NOT NULL,
+  `estoque_anterior` int NOT NULL,
+  `estoque_novo` int NOT NULL,
+  `observacao` varchar(500) DEFAULT NULL,
+  `id_usuario` int DEFAULT NULL,
+  `id_pedido` int DEFAULT NULL,
+  `criado_em` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id_movimentacao`),
+  KEY `idx_movimentacoes_produto` (`id_produto`,`criado_em`),
+  KEY `fk_movimentacoes_usuario` (`id_usuario`),
+  KEY `fk_movimentacoes_pedido` (`id_pedido`),
+  CONSTRAINT `fk_movimentacoes_pedido` FOREIGN KEY (`id_pedido`) REFERENCES `pedidos` (`id_pedido`) ON DELETE SET NULL,
+  CONSTRAINT `fk_movimentacoes_produto` FOREIGN KEY (`id_produto`) REFERENCES `produtos` (`id_produto`),
+  CONSTRAINT `fk_movimentacoes_usuario` FOREIGN KEY (`id_usuario`) REFERENCES `usuarios` (`id_usuario`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
 CREATE TABLE `pedidos` (
   `id_pedido` int NOT NULL AUTO_INCREMENT,
   `id_cliente` int NOT NULL,
@@ -71,15 +114,33 @@ CREATE TABLE `pedidos` (
 
 CREATE TABLE `produtos` (
   `id_produto` int NOT NULL AUTO_INCREMENT,
+  `sku` varchar(40) NOT NULL,
   `id_fornecedor` int DEFAULT NULL,
-  `nome` varchar(100) NOT NULL,
+  `id_categoria` int DEFAULT NULL,
+  `id_marca` int DEFAULT NULL,
+  `nome` varchar(150) NOT NULL,
   `descricao` text,
-  `preco` decimal(10,2) NOT NULL,
-  `quantidade_estoque` int DEFAULT '0',
+  `destaques` json DEFAULT NULL,
+  `imagem_url` varchar(2048) DEFAULT NULL,
+  `preco` decimal(10,2) DEFAULT NULL,
+  `quantidade_estoque` int NOT NULL DEFAULT '0',
+  `estoque_minimo` int NOT NULL DEFAULT '10',
+  `multiplo_venda` int NOT NULL DEFAULT '1',
+  `ativo` tinyint(1) NOT NULL DEFAULT '1',
   `criado_em` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `atualizado_em` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id_produto`),
+  UNIQUE KEY `uk_produtos_sku` (`sku`),
   KEY `fk_produtos_fornecedor` (`id_fornecedor`),
-  CONSTRAINT `fk_produtos_fornecedor` FOREIGN KEY (`id_fornecedor`) REFERENCES `fornecedores` (`id_fornecedor`) ON DELETE SET NULL
+  KEY `idx_produtos_ativo_nome` (`ativo`,`nome`),
+  KEY `fk_produtos_categoria` (`id_categoria`),
+  KEY `fk_produtos_marca` (`id_marca`),
+  CONSTRAINT `fk_produtos_categoria` FOREIGN KEY (`id_categoria`) REFERENCES `categorias` (`id_categoria`) ON DELETE SET NULL,
+  CONSTRAINT `fk_produtos_fornecedor` FOREIGN KEY (`id_fornecedor`) REFERENCES `fornecedores` (`id_fornecedor`) ON DELETE SET NULL,
+  CONSTRAINT `fk_produtos_marca` FOREIGN KEY (`id_marca`) REFERENCES `marcas` (`id_marca`) ON DELETE SET NULL,
+  CONSTRAINT `ck_produtos_estoque` CHECK ((`quantidade_estoque` >= 0)),
+  CONSTRAINT `ck_produtos_estoque_minimo` CHECK ((`estoque_minimo` >= 0)),
+  CONSTRAINT `ck_produtos_multiplo` CHECK ((`multiplo_venda` >= 1))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 CREATE TABLE `schema_migrations` (
@@ -111,4 +172,5 @@ SET FOREIGN_KEY_CHECKS = 1;
 -- Marca as migrations como aplicadas para que "npm run migrar" continue a partir daqui.
 INSERT INTO schema_migrations (versao, nome, checksum) VALUES
 ('001', 'estrutura_base', 'cd0cc3e155651a44ece0755cd0a9200850feb1ea2f269166201a174ffd55a95b'),
-('002', 'normalizar_estrutura', '84f0ff32e8c849f2995d050734ffde5fcea6c0224957bc36889377a44d8fcad9');
+('002', 'normalizar_estrutura', '84f0ff32e8c849f2995d050734ffde5fcea6c0224957bc36889377a44d8fcad9'),
+('003', 'catalogo', 'dbbb60290a47a4ab6b6f3790a1dc2e0d5fdc0c077815a004b1b3c2783f5c5c56');

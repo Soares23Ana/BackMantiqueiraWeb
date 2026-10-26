@@ -1,5 +1,6 @@
 const { rateLimit } = require('express-rate-limit');
 const { BaseError, ConnectionError } = require('sequelize');
+const config = require('../config/ambiente');
 const logger = require('../lib/logger');
 const { ErroApi, corpoErro } = require('../lib/erros');
 const { estado } = require('../db/conexao');
@@ -8,7 +9,8 @@ const respostaLimite = corpoErro(429);
 
 const limitadorGlobal = rateLimit({
     windowMs: 60 * 1000,
-    limit: 100,
+    // Nos testes automatizados, centenas de requisições saem do mesmo IP em segundos.
+    limit: config.teste ? 10000 : 100,
     standardHeaders: 'draft-8',
     legacyHeaders: false,
     message: respostaLimite

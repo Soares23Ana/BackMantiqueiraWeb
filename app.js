@@ -21,6 +21,7 @@ const painelRoutes = require('./routes/painel');
 const pedidosRoutes = require('./routes/pedidos');
 const cmsRoutes = require('./routes/cms');
 const clientesRoutes = require('./routes/clientes');
+const taxonomiasRoutes = require('./routes/taxonomias');
 
 const ORIGENS_PADRAO = ['http://localhost:5173', 'http://localhost:3000', 'http://localhost:3001'];
 
@@ -59,6 +60,8 @@ function criarApp() {
     api.use(exigirBanco);
     api.use('/auth', authRoutes);
     api.use('/produtos', produtosRoutes);
+    api.use('/categorias', taxonomiasRoutes.categorias);
+    api.use('/marcas', taxonomiasRoutes.marcas);
     api.use('/painel', painelRoutes);
     api.use('/pedidos', pedidosRoutes);
     api.use('/cms', cmsRoutes);

@@ -28,4 +28,26 @@ async function prepararApp() {
     return { app: criarApp(), sequelize };
 }
 
-module.exports = { config, recriarBancoDeTeste, prepararApp };
+let sequencial = 0;
+
+// Cria um usuário direto no banco e devolve { usuario, token } com o mesmo formato do login.
+async function criarUsuario(tipo, dados = {}) {
+    const jwt = require('jsonwebtoken');
+    const { Usuario } = require('../models');
+    sequencial += 1;
+    const usuario = await Usuario.create({
+        nome: `${tipo} ${sequencial}`,
+        email: `${tipo}${sequencial}@teste.com`,
+        senha: 'hash-irrelevante',
+        tipo,
+        ...dados
+    });
+    const token = jwt.sign(
+        { id: usuario.id_usuario, nome: usuario.nome, email: usuario.email, tipo: usuario.tipo },
+        config.jwtSecret,
+        { expiresIn: '1h' }
+    );
+    return { usuario, token, auth: `Bearer ${token}` };
+}
+
+module.exports = { config, recriarBancoDeTeste, prepararApp, criarUsuario };

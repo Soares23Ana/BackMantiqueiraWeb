@@ -12,6 +12,8 @@
     "migrar": "node scripts/migrar.js",
     "migrar:status": "node scripts/migrar.js --status",
     "schema:gerar": "node scripts/gerar-schema.js",
+    "seed:catalogo": "node scripts/seed-catalogo.js",
+    "seed:dev": "node scripts/seed-dev.js",
     "test": "node --test --test-concurrency=1 \"test/**/*.test.js\""
   },
   "keywords": [],
