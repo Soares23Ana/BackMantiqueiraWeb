@@ -116,11 +116,38 @@ Os testes usam o banco `DB_NAME_TEST` (padrão `mantiqueira_test`), que é **apa
 * `POST /api/v1/cms` - Salva um banner, restrito a `gerente`, `funcionario` ou `admin`. Envie multipart/form-data com `titulo`, opcionalmente `link`, e arquivo `imagem` (JPEG, PNG, WEBP ou GIF; até 5 MB).
 * `GET /arquivos/uploads/:arquivo` - Serve as imagens enviadas ao CMS.
 
-### Autenticação (`/api/v1/auth`)
-* `POST /api/v1/auth/register` - Cadastra um usuário (`nome`, `email`, `senha`, `telefone` e, opcionalmente, `razao_social` e `cnpj_cpf`); a senha deve ter de 8 a 72 caracteres e o tipo inicial é `cliente`.
-* `POST /api/v1/auth/login` - Autentica o usuário e retorna o **Token JWT** com `id`, `nome`, `email` e `tipo`, além do objeto `usuario` sem a senha.
-* `GET /api/v1/auth/me` - Retorna `id`, `nome`, `email` e `tipo` do usuário autenticado. Requer `Authorization: Bearer <token>`.
+### Autenticação e contas
+Plataforma B2B: **clientes entram com CNPJ** e **a equipe entra com e-mail**.
+
+* `POST /api/v1/auth/register` - Cadastro público, sempre como `cliente`. Todos os campos são obrigatórios:
+  ```json
+  {
+    "cnpj": "11.222.333/0001-81",
+    "nome": "Maria (responsável)",
+    "email": "compras@mercadinho.com",
+    "telefone": "(19) 99999-0000",
+    "senha": "mínimo 8 caracteres",
+    "endereco": { "cep": "13870-000", "logradouro": "Rua X", "numero": "100", "complemento": "opcional",
+                  "bairro": "Centro", "cidade": "São João da Boa Vista", "estado": "SP", "referencia": "opcional" }
+  }
+  ```
+  O CNPJ precisa ter dígitos verificadores válidos e é gravado só com dígitos. A razão social não faz parte do cadastro; a equipe pode preenchê-la em `PUT /clientes/:id`. O endereço vira o principal; outros são adicionados em `/minha-conta/enderecos`. Erros: `422 VALIDACAO` (com todos os campos em `detalhes`), `409 CNPJ_JA_CADASTRADO`, `409 EMAIL_JA_CADASTRADO`, `429` após 10 cadastros/hora por IP.
+* `POST /api/v1/auth/login` - Corpo `{ "identificador", "senha" }`. Com `@`, busca o e-mail **só na equipe**; sem `@`, exige um CNPJ válido e busca **só nos clientes**. Sucesso: `{ token, usuario: { id, nome, email, tipo } }`; o front escolhe o destino pelo `tipo`. **Qualquer falha** (formato inválido, usuário inexistente, perfil errado, senha errada, usuário inativo) devolve `401` com `{ "mensagem": "Credenciais inválidas.", "codigo": "CREDENCIAIS_INVALIDAS" }`, no mesmo tempo de resposta. Depois de 10 falhas em 15 min, o IP recebe `429 MUITAS_TENTATIVAS`.
+* `GET /api/v1/auth/me` - Dados do usuário do token.
 * `GET /api/v1/auth/users` - Lista os usuários sem expor as senhas; restrito a `gerente` e `admin`.
+
+O token vale 2 horas. A cada requisição a API confere se o usuário ainda existe e está ativo: desativar alguém ou mudar o perfil vale na hora. Rotas que o perfil não pode usar respondem `403` com a mensagem genérica `Acesso negado.`.
+
+#### Equipe (`/api/v1/admin`, só `admin`)
+* `POST /api/v1/admin/usuarios` - Cria `funcionario`, `gerente` ou `admin`: `{ nome, email, senha, tipo, cargo?, telefone? }`. Equipe não tem CNPJ.
+* `GET /api/v1/admin/usuarios?tipo=&ativo=&busca=&pagina=` - Lista todos os usuários.
+* `PATCH /api/v1/admin/usuarios/:id` - Altera nome, e-mail, senha, tipo, cargo, telefone ou `ativo`. Para clientes, só `ativo`. O admin não pode desativar a si mesmo nem tirar o próprio perfil de admin.
+
+#### Minha conta (`/api/v1/minha-conta`, usuário logado)
+* `GET /api/v1/minha-conta` - Perfil (com `cnpj` formatado) e endereços.
+* `PATCH /api/v1/minha-conta` - Altera `nome`, `email` e `telefone`. CNPJ e razão social só pela equipe (`PUT /clientes/:id`).
+* `PATCH /api/v1/minha-conta/senha` - `{ senha_atual, nova_senha }`.
+* `GET/POST /api/v1/minha-conta/enderecos` e `PATCH/DELETE /api/v1/minha-conta/enderecos/:id_endereco` - Só clientes. Marcar `principal: true` desmarca os outros; não é possível remover o último endereço (`409 ULTIMO_ENDERECO`); se o principal for removido, o mais antigo assume.
 
 ### Produtos (`/api/v1/produtos`)
 As rotas de leitura são **públicas**. O que aparece depende de quem pergunta: o visitante vê `disponibilidade` (`disponivel`, `ultimas_unidades` ou `indisponivel`); quem está logado também vê `estoque` exato; a equipe vê ainda `preco`, `estoque_minimo`, `ativo` e datas. O preço nunca aparece para clientes.
@@ -149,8 +176,8 @@ Erros de validação voltam com `422 VALIDACAO` e a lista de todos os campos com
 * `POST` (`nome`, opcionalmente `slug` e, nas categorias, `ordem`), `PUT`/`PATCH /:id` e `DELETE /:id` - `gerente`/`admin`. O slug é gerado do nome (`Loja do bebê` → `loja-do-bebe`). Só é possível excluir se nenhum produto usar (`409 EM_USO`); caso contrário, desative com `{ "ativo": false }`.
 
 ### Clientes (`/api/v1/clientes`)
-* `GET /api/v1/clientes?busca=texto&pagina=1&limite=20` - Lista clientes com busca por nome, razão social ou CNPJ/CPF e paginação. Restrito a `gerente` e `admin`.
+* `GET /api/v1/clientes?busca=texto&pagina=1&limite=20` - Lista clientes com busca por nome, razão social, e-mail ou CNPJ (com ou sem pontuação) e paginação. `sem_cnpj=true` lista os clientes que não conseguem entrar por falta de CNPJ válido (o valor antigo fica em `cnpj_original`). Restrito a `gerente` e `admin`.
 * `GET /api/v1/clientes/:id/detalhes` - Retorna dados cadastrais, endereços de entrega, histórico operacional de pedidos e produtos mais solicitados.
-* `PUT /api/v1/clientes/:id` - Atualiza `razao_social`, `cnpj_cpf`, `telefone` e/ou `enderecos`. Cada endereço pode incluir `id_endereco` para atualizar um endereço existente; sem esse identificador, um endereço novo é cadastrado. Endereços omitidos não são removidos.
+* `PUT /api/v1/clientes/:id` - Atualiza `razao_social`, `cnpj` (precisa ser um CNPJ válido e único; corrigir limpa a pendência), `telefone`, `ativo` e/ou `enderecos`. Cada endereço pode incluir `id_endereco` para atualizar um endereço existente; sem esse identificador, um endereço novo é cadastrado. Endereços omitidos não são removidos.
 
-Clientes mantêm dados operacionais/comerciais (`razao_social`, `cnpj_cpf`, `telefone` e endereços de entrega). Nenhum dado bancário, de cartão ou limite de crédito é armazenado. Em uma atualização de status para `Entregue`, o pedido registra `data_entrega`.
+Clientes mantêm dados operacionais/comerciais (`razao_social`, `cnpj`, `telefone` e endereços de entrega). Nenhum dado bancário, de cartão ou limite de crédito é armazenado. Em uma atualização de status para `Entregue`, o pedido registra `data_entrega`.

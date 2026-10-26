@@ -24,7 +24,14 @@ const Usuario = sequelize.define('Usuario', {
         type: DataTypes.STRING(255),
         allowNull: false
     },
-    cnpj_cpf: {
+    // CNPJ do cliente (14 dígitos, único): é a credencial de login. A equipe não tem CNPJ.
+    cnpj: {
+        type: DataTypes.STRING(14),
+        allowNull: true,
+        unique: true
+    },
+    // Valor anterior que não pôde virar um CNPJ válido e único na migração 004 (aguarda correção).
+    cnpj_original: {
         type: DataTypes.STRING(18),
         allowNull: true
     },
@@ -36,6 +43,11 @@ const Usuario = sequelize.define('Usuario', {
         type: DataTypes.ENUM('cliente', 'funcionario', 'gerente', 'admin'),
         allowNull: false,
         defaultValue: 'cliente'
+    },
+    ativo: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: true
     },
     cargo: {
         type: DataTypes.STRING(50),

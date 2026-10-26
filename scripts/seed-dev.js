@@ -16,7 +16,7 @@ const USUARIOS = [
         email: 'compras@mercadinho-exemplo.com.br',
         tipo: 'cliente',
         // 11.222.333/0001-81: CNPJ de exemplo com dígitos verificadores válidos.
-        cnpj_cpf: '11222333000181',
+        cnpj: '11222333000181',
         telefone: '11999999999',
         endereco: {
             cep: '13870-000',
@@ -63,7 +63,7 @@ async function principal() {
             if (criado && endereco) {
                 await Endereco.create({ ...endereco, id_usuario: usuario.id_usuario });
             }
-            console.log(`${criado ? 'criado   ' : 'existente'} ${dados.tipo.padEnd(11)} ${dados.cnpj_cpf || dados.email}`);
+            console.log(`${criado ? 'criado   ' : 'existente'} ${dados.tipo.padEnd(11)} ${dados.cnpj || dados.email}`);
         }
         console.log(`\nSenha dos usuários criados${redefinir ? '/redefinidos' : ''}: ${SENHA_PADRAO}`);
     } finally {

@@ -1,4 +1,5 @@
-const { Op } = require('sequelize');
+const { Op, UniqueConstraintError } = require('sequelize');
+const { cnpjValido, somenteDigitos } = require('../lib/cnpj');
 const sequelize = require('../db/conn');
 const { Endereco, ItemPedido, Pedido, Produto, Usuario } = require('../models');
 const logger = require('../lib/logger');
@@ -101,17 +102,24 @@ async function listarClientes(req, res) {
     }
     const where = { tipo: 'cliente' };
     if (busca) {
+        // O CNPJ é gravado só com dígitos; "11.222.333" também encontra "11222333...".
+        const digitos = somenteDigitos(busca);
         where[Op.or] = [
             { nome: { [Op.like]: `%${busca}%` } },
             { razao_social: { [Op.like]: `%${busca}%` } },
-            { cnpj_cpf: { [Op.like]: `%${busca}%` } }
+            { email: { [Op.like]: `%${busca}%` } },
+            ...(digitos.length >= 2 ? [{ cnpj: { [Op.like]: `%${digitos}%` } }] : [])
         ];
+    }
+    // Clientes que não conseguem entrar pelo CNPJ (sem CNPJ ou com CNPJ pendente da migração 004).
+    if (req.query.sem_cnpj === 'true') {
+        where.cnpj = null;
     }
 
     try {
         const resultado = await Usuario.findAndCountAll({
             where,
-            attributes: ['id_usuario', 'nome', 'razao_social', 'cnpj_cpf', 'email', 'telefone', 'criado_em'],
+            attributes: ['id_usuario', 'nome', 'razao_social', 'cnpj', 'cnpj_original', 'email', 'telefone', 'ativo', 'criado_em'],
             limit: limite,
             offset: (pagina - 1) * limite,
             order: [['nome', 'ASC']]
@@ -140,7 +148,7 @@ async function obterDetalhesCliente(req, res) {
     try {
         const cliente = await Usuario.findOne({
             where: { id_usuario: idCliente, tipo: 'cliente' },
-            attributes: ['id_usuario', 'nome', 'razao_social', 'cnpj_cpf', 'email', 'telefone', 'criado_em'],
+            attributes: ['id_usuario', 'nome', 'razao_social', 'cnpj', 'email', 'telefone', 'criado_em'],
             include: [
                 { model: Endereco, as: 'enderecos', attributes: { exclude: ['id_usuario'] } },
                 {
@@ -189,7 +197,7 @@ async function obterDetalhesCliente(req, res) {
                 id_usuario: clienteJson.id_usuario,
                 nome: clienteJson.nome,
                 razao_social: clienteJson.razao_social,
-                cnpj_cpf: clienteJson.cnpj_cpf,
+                cnpj: clienteJson.cnpj,
                 email: clienteJson.email,
                 telefone: clienteJson.telefone,
                 criado_em: clienteJson.criado_em,
@@ -214,7 +222,7 @@ async function atualizarCliente(req, res) {
     if (typeof dados !== 'object' || Array.isArray(dados)) {
         return res.status(400).json({ mensagem: 'O corpo da requisição deve ser um objeto.' });
     }
-    const camposPermitidos = ['razao_social', 'cnpj_cpf', 'telefone', 'enderecos'];
+    const camposPermitidos = ['razao_social', 'cnpj', 'telefone', 'enderecos', 'ativo'];
     const camposNaoPermitidos = Object.keys(dados).filter((campo) => !camposPermitidos.includes(campo));
     if (camposNaoPermitidos.length > 0) {
         return res.status(400).json({ mensagem: `Campo não permitido: ${camposNaoPermitidos[0]}.` });
@@ -224,8 +232,8 @@ async function atualizarCliente(req, res) {
     }
 
     const dadosCliente = {};
-    const limitesCliente = { razao_social: 150, cnpj_cpf: 18, telefone: 20 };
-    for (const campo of ['razao_social', 'cnpj_cpf', 'telefone']) {
+    const limitesCliente = { razao_social: 150, cnpj: 18, telefone: 20 };
+    for (const campo of ['razao_social', 'cnpj', 'telefone']) {
         if (dados[campo] !== undefined) {
             if (dados[campo] !== null && typeof dados[campo] !== 'string') {
                 return res.status(400).json({ mensagem: `O campo ${campo} deve ser texto ou nulo.` });
@@ -238,6 +246,26 @@ async function atualizarCliente(req, res) {
             }
             dadosCliente[campo] = valor || null;
         }
+    }
+    // O CNPJ é a credencial de login do cliente: precisa ser válido e é gravado só com dígitos.
+    if (dados.cnpj !== undefined) {
+        const cnpj = somenteDigitos(dados.cnpj);
+        if (!cnpjValido(cnpj)) {
+            return res.status(422).json({
+                mensagem: 'CNPJ inválido.',
+                codigo: 'VALIDACAO',
+                detalhes: [{ campo: 'cnpj', mensagem: 'CNPJ inválido.' }]
+            });
+        }
+        dadosCliente.cnpj = cnpj;
+        // Corrigido o CNPJ, a pendência da migração deixa de existir.
+        dadosCliente.cnpj_original = null;
+    }
+    if (dados.ativo !== undefined) {
+        if (typeof dados.ativo !== 'boolean') {
+            return res.status(400).json({ mensagem: 'O campo ativo deve ser true ou false.' });
+        }
+        dadosCliente.ativo = dados.ativo;
     }
     const resultadoEnderecos = dados.enderecos === undefined
         ? null
@@ -307,7 +335,7 @@ async function atualizarCliente(req, res) {
         }
         const clienteAtualizado = await Usuario.findOne({
             where: { id_usuario: idCliente, tipo: 'cliente' },
-            attributes: ['id_usuario', 'nome', 'razao_social', 'cnpj_cpf', 'email', 'telefone'],
+            attributes: ['id_usuario', 'nome', 'razao_social', 'cnpj', 'email', 'telefone', 'ativo'],
             include: [{ model: Endereco, as: 'enderecos', attributes: { exclude: ['id_usuario'] } }]
         });
         return res.status(200).json({
@@ -317,6 +345,9 @@ async function atualizarCliente(req, res) {
     } catch (erro) {
         if (erro.status === 404) {
             return res.status(404).json({ mensagem: erro.message });
+        }
+        if (erro instanceof UniqueConstraintError) {
+            return res.status(409).json({ mensagem: 'Este CNPJ já pertence a outro cliente.', codigo: 'CNPJ_JA_CADASTRADO' });
         }
         logger.error('Erro ao atualizar cliente.', { erro });
         return res.status(500).json({ mensagem: 'Erro ao atualizar cliente.' });

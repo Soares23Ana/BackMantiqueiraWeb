@@ -70,6 +70,12 @@ function validarAmbiente(env) {
         }
     }
 
+    const limiteLogin = inteiro(env.LOGIN_LIMITE, 10);
+    const limiteCadastro = inteiro(env.CADASTRO_LIMITE, 10);
+    if (!(limiteLogin >= 1) || !(limiteCadastro >= 1)) {
+        erros.push('LOGIN_LIMITE e CADASTRO_LIMITE devem ser inteiros maiores que zero.');
+    }
+
     const niveisLog = ['debug', 'info', 'warn', 'error', 'silent'];
     const nivelLog = env.LOG_LEVEL || (teste ? 'silent' : 'info');
     if (!niveisLog.includes(nivelLog)) {
@@ -89,6 +95,8 @@ function validarAmbiente(env) {
             jwtSecret,
             origensCors,
             limiteJson: env.JSON_LIMIT || '200kb',
+            // Tentativas de login com falha a cada 15 min e cadastros por hora, por IP.
+            limites: { login: limiteLogin, cadastro: limiteCadastro },
             log: {
                 nivel: nivelLog,
                 formato: env.LOG_FORMAT || (producao ? 'json' : 'texto')

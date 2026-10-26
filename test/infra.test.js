@@ -1,7 +1,7 @@
 const { test, before, after, describe } = require('node:test');
 const assert = require('node:assert/strict');
 const request = require('supertest');
-const { config, prepararApp } = require('./ajuda');
+const { config, prepararApp, criarUsuario } = require('./ajuda');
 const { aplicarMigracoes, abrirConexao } = require('../db/migracoes');
 const { validarAmbiente } = require('../config/ambiente');
 
@@ -67,7 +67,7 @@ describe('migrations', () => {
             await conexao.query(`
                 CREATE TABLE usuarios (
                     id_usuario INT AUTO_INCREMENT PRIMARY KEY, nome VARCHAR(100) NOT NULL,
-                    email VARCHAR(100) NOT NULL, senha VARCHAR(255) NOT NULL, cpf_cnpj VARCHAR(18),
+                    email VARCHAR(100) NOT NULL, senha VARCHAR(255) NOT NULL, cnpj_cpf VARCHAR(18),
                     telefone VARCHAR(20), tipo ENUM('cliente','funcionario','gerente','admin') DEFAULT 'cliente',
                     cargo VARCHAR(50), criado_em DATETIME NOT NULL,
                     UNIQUE KEY email (email), UNIQUE KEY email_2 (email), UNIQUE KEY email_3 (email));
@@ -93,16 +93,16 @@ describe('migrations', () => {
             assert.deepEqual(status.map((s) => s.status), ['Aguardando Separação', 'Saiu para Entrega']);
 
             const [indices] = await conexao.query(
-                "SELECT DISTINCT INDEX_NAME AS nome FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'usuarios' AND INDEX_NAME <> 'PRIMARY'",
+                "SELECT DISTINCT INDEX_NAME AS nome FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'usuarios' AND COLUMN_NAME = 'email'",
                 [nome]
             );
             assert.deepEqual(indices.map((i) => i.nome), ['email']);
 
             const [colunas] = await conexao.query(
-                "SELECT COLUMN_NAME AS nome FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'usuarios' AND COLUMN_NAME IN ('cnpj_cpf', 'razao_social', 'cpf_cnpj') ORDER BY COLUMN_NAME",
+                "SELECT COLUMN_NAME AS nome FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'usuarios' AND COLUMN_NAME IN ('cnpj', 'cnpj_cpf', 'razao_social') ORDER BY COLUMN_NAME",
                 [nome]
             );
-            assert.deepEqual(colunas.map((c) => c.nome), ['cnpj_cpf', 'razao_social']);
+            assert.deepEqual(colunas.map((c) => c.nome), ['cnpj', 'razao_social']);
 
             const [[fk]] = await conexao.query(
                 "SELECT DELETE_RULE AS regra FROM information_schema.REFERENTIAL_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = ? AND TABLE_NAME = 'pedidos'",
@@ -140,13 +140,15 @@ describe('HTTP', () => {
     });
 
     test('erros dos controladores ganham sucesso:false e codigo', async () => {
+        // O controlador de pedidos ainda responde só { mensagem } em erros de parâmetro.
+        const { auth } = await criarUsuario('gerente');
         const resposta = await request(app)
-            .post('/api/v1/auth/login')
-            .send({})
+            .get('/api/v1/pedidos/abc')
+            .set('Authorization', auth)
             .expect(400);
         assert.deepEqual(resposta.body, {
             sucesso: false,
-            mensagem: 'E-mail e senha são obrigatórios.',
+            mensagem: 'Identificador de pedido inválido.',
             codigo: 'REQUISICAO_INVALIDA'
         });
     });

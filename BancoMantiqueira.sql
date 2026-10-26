@@ -10,6 +10,15 @@ USE mantiqueira_db;
 
 SET FOREIGN_KEY_CHECKS = 0;
 
+CREATE TABLE `schema_migrations` (
+  `versao` varchar(20) NOT NULL,
+  `nome` varchar(200) NOT NULL,
+  `checksum` char(64) NOT NULL,
+  `aplicado_em` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `duracao_ms` int NOT NULL DEFAULT '0',
+  PRIMARY KEY (`versao`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
 CREATE TABLE `categorias` (
   `id_categoria` int NOT NULL AUTO_INCREMENT,
   `nome` varchar(100) NOT NULL,
@@ -143,28 +152,23 @@ CREATE TABLE `produtos` (
   CONSTRAINT `ck_produtos_multiplo` CHECK ((`multiplo_venda` >= 1))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
-CREATE TABLE `schema_migrations` (
-  `versao` varchar(20) NOT NULL,
-  `nome` varchar(200) NOT NULL,
-  `checksum` char(64) NOT NULL,
-  `aplicado_em` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  `duracao_ms` int NOT NULL DEFAULT '0',
-  PRIMARY KEY (`versao`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
-
 CREATE TABLE `usuarios` (
   `id_usuario` int NOT NULL AUTO_INCREMENT,
   `nome` varchar(100) NOT NULL,
   `razao_social` varchar(150) DEFAULT NULL,
   `email` varchar(100) NOT NULL,
   `senha` varchar(255) NOT NULL,
-  `cnpj_cpf` varchar(18) DEFAULT NULL,
+  `cnpj` varchar(14) DEFAULT NULL,
+  `cnpj_original` varchar(18) DEFAULT NULL,
   `telefone` varchar(20) DEFAULT NULL,
   `tipo` enum('cliente','funcionario','gerente','admin') NOT NULL DEFAULT 'cliente',
+  `ativo` tinyint(1) NOT NULL DEFAULT '1',
   `cargo` varchar(50) DEFAULT NULL,
   `criado_em` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id_usuario`),
-  UNIQUE KEY `email` (`email`)
+  UNIQUE KEY `email` (`email`),
+  UNIQUE KEY `uk_usuarios_cnpj` (`cnpj`),
+  CONSTRAINT `ck_usuarios_cnpj` CHECK (((`cnpj` is null) or regexp_like(`cnpj`,_utf8mb4'^[0-9]{14}$')))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 SET FOREIGN_KEY_CHECKS = 1;
@@ -173,4 +177,6 @@ SET FOREIGN_KEY_CHECKS = 1;
 INSERT INTO schema_migrations (versao, nome, checksum) VALUES
 ('001', 'estrutura_base', 'cd0cc3e155651a44ece0755cd0a9200850feb1ea2f269166201a174ffd55a95b'),
 ('002', 'normalizar_estrutura', '84f0ff32e8c849f2995d050734ffde5fcea6c0224957bc36889377a44d8fcad9'),
-('003', 'catalogo', 'dbbb60290a47a4ab6b6f3790a1dc2e0d5fdc0c077815a004b1b3c2783f5c5c56');
+('003', 'catalogo', 'dbbb60290a47a4ab6b6f3790a1dc2e0d5fdc0c077815a004b1b3c2783f5c5c56'),
+('004', 'autenticacao_b2b', '88bd98595b6de344c817744c8a4710dea2c23fd93668edbc695a7b8819cd5069'),
+('005', 'coluna_cnpj', '8a5d7ba4d1f2eb61684c6c6fade49369744d812d0d943c34621ff3d5b024ca9f');

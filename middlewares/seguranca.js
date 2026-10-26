@@ -16,12 +16,29 @@ const limitadorGlobal = rateLimit({
     message: respostaLimite
 });
 
+// Por IP: só tentativas que falharam contam, para quem acerta a senha não ser bloqueado.
 const limitadorLogin = rateLimit({
     windowMs: 15 * 60 * 1000,
-    limit: 10,
+    limit: config.limites.login,
+    skipSuccessfulRequests: true,
     standardHeaders: 'draft-8',
     legacyHeaders: false,
-    message: respostaLimite
+    message: corpoErro(429, {
+        mensagem: 'Muitas tentativas de login. Tente novamente em alguns minutos.',
+        codigo: 'MUITAS_TENTATIVAS'
+    })
+});
+
+// Por IP: evita criação de contas em massa.
+const limitadorCadastro = rateLimit({
+    windowMs: 60 * 60 * 1000,
+    limit: config.limites.cadastro,
+    standardHeaders: 'draft-8',
+    legacyHeaders: false,
+    message: corpoErro(429, {
+        mensagem: 'Muitos cadastros a partir desta rede. Tente novamente mais tarde.',
+        codigo: 'MUITAS_TENTATIVAS'
+    })
 });
 
 // Enquanto a primeira conexão com o banco não acontece, a API responde 503 em vez de erros genéricos.
@@ -76,4 +93,4 @@ function tratarErros(erro, req, res, next) {
     return res.status(status).json(corpoErro(status, corpo));
 }
 
-module.exports = { limitadorGlobal, limitadorLogin, exigirBanco, rotaNaoEncontrada, tratarErros };
+module.exports = { limitadorGlobal, limitadorLogin, limitadorCadastro, exigirBanco, rotaNaoEncontrada, tratarErros };

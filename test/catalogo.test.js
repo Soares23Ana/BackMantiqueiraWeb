@@ -396,7 +396,7 @@ describe('utilitários', () => {
         const rds = { ...base, db: { host: 'mantiqueira.abc123.us-east-1.rds.amazonaws.com' } };
         assert.match(verificarAmbienteSeguro(rds, {}), /RDS/);
         assert.equal(verificarAmbienteSeguro(rds, { SEED_DEV_PERMITIR_REMOTO: '1' }), null);
-        assert.ok(cnpjValido(USUARIOS.find((u) => u.tipo === 'cliente').cnpj_cpf));
+        assert.ok(cnpjValido(USUARIOS.find((u) => u.tipo === 'cliente').cnpj));
     });
 
     test('leitor de CSV: BOM, aspas, ; dentro de aspas e quebra de linha', () => {

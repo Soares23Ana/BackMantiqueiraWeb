@@ -22,6 +22,8 @@ const pedidosRoutes = require('./routes/pedidos');
 const cmsRoutes = require('./routes/cms');
 const clientesRoutes = require('./routes/clientes');
 const taxonomiasRoutes = require('./routes/taxonomias');
+const adminRoutes = require('./routes/admin');
+const minhaContaRoutes = require('./routes/minhaConta');
 
 const ORIGENS_PADRAO = ['http://localhost:5173', 'http://localhost:3000', 'http://localhost:3001'];
 
@@ -66,6 +68,8 @@ function criarApp() {
     api.use('/pedidos', pedidosRoutes);
     api.use('/cms', cmsRoutes);
     api.use('/clientes', clientesRoutes);
+    api.use('/admin', adminRoutes);
+    api.use('/minha-conta', minhaContaRoutes);
 
     app.use('/api/v1', limitadorGlobal, api);
 

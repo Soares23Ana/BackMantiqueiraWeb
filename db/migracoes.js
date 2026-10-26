@@ -93,9 +93,10 @@ async function prepararControle(conexao) {
 /**
  * Aplica as migrations pendentes no banco informado (criando-o se não existir).
  * Um GET_LOCK impede duas execuções simultâneas (ex.: duas instâncias subindo ao mesmo tempo).
+ * ateVersao (ex.: '003') para no meio do caminho; usado nos testes de migrations com dados antigos.
  * Retorna { aplicadas, alertas }.
  */
-async function aplicarMigracoes({ nomeBanco = config.db.nome, log = () => {}, apenasStatus = false } = {}) {
+async function aplicarMigracoes({ nomeBanco = config.db.nome, log = () => {}, apenasStatus = false, ateVersao = null } = {}) {
     if (!/^\w{1,64}$/.test(nomeBanco)) {
         throw new Error('Nome de banco inválido.');
     }
@@ -119,7 +120,8 @@ async function aplicarMigracoes({ nomeBanco = config.db.nome, log = () => {}, ap
                 }
             }
 
-            const pendentes = arquivos.filter((migracao) => !jaAplicadas.has(migracao.versao));
+            const pendentes = arquivos.filter((migracao) => !jaAplicadas.has(migracao.versao) &&
+                (ateVersao === null || Number(migracao.versao) <= Number(ateVersao)));
             if (apenasStatus) {
                 return { aplicadas: [], pendentes: pendentes.map((m) => m.arquivo), alertas };
             }
