@@ -140,7 +140,7 @@ describe('HTTP', () => {
     });
 
     test('erros dos controladores ganham sucesso:false e codigo', async () => {
-        // O controlador de pedidos ainda responde só { mensagem } em erros de parâmetro.
+        // Erro lançado no controlador também sai no formato padrão.
         const { auth } = await criarUsuario('gerente');
         const resposta = await request(app)
             .get('/api/v1/pedidos/abc')

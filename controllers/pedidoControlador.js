@@ -1,225 +1,254 @@
 const { Op } = require('sequelize');
-const sequelize = require('../db/conn');
-const { Usuario, Produto, Pedido, ItemPedido } = require('../models');
-const logger = require('../lib/logger');
+const { Usuario, Produto, Pedido, ItemPedido, PedidoHistorico } = require('../models');
+const { STATUS_PEDIDO } = require('../models/Pedido');
+const { ErroApi } = require('../lib/erros');
+const { ehEquipe } = require('../lib/perfis');
+const { somenteDigitos, formatarCnpj } = require('../lib/cnpj');
+const { lerPaginacao, montarPaginacao } = require('../lib/paginacao');
+const servicoPedidos = require('../servicos/pedidos');
 
-const STATUS_PEDIDO = [
-    'Aguardando Separação',
-    'Em Separação',
-    'Saiu para Entrega',
-    'Entregue',
-];
+const INCLUDE_ITENS = {
+    model: ItemPedido,
+    as: 'itens',
+    attributes: ['id_produto', 'quantidade'],
+    // Consulta separada: mantém a paginação correta (um pedido não vira várias linhas).
+    separate: true,
+    include: [{ model: Produto, as: 'produto', attributes: ['id_produto', 'sku', 'nome', 'imagem_url'] }]
+};
+const INCLUDE_CLIENTE = {
+    model: Usuario,
+    as: 'cliente',
+    attributes: ['id_usuario', 'nome', 'razao_social', 'cnpj', 'email', 'telefone']
+};
+const INCLUDE_FUNCIONARIO = {
+    model: Usuario,
+    as: 'funcionario',
+    attributes: ['id_usuario', 'nome', 'cargo'],
+    required: false
+};
 
-function respostaErro(mensagem, status) {
-    const erro = new Error(mensagem);
-    erro.statusHttp = status;
-    return erro;
+// Formato único de pedido nas respostas. Não há valores financeiros.
+function apresentarPedido(pedido, usuario, { comHistorico = false } = {}) {
+    const dados = {
+        id_pedido: pedido.id_pedido,
+        status: pedido.status,
+        data_pedido: pedido.data_pedido,
+        data_entrega_desejada: pedido.data_entrega_desejada,
+        data_entrega: pedido.data_entrega,
+        observacao: pedido.observacao,
+        motivo_cancelamento: pedido.motivo_cancelamento,
+        endereco_entrega: pedido.endereco_entrega,
+        itens: (pedido.itens || []).map((item) => ({
+            id_produto: item.id_produto,
+            sku: item.produto ? item.produto.sku : null,
+            nome: item.produto ? item.produto.nome : null,
+            imagem_url: item.produto ? item.produto.imagem_url : null,
+            quantidade: item.quantidade
+        })),
+        total_itens: (pedido.itens || []).reduce((soma, item) => soma + item.quantidade, 0),
+        pode_cancelar: servicoPedidos.podeCancelar(pedido, usuario)
+    };
+    if (ehEquipe(usuario)) {
+        dados.cliente = pedido.cliente ? {
+            ...pedido.cliente.toJSON(),
+            cnpj: pedido.cliente.cnpj ? formatarCnpj(pedido.cliente.cnpj) : null
+        } : null;
+        dados.funcionario = pedido.funcionario || null;
+        dados.proximo_status = servicoPedidos.PROXIMO_STATUS[pedido.status] || null;
+    }
+    if (comHistorico) {
+        dados.historico = (pedido.historico || []).map((registro) => ({
+            status_anterior: registro.status_anterior,
+            status_novo: registro.status_novo,
+            observacao: registro.observacao,
+            data: registro.criado_em,
+            usuario: registro.usuario
+                ? { id_usuario: registro.usuario.id_usuario, nome: registro.usuario.nome, tipo: registro.usuario.tipo }
+                : null
+        }));
+    }
+    return dados;
 }
 
-function normalizarItens(itens) {
-    if (!Array.isArray(itens) || itens.length === 0 || itens.length > 100) {
-        throw respostaErro('Informe de 1 a 100 itens no pedido.', 400);
+function lerIdPedido(valor) {
+    const id = Number(valor);
+    if (!Number.isSafeInteger(id) || id <= 0) {
+        throw new ErroApi(400, 'REQUISICAO_INVALIDA', 'Identificador de pedido inválido.');
     }
-
-    const quantidades = new Map();
-    for (const item of itens) {
-        if (!item || typeof item !== 'object') {
-            throw respostaErro('Cada item deve ser um objeto com produto e quantidade.', 400);
-        }
-        const idProduto = Number(item.id_produto);
-        const quantidade = Number(item.quantidade);
-        if (!Number.isSafeInteger(idProduto) || idProduto <= 0 ||
-            !Number.isSafeInteger(quantidade) || quantidade <= 0) {
-            throw respostaErro('Cada item deve ter id_produto e quantidade inteiros positivos.', 400);
-        }
-        const total = (quantidades.get(idProduto) || 0) + quantidade;
-        if (!Number.isSafeInteger(total)) {
-            throw respostaErro('A quantidade informada é inválida.', 400);
-        }
-        quantidades.set(idProduto, total);
-    }
-    return [...quantidades.entries()]
-        .map(([id_produto, quantidade]) => ({ id_produto, quantidade }))
-        .sort((a, b) => a.id_produto - b.id_produto);
+    return id;
 }
 
+function lerStatus(valor) {
+    if (valor === undefined || valor === '') return null;
+    const lista = String(valor).split(',').map((status) => status.trim());
+    const invalido = lista.find((status) => !STATUS_PEDIDO.includes(status));
+    if (invalido) {
+        throw new ErroApi(400, 'FILTRO_INVALIDO', `Status inválido: ${invalido}. Use: ${STATUS_PEDIDO.join(', ')}.`);
+    }
+    return lista;
+}
+
+// Período em datas locais (AAAA-MM-DD), inclusivo nas duas pontas.
+function lerPeriodo(de, ate) {
+    const condicao = {};
+    const valida = (data) => /^\d{4}-\d{2}-\d{2}$/.test(data) && !Number.isNaN(Date.parse(`${data}T00:00:00-03:00`));
+    if (de !== undefined) {
+        if (!valida(de)) throw new ErroApi(400, 'FILTRO_INVALIDO', 'Use o formato AAAA-MM-DD em "de".');
+        condicao[Op.gte] = new Date(`${de}T00:00:00-03:00`);
+    }
+    if (ate !== undefined) {
+        if (!valida(ate)) throw new ErroApi(400, 'FILTRO_INVALIDO', 'Use o formato AAAA-MM-DD em "ate".');
+        const fim = new Date(`${ate}T00:00:00-03:00`);
+        fim.setUTCDate(fim.getUTCDate() + 1);
+        condicao[Op.lt] = fim;
+    }
+    return Object.getOwnPropertySymbols(condicao).length > 0 ? condicao : null;
+}
+
+// POST /pedidos (cliente)
 async function criarPedido(req, res) {
-    let itens;
-    try {
-        itens = normalizarItens(req.body && req.body.itens);
-    } catch (erro) {
-        return res.status(erro.statusHttp || 400).json({ mensagem: erro.message });
-    }
-
-    try {
-        const pedido = await sequelize.transaction(async (transacao) => {
-            // O bloqueio impede que pedidos concorrentes reservem o mesmo estoque.
-            const produtos = await Produto.findAll({
-                where: { id_produto: { [Op.in]: itens.map((item) => item.id_produto) } },
-                order: [['id_produto', 'ASC']],
-                transaction: transacao,
-                lock: transacao.LOCK.UPDATE
-            });
-            if (produtos.length !== itens.length) {
-                throw respostaErro('Um ou mais produtos não foram encontrados.', 404);
-            }
-
-            const produtosPorId = new Map(produtos.map((produto) => [produto.id_produto, produto]));
-            for (const item of itens) {
-                const produto = produtosPorId.get(item.id_produto);
-                if (item.quantidade > produto.quantidade_estoque) {
-                    throw respostaErro(`Estoque insuficiente para o produto ${produto.nome}.`, 409);
-                }
-            }
-
-            const novoPedido = await Pedido.create(
-                { id_cliente: req.usuario.id, status: 'Aguardando Separação' },
-                { transaction: transacao }
-            );
-
-            const itensPedido = itens.map((item) => {
-                const produto = produtosPorId.get(item.id_produto);
-                return {
-                    id_pedido: novoPedido.id_pedido,
-                    id_produto: produto.id_produto,
-                    quantidade: item.quantidade
-                };
-            });
-            await ItemPedido.bulkCreate(itensPedido, { transaction: transacao });
-
-            // Pedido, itens e baixa de estoque são confirmados ou revertidos juntos.
-            for (const item of itens) {
-                const produto = produtosPorId.get(item.id_produto);
-                await produto.update({
-                    quantidade_estoque: produto.quantidade_estoque - item.quantidade
-                }, { transaction: transacao });
-            }
-            return novoPedido;
-        });
-
-        return res.status(201).json({
-            mensagem: 'Pedido criado com sucesso.',
-            id_pedido: pedido.id_pedido,
-            status: pedido.status
-        });
-    } catch (erro) {
-        if (erro.statusHttp) {
-            return res.status(erro.statusHttp).json({ mensagem: erro.message });
-        }
-        logger.error('Erro ao criar pedido.', { erro });
-        return res.status(500).json({ mensagem: 'Erro ao criar pedido.' });
-    }
+    const pedido = await servicoPedidos.criarPedido(req.usuario.id, req.body);
+    const completo = await Pedido.findByPk(pedido.id_pedido, { include: [INCLUDE_ITENS] });
+    return res.status(201).json({
+        mensagem: 'Pedido criado com sucesso.',
+        pedido: apresentarPedido(completo, req.usuario)
+    });
 }
 
+/**
+ * GET /pedidos (equipe). Filtros: status (vários separados por vírgula), id_cliente,
+ * de/ate (data do pedido) e busca (número do pedido, nome, razão social, e-mail ou CNPJ do cliente).
+ */
 async function listarPedidos(req, res) {
-    try {
-        const pedidos = await Pedido.findAll({
-            include: [
-                {
-                    model: Usuario,
-                    as: 'cliente',
-                    attributes: ['id_usuario', 'nome', 'email', 'telefone']
-                },
-                {
-                    model: Usuario,
-                    as: 'funcionario',
-                    attributes: ['id_usuario', 'nome', 'cargo'],
-                    required: false
-                },
-                {
-                    model: ItemPedido,
-                    as: 'itens',
-                    attributes: ['id_pedido', 'id_produto', 'quantidade'],
-                    include: [{
-                        model: Produto,
-                        as: 'produto',
-                        attributes: ['id_produto', 'nome']
-                    }]
-                }
-            ],
-            order: [['data_pedido', 'DESC']]
-        });
-        return res.status(200).json({ pedidos });
-    } catch (erro) {
-        logger.error('Erro ao listar pedidos.', { erro });
-        return res.status(500).json({ mensagem: 'Erro ao listar pedidos.' });
+    const paginacao = lerPaginacao(req.query, { limitePadrao: 20, limiteMaximo: 100 });
+    const where = {};
+    const status = lerStatus(req.query.status);
+    if (status) where.status = { [Op.in]: status };
+    if (req.query.id_cliente !== undefined) {
+        const idCliente = Number(req.query.id_cliente);
+        if (!Number.isSafeInteger(idCliente) || idCliente <= 0) {
+            throw new ErroApi(400, 'FILTRO_INVALIDO', 'id_cliente inválido.');
+        }
+        where.id_cliente = idCliente;
     }
+    const periodo = lerPeriodo(req.query.de, req.query.ate);
+    if (periodo) where.data_pedido = periodo;
+
+    const busca = typeof req.query.busca === 'string' ? req.query.busca.trim().slice(0, 100) : '';
+    if (busca) {
+        const opcoes = [
+            { '$cliente.nome$': { [Op.like]: `%${busca}%` } },
+            { '$cliente.razao_social$': { [Op.like]: `%${busca}%` } },
+            { '$cliente.email$': { [Op.like]: `%${busca}%` } }
+        ];
+        const digitos = somenteDigitos(busca);
+        if (/^#?\d+$/.test(busca)) opcoes.push({ id_pedido: Number(digitos) });
+        if (digitos.length >= 4) opcoes.push({ '$cliente.cnpj$': { [Op.like]: `%${digitos}%` } });
+        where[Op.or] = opcoes;
+    }
+
+    const { rows, count } = await Pedido.findAndCountAll({
+        where,
+        include: [INCLUDE_CLIENTE, INCLUDE_FUNCIONARIO, INCLUDE_ITENS],
+        order: [['data_pedido', 'DESC'], ['id_pedido', 'DESC']],
+        limit: paginacao.limite,
+        offset: paginacao.offset
+    });
+    return res.status(200).json({
+        pedidos: rows.map((pedido) => apresentarPedido(pedido, req.usuario)),
+        paginacao: montarPaginacao(count, paginacao)
+    });
 }
 
+// GET /pedidos/meus (cliente): os pedidos do próprio cliente, mais recentes primeiro.
+async function listarMeusPedidos(req, res) {
+    const paginacao = lerPaginacao(req.query, { limitePadrao: 20, limiteMaximo: 100 });
+    const where = { id_cliente: req.usuario.id };
+    const status = lerStatus(req.query.status);
+    if (status) where.status = { [Op.in]: status };
+
+    const { rows, count } = await Pedido.findAndCountAll({
+        where,
+        include: [INCLUDE_ITENS],
+        order: [['data_pedido', 'DESC'], ['id_pedido', 'DESC']],
+        limit: paginacao.limite,
+        offset: paginacao.offset
+    });
+    return res.status(200).json({
+        pedidos: rows.map((pedido) => apresentarPedido(pedido, req.usuario)),
+        paginacao: montarPaginacao(count, paginacao)
+    });
+}
+
+// GET /pedidos/:id_pedido: equipe vê qualquer pedido; cliente só o próprio (o de outro aparece como inexistente).
 async function obterPedido(req, res) {
-    const idPedido = Number(req.params.id_pedido);
-    if (!Number.isSafeInteger(idPedido) || idPedido <= 0) {
-        return res.status(400).json({ mensagem: 'Identificador de pedido inválido.' });
+    const idPedido = lerIdPedido(req.params.id_pedido);
+    const pedido = await Pedido.findByPk(idPedido, {
+        include: [
+            INCLUDE_CLIENTE,
+            INCLUDE_FUNCIONARIO,
+            INCLUDE_ITENS,
+            {
+                model: PedidoHistorico,
+                as: 'historico',
+                separate: true,
+                order: [['criado_em', 'ASC'], ['id_historico', 'ASC']],
+                include: [{ model: Usuario, as: 'usuario', attributes: ['id_usuario', 'nome', 'tipo'] }]
+            }
+        ]
+    });
+    const ehDono = pedido && Number(pedido.id_cliente) === Number(req.usuario.id);
+    if (!pedido || (!ehEquipe(req.usuario) && !ehDono)) {
+        throw new ErroApi(404, 'PEDIDO_NAO_ENCONTRADO', 'Pedido não encontrado.');
     }
-
-    try {
-        const pedido = await Pedido.findByPk(idPedido, {
-            attributes: ['id_pedido', 'id_cliente', 'data_pedido', 'data_entrega', 'status'],
-            include: [{
-                model: ItemPedido,
-                as: 'itens',
-                attributes: ['id_pedido', 'id_produto', 'quantidade'],
-                include: [{
-                    model: Produto,
-                    as: 'produto',
-                    attributes: ['id_produto', 'nome']
-                }]
-            }]
-        });
-        if (!pedido) {
-            return res.status(404).json({ mensagem: 'Pedido não encontrado.' });
-        }
-
-        if (req.usuario.tipo === 'cliente' && Number(req.usuario.id) !== Number(pedido.id_cliente)) {
-            return res.status(403).json({
-                mensagem: 'Acesso negado: este pedido não pertence ao cliente autenticado.'
-            });
-        }
-        if (!['cliente', 'gerente', 'admin'].includes(req.usuario.tipo)) {
-            return res.status(403).json({
-                mensagem: 'Acesso negado: Não tem permissão para realizar esta operação.'
-            });
-        }
-
-        return res.status(200).json({ pedido });
-    } catch (erro) {
-        logger.error('Erro ao obter pedido.', { erro });
-        return res.status(500).json({ mensagem: 'Erro ao obter pedido.' });
-    }
+    return res.status(200).json({ pedido: apresentarPedido(pedido, req.usuario, { comHistorico: true }) });
 }
 
+// PUT/PATCH /pedidos/:id_pedido/status { status, observacao? } (gerente/admin)
 async function atualizarStatus(req, res) {
-    const idPedido = Number(req.params.id_pedido);
-    const { status } = req.body || {};
-    if (!Number.isSafeInteger(idPedido) || idPedido <= 0) {
-        return res.status(400).json({ mensagem: 'Identificador de pedido inválido.' });
+    const idPedido = lerIdPedido(req.params.id_pedido);
+    const { status, observacao } = req.body || {};
+    if (status === 'Cancelado') {
+        throw new ErroApi(422, 'VALIDACAO', 'Para cancelar, use POST /pedidos/:id_pedido/cancelar com o motivo.');
     }
     if (!STATUS_PEDIDO.includes(status)) {
-        return res.status(400).json({ mensagem: 'Status do pedido inválido.' });
+        throw new ErroApi(422, 'VALIDACAO', 'Status do pedido inválido.', [{ campo: 'status', mensagem: `Use: ${STATUS_PEDIDO.join(', ')}.` }]);
     }
-
-    try {
-        const pedido = await Pedido.findByPk(idPedido);
-        if (!pedido) {
-            return res.status(404).json({ mensagem: 'Pedido não encontrado.' });
+    if (observacao !== undefined && observacao !== null && (typeof observacao !== 'string' || observacao.length > 500)) {
+        throw new ErroApi(422, 'VALIDACAO', 'A observação deve ser um texto de até 500 caracteres.');
+    }
+    const pedido = await servicoPedidos.avancarStatus(idPedido, status, req.usuario, observacao ? observacao.trim() : null);
+    return res.status(200).json({
+        mensagem: 'Status do pedido atualizado.',
+        pedido: {
+            id_pedido: pedido.id_pedido,
+            status: pedido.status,
+            data_entrega: pedido.data_entrega,
+            id_funcionario: pedido.id_funcionario
         }
-        await pedido.update({
-            status,
-            data_entrega: status === 'Entregue' ? new Date() : null
-        });
-        logger.info('[NOTIFICAÇÃO AUTOMÁTICA] Status do pedido atualizado.', { id_pedido: idPedido, status });
-        return res.status(200).json({
-            mensagem: 'Status do pedido atualizado.',
-            pedido: {
-                id_pedido: pedido.id_pedido,
-                status: pedido.status,
-                data_entrega: pedido.data_entrega
-            }
-        });
-    } catch (erro) {
-        logger.error('Erro ao atualizar status do pedido.', { erro });
-        return res.status(500).json({ mensagem: 'Erro ao atualizar status do pedido.' });
-    }
+    });
 }
 
-module.exports = { criarPedido, listarPedidos, obterPedido, atualizarStatus };
+// POST /pedidos/:id_pedido/cancelar { motivo } (cliente dono ou gerente/admin)
+async function cancelarPedido(req, res) {
+    const idPedido = lerIdPedido(req.params.id_pedido);
+    const motivo = req.body && typeof req.body.motivo === 'string' ? req.body.motivo.trim() : '';
+    if (motivo.length < 3 || motivo.length > 500) {
+        throw new ErroApi(422, 'VALIDACAO', 'Informe o motivo do cancelamento (3 a 500 caracteres).',
+            [{ campo: 'motivo', mensagem: 'Informe o motivo do cancelamento (3 a 500 caracteres).' }]);
+    }
+    const pedido = await servicoPedidos.cancelarPedido(idPedido, req.usuario, motivo);
+    return res.status(200).json({
+        mensagem: 'Pedido cancelado. O estoque dos itens foi devolvido.',
+        pedido: { id_pedido: pedido.id_pedido, status: pedido.status, motivo_cancelamento: pedido.motivo_cancelamento }
+    });
+}
+
+module.exports = {
+    criarPedido,
+    listarPedidos,
+    listarMeusPedidos,
+    obterPedido,
+    atualizarStatus,
+    cancelarPedido
+};

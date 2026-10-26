@@ -8,6 +8,16 @@ const Endereco = require('./Endereco');
 const Categoria = require('./Categoria');
 const Marca = require('./Marca');
 const MovimentacaoEstoque = require('./MovimentacaoEstoque');
+const PedidoHistorico = require('./PedidoHistorico');
+
+Pedido.hasMany(PedidoHistorico, {
+    foreignKey: 'id_pedido',
+    as: 'historico'
+});
+PedidoHistorico.belongsTo(Usuario, {
+    foreignKey: 'id_usuario',
+    as: 'usuario'
+});
 
 Fornecedor.hasMany(Produto, {
     foreignKey: 'id_fornecedor',
@@ -99,5 +109,6 @@ module.exports = {
     Endereco,
     Categoria,
     Marca,
-    MovimentacaoEstoque
+    MovimentacaoEstoque,
+    PedidoHistorico
 };

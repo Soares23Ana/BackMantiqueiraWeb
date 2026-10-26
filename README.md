@@ -104,14 +104,29 @@ Os testes usam o banco `DB_NAME_TEST` (padrão `mantiqueira_test`), que é **apa
 
 * `GET /saude` - Público. Responde `200` com `{ status: "ok", banco: "conectado", uptime_segundos, iniciado_em, versao, ultima_sincronizacao }` ou `503` com `status: "degradado"` quando o banco não responde.
 
-### Painel, pedidos e CMS
+### Painel
 * `GET /api/v1/painel` - Retorna pedidos pendentes, clientes e produtos com estoque baixo. Requer JWT de `gerente`, `funcionario` ou `admin`; a resposta contém apenas indicadores operacionais.
 * `GET /api/v1/painel/contadores` - Retorna os contadores operacionais `pedidosPendentes` e `estoqueBaixo` para os badges do menu. Requer JWT de `gerente`, `funcionario` ou `admin`.
 * `GET /api/v1/painel/alertas-reposicao` - Lista produtos com estoque até 10 unidades e sugestão de compra até o alvo operacional de 50 unidades. Restrito a `gerente` e `admin`.
-* `POST /api/v1/pedidos` - Cria um pedido para o cliente autenticado. Envie `itens` como uma lista de `{ "id_produto": 1, "quantidade": 2 }`. O estoque e os itens são gravados na mesma transação.
-* `GET /api/v1/pedidos/:id_pedido` - Permite ao cliente consultar apenas o próprio pedido; `gerente` e `admin` podem consultar qualquer pedido. Retorna status, datas e itens operacionais, sem valores financeiros.
-* `GET /api/v1/pedidos` - Lista pedidos com cliente, funcionário e itens, sem valores financeiros. Requer JWT de `gerente`, `funcionario` ou `admin`.
-* `PUT /api/v1/pedidos/:id_pedido/status` - Atualiza o status para `Aguardando Separação`, `Em Separação`, `Saiu para Entrega` ou `Entregue`. Restrito a `gerente` e `admin`; ao entregar, registra `data_entrega` e emite uma notificação simulada no log. O endpoint legado `PATCH` permanece com as mesmas permissões.
+### Pedidos (`/api/v1/pedidos`)
+Nenhuma resposta de pedido tem valores financeiros. Ciclo: `Aguardando Separação` → `Em Separação` → `Saiu para Entrega` → `Entregue`, com cancelamento (`Cancelado`) permitido até `Em Separação`.
+
+* `POST /api/v1/pedidos` - Checkout (só `cliente`):
+  ```json
+  { "itens": [{ "id_produto": 15, "quantidade": 6 }], "id_endereco": 3, "observacao": "opcional", "data_entrega_desejada": "2026-11-05" }
+  ```
+  `id_endereco` é opcional (padrão: o endereço principal) e precisa ser do cliente; uma cópia do endereço fica gravada no pedido. A data desejada vai de amanhã até 90 dias. Itens repetidos são somados. Se algum item tiver problema, **nada é gravado** e a resposta `409 ITENS_INDISPONIVEIS` traz **todos** os itens com problema em `detalhes`: `{ id_produto, sku, nome, solicitado, disponivel, multiplo_venda, motivo }`, com `motivo` igual a `produto_inexistente`, `produto_inativo`, `multiplo_de_venda` ou `estoque_insuficiente`. `disponivel` é a maior quantidade que pode ser pedida agora, respeitando o múltiplo de venda. Pedido, itens, baixa de estoque, movimentações e histórico são gravados na mesma transação, e pedidos simultâneos não usam o mesmo estoque.
+* `GET /api/v1/pedidos/meus?status=&pagina=&limite=` - Pedidos do cliente logado.
+* `GET /api/v1/pedidos?status=&id_cliente=&de=&ate=&busca=&pagina=&limite=` - Todos os pedidos (`funcionario`, `gerente`, `admin`). `status` aceita vários separados por vírgula; `de`/`ate` no formato `AAAA-MM-DD` (data do pedido, inclusive); `busca` procura pelo número do pedido ou pelo nome, razão social, e-mail ou CNPJ do cliente.
+* `GET /api/v1/pedidos/:id_pedido` - Detalhe com itens e `historico` (quem mudou cada status, quando e com qual observação). A equipe vê qualquer pedido; o cliente só os próprios (o de outro cliente responde `404`).
+* `PUT /api/v1/pedidos/:id_pedido/status` - `{ "status": "Em Separação", "observacao": "opcional" }` (`gerente`/`admin`; `PATCH` também funciona). Só aceita o próximo passo do ciclo; pular ou voltar dá `409 TRANSICAO_INVALIDA` com `proximo_permitido` em `detalhes`. Grava quem mudou em `id_funcionario` e no histórico; ao entregar, registra `data_entrega`.
+* `POST /api/v1/pedidos/:id_pedido/cancelar` - `{ "motivo": "..." }` (3 a 500 caracteres). O cliente cancela só o próprio pedido e só em `Aguardando Separação`; `gerente`/`admin` cancelam até `Em Separação`. O estoque de todos os itens volta na mesma transação, com movimentação do tipo `cancelamento`. Fora dessas condições: `409 CANCELAMENTO_NAO_PERMITIDO`.
+
+Cada pedido nas respostas traz `pode_cancelar` (para quem fez a requisição) e, para a equipe, `cliente`, `funcionario` e `proximo_status`.
+
+> Testando com `curl` no Windows: o terminal pode enviar acentos fora do UTF-8 (`"Em Separação"` chega errado e a API responde `422`). Grave o corpo em um arquivo UTF-8 e use `--data-binary @arquivo.json`, ou use Insomnia/Postman.
+
+### CMS
 * `GET /api/v1/cms` - Lista os banners ativos.
 * `POST /api/v1/cms` - Salva um banner, restrito a `gerente`, `funcionario` ou `admin`. Envie multipart/form-data com `titulo`, opcionalmente `link`, e arquivo `imagem` (JPEG, PNG, WEBP ou GIF; até 5 MB).
 * `GET /arquivos/uploads/:arquivo` - Serve as imagens enviadas ao CMS.

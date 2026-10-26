@@ -10,15 +10,6 @@ USE mantiqueira_db;
 
 SET FOREIGN_KEY_CHECKS = 0;
 
-CREATE TABLE `schema_migrations` (
-  `versao` varchar(20) NOT NULL,
-  `nome` varchar(200) NOT NULL,
-  `checksum` char(64) NOT NULL,
-  `aplicado_em` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  `duracao_ms` int NOT NULL DEFAULT '0',
-  PRIMARY KEY (`versao`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
-
 CREATE TABLE `categorias` (
   `id_categoria` int NOT NULL AUTO_INCREMENT,
   `nome` varchar(100) NOT NULL,
@@ -107,20 +98,6 @@ CREATE TABLE `movimentacoes_estoque` (
   CONSTRAINT `fk_movimentacoes_usuario` FOREIGN KEY (`id_usuario`) REFERENCES `usuarios` (`id_usuario`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
-CREATE TABLE `pedidos` (
-  `id_pedido` int NOT NULL AUTO_INCREMENT,
-  `id_cliente` int NOT NULL,
-  `id_funcionario` int DEFAULT NULL,
-  `data_pedido` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  `data_entrega` datetime DEFAULT NULL,
-  `status` enum('Aguardando Separação','Em Separação','Saiu para Entrega','Entregue','Cancelado') DEFAULT 'Aguardando Separação',
-  PRIMARY KEY (`id_pedido`),
-  KEY `fk_pedidos_cliente` (`id_cliente`),
-  KEY `fk_pedidos_funcionario` (`id_funcionario`),
-  CONSTRAINT `fk_pedidos_cliente` FOREIGN KEY (`id_cliente`) REFERENCES `usuarios` (`id_usuario`),
-  CONSTRAINT `fk_pedidos_funcionario` FOREIGN KEY (`id_funcionario`) REFERENCES `usuarios` (`id_usuario`) ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
-
 CREATE TABLE `produtos` (
   `id_produto` int NOT NULL AUTO_INCREMENT,
   `sku` varchar(40) NOT NULL,
@@ -152,6 +129,53 @@ CREATE TABLE `produtos` (
   CONSTRAINT `ck_produtos_multiplo` CHECK ((`multiplo_venda` >= 1))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
+CREATE TABLE `schema_migrations` (
+  `versao` varchar(20) NOT NULL,
+  `nome` varchar(200) NOT NULL,
+  `checksum` char(64) NOT NULL,
+  `aplicado_em` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `duracao_ms` int NOT NULL DEFAULT '0',
+  PRIMARY KEY (`versao`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE `pedido_historico` (
+  `id_historico` int NOT NULL AUTO_INCREMENT,
+  `id_pedido` int NOT NULL,
+  `status_anterior` enum('Aguardando Separação','Em Separação','Saiu para Entrega','Entregue','Cancelado') DEFAULT NULL,
+  `status_novo` enum('Aguardando Separação','Em Separação','Saiu para Entrega','Entregue','Cancelado') NOT NULL,
+  `id_usuario` int DEFAULT NULL,
+  `observacao` varchar(500) DEFAULT NULL,
+  `criado_em` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id_historico`),
+  KEY `idx_historico_pedido` (`id_pedido`,`criado_em`),
+  KEY `fk_historico_usuario` (`id_usuario`),
+  CONSTRAINT `fk_historico_pedido` FOREIGN KEY (`id_pedido`) REFERENCES `pedidos` (`id_pedido`) ON DELETE CASCADE,
+  CONSTRAINT `fk_historico_usuario` FOREIGN KEY (`id_usuario`) REFERENCES `usuarios` (`id_usuario`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE `pedidos` (
+  `id_pedido` int NOT NULL AUTO_INCREMENT,
+  `id_cliente` int NOT NULL,
+  `id_funcionario` int DEFAULT NULL,
+  `id_endereco` int DEFAULT NULL,
+  `endereco_entrega` json DEFAULT NULL,
+  `observacao` varchar(500) DEFAULT NULL,
+  `data_pedido` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `data_entrega_desejada` date DEFAULT NULL,
+  `data_entrega` datetime DEFAULT NULL,
+  `status` enum('Aguardando Separação','Em Separação','Saiu para Entrega','Entregue','Cancelado') NOT NULL DEFAULT 'Aguardando Separação',
+  `motivo_cancelamento` varchar(500) DEFAULT NULL,
+  `atualizado_em` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id_pedido`),
+  KEY `fk_pedidos_funcionario` (`id_funcionario`),
+  KEY `idx_pedidos_status_data` (`status`,`data_pedido`),
+  KEY `idx_pedidos_cliente_data` (`id_cliente`,`data_pedido`),
+  KEY `fk_pedidos_endereco` (`id_endereco`),
+  CONSTRAINT `fk_pedidos_cliente` FOREIGN KEY (`id_cliente`) REFERENCES `usuarios` (`id_usuario`),
+  CONSTRAINT `fk_pedidos_endereco` FOREIGN KEY (`id_endereco`) REFERENCES `enderecos` (`id_endereco`) ON DELETE SET NULL,
+  CONSTRAINT `fk_pedidos_funcionario` FOREIGN KEY (`id_funcionario`) REFERENCES `usuarios` (`id_usuario`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
 CREATE TABLE `usuarios` (
   `id_usuario` int NOT NULL AUTO_INCREMENT,
   `nome` varchar(100) NOT NULL,
@@ -179,4 +203,5 @@ INSERT INTO schema_migrations (versao, nome, checksum) VALUES
 ('002', 'normalizar_estrutura', '84f0ff32e8c849f2995d050734ffde5fcea6c0224957bc36889377a44d8fcad9'),
 ('003', 'catalogo', 'dbbb60290a47a4ab6b6f3790a1dc2e0d5fdc0c077815a004b1b3c2783f5c5c56'),
 ('004', 'autenticacao_b2b', '88bd98595b6de344c817744c8a4710dea2c23fd93668edbc695a7b8819cd5069'),
-('005', 'coluna_cnpj', '8a5d7ba4d1f2eb61684c6c6fade49369744d812d0d943c34621ff3d5b024ca9f');
+('005', 'coluna_cnpj', '8a5d7ba4d1f2eb61684c6c6fade49369744d812d0d943c34621ff3d5b024ca9f'),
+('006', 'pedidos', 'd1399aba1a98f090112b3989aa9bee2a1e0dd18b65da23fb92324388099c15da');
