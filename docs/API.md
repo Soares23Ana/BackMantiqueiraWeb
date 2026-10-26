@@ -16,6 +16,7 @@ Versão da API: **v1**. Os exemplos abaixo foram capturados da API rodando com o
 11. [Configurações](#11-configurações)
 12. [Saúde](#12-saúde)
 13. [Limitações conhecidas](#13-limitações-conhecidas)
+14. [Campanhas](#14-campanhas)
 
 ---
 
@@ -753,3 +754,65 @@ Erros: `422 VALIDACAO`, `404` (chave desconhecida).
 
 **Ferramentas**
 18. Testando com `curl` no Windows, acentos no corpo da requisição podem chegar fora do UTF-8 (`"Em Separação"` dá `422`). Use Insomnia/Postman ou envie o corpo de um arquivo UTF-8 (`--data-binary @arquivo.json`). O navegador não tem esse problema.
+
+---
+
+## 14. Campanhas
+
+Campanhas **não aplicam desconto**: são um título, um selo de texto (ex.: "Leve 8 pague 6", só um rótulo), um período e os produtos vinculados. Não há aprovação, grupos de clientes nem limite por cliente. A situação vem das datas: `agendada` (antes do início), `ativa` (no período) ou `encerrada` (depois do fim).
+
+| Método | Rota | Perfil | Descrição |
+|---|---|---|---|
+| GET | `/campanhas/ativas` | público | Campanhas no período, com os produtos ativos |
+| GET | `/campanhas?situacao=agendada|ativa|encerrada` | equipe | Todas, com situação |
+| GET | `/campanhas/:id` | equipe | Uma campanha |
+| POST | `/campanhas` | equipe | Cria |
+| PATCH | `/campanhas/:id` | equipe | Edita |
+| DELETE | `/campanhas/:id` | equipe | Exclui |
+
+### GET /campanhas/ativas (público)
+Os produtos vêm no mesmo formato da vitrine (`GET /produtos`), inclusive com `estoque` para quem estiver logado. Produtos desativados não aparecem. Ordem: as que terminam primeiro vêm antes.
+```json
+{
+  "campanhas": [
+    {
+      "id_campanha": 1,
+      "titulo": "Semana da Higiene",
+      "selo": "Leve 8 pague 6",
+      "inicio_em": "2026-10-25T03:00:00.000Z",
+      "fim_em": "2026-11-01T03:00:00.000Z",
+      "produtos": [
+        { "id_produto": 15, "sku": "SKU-115", "nome": "Anti-séptico bucal Colgate Plax ...", "imagem_url": "/img/colgate-plax.webp",
+          "categoria": { "...": "..." }, "marca": { "...": "..." }, "multiplo_venda": 1, "disponibilidade": "disponivel" }
+      ]
+    }
+  ]
+}
+```
+Para mostrar o selo nos cards da vitrine, cruze os `id_produto` desta resposta com os produtos de `GET /produtos` (a listagem de produtos não traz campanhas). Um produto pode estar em mais de uma campanha ativa.
+
+### POST /campanhas (equipe)
+```json
+{ "titulo": "Semana da Higiene", "selo": "Leve 8 pague 6", "inicio_em": "2026-11-01T00:00", "fim_em": "2026-11-08T00:00", "produtos": [15, 16, 17] }
+```
+- Obrigatórios: `titulo` (3 a 120 caracteres), `inicio_em`, `fim_em` (depois do início) e `produtos` (1 a 200 ids existentes, sem repetir). `selo` é opcional, até 40 caracteres.
+- Datas sem fuso são horário de Brasília.
+- `201`:
+```json
+{
+  "mensagem": "Campanha criada.",
+  "campanha": {
+    "id_campanha": 1, "titulo": "Semana da Higiene", "selo": "Leve 8 pague 6",
+    "inicio_em": "2026-11-01T03:00:00.000Z", "fim_em": "2026-11-08T03:00:00.000Z", "situacao": "agendada",
+    "produtos": [{ "id_produto": 15, "sku": "SKU-115", "nome": "...", "imagem_url": "/img/colgate-plax.webp", "ativo": true }],
+    "total_produtos": 3, "criado_em": "...", "atualizado_em": "..."
+  }
+}
+```
+- Erros: `422 VALIDACAO` (todos os campos em `detalhes`; produtos inexistentes são listados na mensagem).
+
+### PATCH /campanhas/:id (equipe)
+Qualquer subconjunto dos campos do `POST`. `produtos`, quando enviado, **substitui a lista inteira**. Para encerrar antes do previsto, envie `fim_em` com a data/hora atual. `200`: `{ "mensagem": "Campanha atualizada.", "campanha": { ... } }`.
+
+### DELETE /campanhas/:id (equipe)
+Exclui a campanha e os vínculos (os produtos não são afetados). `200`: `{ "mensagem": "Campanha excluída." }`.

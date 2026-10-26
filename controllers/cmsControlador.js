@@ -7,6 +7,7 @@ const logger = require('../lib/logger');
 const { ErroApi } = require('../lib/erros');
 const { ehEquipe } = require('../lib/perfis');
 const { ehCaminhoOuUrlSegura, gerarSlug } = require('../lib/texto');
+const { lerDataHora } = require('../lib/datas');
 
 const PASTA_UPLOADS = path.join(__dirname, '..', 'publico', 'uploads');
 
@@ -27,20 +28,6 @@ async function removerArquivo(caminho) {
 async function removerUploadDoBanner(imagemUrl) {
     const upload = imagemUrl && imagemUrl.match(/^\/arquivos\/uploads\/([0-9a-f-]{36}\.(?:jpg|png|webp|gif))$/);
     if (upload) await removerArquivo(path.join(PASTA_UPLOADS, upload[1]));
-}
-
-// Data/hora ISO. Sem fuso explícito ("2026-11-01T08:00"), considera horário de Brasília.
-function lerDataHora(valor, campo, erros) {
-    if (valor === undefined) return undefined;
-    if (valor === null || valor === '') return null;
-    const texto = String(valor);
-    const comFuso = /([zZ]|[+-]\d{2}:\d{2})$/.test(texto) ? texto : `${texto}${texto.length === 10 ? 'T00:00:00' : ''}-03:00`;
-    const data = new Date(comFuso);
-    if (!/^\d{4}-\d{2}-\d{2}/.test(texto) || Number.isNaN(data.getTime())) {
-        erros.push({ campo, mensagem: `${campo} deve ser uma data ISO (ex.: 2026-11-01T08:00).` });
-        return undefined;
-    }
-    return data;
 }
 
 // Campos do banner vindos de JSON ou multipart (no multipart tudo chega como texto).

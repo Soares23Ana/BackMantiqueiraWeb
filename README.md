@@ -147,6 +147,11 @@ Cada pedido nas respostas traz `pode_cancelar` (para quem fez a requisição) e,
 * `PUT /api/v1/cms/blocos/:chave` - Equipe: `{ titulo?, conteudo, ativo? }` cria ou substitui. A chave usa letras minúsculas, números e hífens.
 * `DELETE /api/v1/cms/blocos/:chave` - Equipe.
 
+### Campanhas (`/api/v1/campanhas`)
+Sem desconto: título, selo de texto (até 40 caracteres), período e produtos. Situação calculada pelas datas (`agendada`, `ativa`, `encerrada`).
+* `GET /api/v1/campanhas/ativas` - Público: campanhas no período, com os produtos ativos no formato da vitrine.
+* `GET /api/v1/campanhas?situacao=`, `GET /:id`, `POST`, `PATCH /:id` (produtos substitui a lista), `DELETE /:id` - Equipe.
+
 ### Configurações (`/api/v1/configuracoes`)
 * `GET /api/v1/configuracoes/publicas` - Público: `{ whatsapp, telefone_contato, email_contato, horario_atendimento, aviso_topo }` (`null` quando não preenchido).
 * `GET /api/v1/configuracoes` - Equipe: todas, com descrição e se são públicas (inclui a privada `meta_reposicao`).

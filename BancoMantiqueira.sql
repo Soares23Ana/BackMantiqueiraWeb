@@ -10,6 +10,18 @@ USE mantiqueira_db;
 
 SET FOREIGN_KEY_CHECKS = 0;
 
+CREATE TABLE `categorias` (
+  `id_categoria` int NOT NULL AUTO_INCREMENT,
+  `nome` varchar(100) NOT NULL,
+  `slug` varchar(120) NOT NULL,
+  `ordem` int NOT NULL DEFAULT '0',
+  `ativo` tinyint(1) NOT NULL DEFAULT '1',
+  `criado_em` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `atualizado_em` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id_categoria`),
+  UNIQUE KEY `uk_categorias_slug` (`slug`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
 CREATE TABLE `enderecos` (
   `id_endereco` int NOT NULL AUTO_INCREMENT,
   `id_usuario` int NOT NULL,
@@ -46,27 +58,6 @@ CREATE TABLE `itens_pedido` (
   CONSTRAINT `fk_itens_produto` FOREIGN KEY (`id_produto`) REFERENCES `produtos` (`id_produto`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
-CREATE TABLE `schema_migrations` (
-  `versao` varchar(20) NOT NULL,
-  `nome` varchar(200) NOT NULL,
-  `checksum` char(64) NOT NULL,
-  `aplicado_em` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  `duracao_ms` int NOT NULL DEFAULT '0',
-  PRIMARY KEY (`versao`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
-
-CREATE TABLE `categorias` (
-  `id_categoria` int NOT NULL AUTO_INCREMENT,
-  `nome` varchar(100) NOT NULL,
-  `slug` varchar(120) NOT NULL,
-  `ordem` int NOT NULL DEFAULT '0',
-  `ativo` tinyint(1) NOT NULL DEFAULT '1',
-  `criado_em` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  `atualizado_em` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id_categoria`),
-  UNIQUE KEY `uk_categorias_slug` (`slug`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
-
 CREATE TABLE `marcas` (
   `id_marca` int NOT NULL AUTO_INCREMENT,
   `nome` varchar(100) NOT NULL,
@@ -76,6 +67,46 @@ CREATE TABLE `marcas` (
   `atualizado_em` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id_marca`),
   UNIQUE KEY `uk_marcas_slug` (`slug`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE `produtos` (
+  `id_produto` int NOT NULL AUTO_INCREMENT,
+  `sku` varchar(40) NOT NULL,
+  `id_fornecedor` int DEFAULT NULL,
+  `id_categoria` int DEFAULT NULL,
+  `id_marca` int DEFAULT NULL,
+  `nome` varchar(150) NOT NULL,
+  `descricao` text,
+  `destaques` json DEFAULT NULL,
+  `imagem_url` varchar(2048) DEFAULT NULL,
+  `preco` decimal(10,2) DEFAULT NULL,
+  `quantidade_estoque` int NOT NULL DEFAULT '0',
+  `estoque_minimo` int NOT NULL DEFAULT '10',
+  `multiplo_venda` int NOT NULL DEFAULT '1',
+  `ativo` tinyint(1) NOT NULL DEFAULT '1',
+  `criado_em` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `atualizado_em` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id_produto`),
+  UNIQUE KEY `uk_produtos_sku` (`sku`),
+  KEY `fk_produtos_fornecedor` (`id_fornecedor`),
+  KEY `idx_produtos_ativo_nome` (`ativo`,`nome`),
+  KEY `fk_produtos_categoria` (`id_categoria`),
+  KEY `fk_produtos_marca` (`id_marca`),
+  CONSTRAINT `fk_produtos_categoria` FOREIGN KEY (`id_categoria`) REFERENCES `categorias` (`id_categoria`) ON DELETE SET NULL,
+  CONSTRAINT `fk_produtos_fornecedor` FOREIGN KEY (`id_fornecedor`) REFERENCES `fornecedores` (`id_fornecedor`) ON DELETE SET NULL,
+  CONSTRAINT `fk_produtos_marca` FOREIGN KEY (`id_marca`) REFERENCES `marcas` (`id_marca`) ON DELETE SET NULL,
+  CONSTRAINT `ck_produtos_estoque` CHECK ((`quantidade_estoque` >= 0)),
+  CONSTRAINT `ck_produtos_estoque_minimo` CHECK ((`estoque_minimo` >= 0)),
+  CONSTRAINT `ck_produtos_multiplo` CHECK ((`multiplo_venda` >= 1))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE `schema_migrations` (
+  `versao` varchar(20) NOT NULL,
+  `nome` varchar(200) NOT NULL,
+  `checksum` char(64) NOT NULL,
+  `aplicado_em` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `duracao_ms` int NOT NULL DEFAULT '0',
+  PRIMARY KEY (`versao`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 CREATE TABLE `movimentacoes_estoque` (
@@ -136,35 +167,25 @@ CREATE TABLE `pedidos` (
   CONSTRAINT `fk_pedidos_funcionario` FOREIGN KEY (`id_funcionario`) REFERENCES `usuarios` (`id_usuario`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
-CREATE TABLE `produtos` (
-  `id_produto` int NOT NULL AUTO_INCREMENT,
-  `sku` varchar(40) NOT NULL,
-  `id_fornecedor` int DEFAULT NULL,
-  `id_categoria` int DEFAULT NULL,
-  `id_marca` int DEFAULT NULL,
-  `nome` varchar(150) NOT NULL,
-  `descricao` text,
-  `destaques` json DEFAULT NULL,
-  `imagem_url` varchar(2048) DEFAULT NULL,
-  `preco` decimal(10,2) DEFAULT NULL,
-  `quantidade_estoque` int NOT NULL DEFAULT '0',
-  `estoque_minimo` int NOT NULL DEFAULT '10',
-  `multiplo_venda` int NOT NULL DEFAULT '1',
+CREATE TABLE `usuarios` (
+  `id_usuario` int NOT NULL AUTO_INCREMENT,
+  `nome` varchar(100) NOT NULL,
+  `razao_social` varchar(150) DEFAULT NULL,
+  `email` varchar(100) NOT NULL,
+  `senha` varchar(255) NOT NULL,
+  `cnpj` varchar(14) DEFAULT NULL,
+  `cnpj_original` varchar(18) DEFAULT NULL,
+  `telefone` varchar(20) DEFAULT NULL,
+  `tipo` enum('cliente','equipe') NOT NULL DEFAULT 'cliente',
+  `pode_gerenciar_equipe` tinyint(1) NOT NULL DEFAULT '0',
   `ativo` tinyint(1) NOT NULL DEFAULT '1',
+  `cargo` varchar(50) DEFAULT NULL,
   `criado_em` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  `atualizado_em` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id_produto`),
-  UNIQUE KEY `uk_produtos_sku` (`sku`),
-  KEY `fk_produtos_fornecedor` (`id_fornecedor`),
-  KEY `idx_produtos_ativo_nome` (`ativo`,`nome`),
-  KEY `fk_produtos_categoria` (`id_categoria`),
-  KEY `fk_produtos_marca` (`id_marca`),
-  CONSTRAINT `fk_produtos_categoria` FOREIGN KEY (`id_categoria`) REFERENCES `categorias` (`id_categoria`) ON DELETE SET NULL,
-  CONSTRAINT `fk_produtos_fornecedor` FOREIGN KEY (`id_fornecedor`) REFERENCES `fornecedores` (`id_fornecedor`) ON DELETE SET NULL,
-  CONSTRAINT `fk_produtos_marca` FOREIGN KEY (`id_marca`) REFERENCES `marcas` (`id_marca`) ON DELETE SET NULL,
-  CONSTRAINT `ck_produtos_estoque` CHECK ((`quantidade_estoque` >= 0)),
-  CONSTRAINT `ck_produtos_estoque_minimo` CHECK ((`estoque_minimo` >= 0)),
-  CONSTRAINT `ck_produtos_multiplo` CHECK ((`multiplo_venda` >= 1))
+  PRIMARY KEY (`id_usuario`),
+  UNIQUE KEY `email` (`email`),
+  UNIQUE KEY `uk_usuarios_cnpj` (`cnpj`),
+  CONSTRAINT `ck_usuarios_cnpj` CHECK (((`cnpj` is null) or regexp_like(`cnpj`,_utf8mb4'^[0-9]{14}$'))),
+  CONSTRAINT `ck_usuarios_marca_equipe` CHECK (((`tipo` = _utf8mb4'equipe') or (`pode_gerenciar_equipe` = false)))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 CREATE TABLE `blocos_cms` (
@@ -176,6 +197,31 @@ CREATE TABLE `blocos_cms` (
   `atualizado_em` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id_bloco`),
   UNIQUE KEY `uk_blocos_chave` (`chave`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE `campanhas` (
+  `id_campanha` int NOT NULL AUTO_INCREMENT,
+  `titulo` varchar(120) NOT NULL,
+  `selo` varchar(40) DEFAULT NULL,
+  `inicio_em` datetime NOT NULL,
+  `fim_em` datetime NOT NULL,
+  `id_usuario` int DEFAULT NULL,
+  `criado_em` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `atualizado_em` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id_campanha`),
+  KEY `idx_campanhas_periodo` (`inicio_em`,`fim_em`),
+  KEY `fk_campanhas_usuario` (`id_usuario`),
+  CONSTRAINT `fk_campanhas_usuario` FOREIGN KEY (`id_usuario`) REFERENCES `usuarios` (`id_usuario`) ON DELETE SET NULL,
+  CONSTRAINT `ck_campanhas_periodo` CHECK ((`fim_em` > `inicio_em`))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE `campanhas_produtos` (
+  `id_campanha` int NOT NULL,
+  `id_produto` int NOT NULL,
+  PRIMARY KEY (`id_campanha`,`id_produto`),
+  KEY `idx_campanhas_produtos_produto` (`id_produto`),
+  CONSTRAINT `fk_campanhas_produtos_campanha` FOREIGN KEY (`id_campanha`) REFERENCES `campanhas` (`id_campanha`) ON DELETE CASCADE,
+  CONSTRAINT `fk_campanhas_produtos_produto` FOREIGN KEY (`id_produto`) REFERENCES `produtos` (`id_produto`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 CREATE TABLE `configuracoes` (
@@ -230,27 +276,6 @@ CREATE TABLE `sincronizacoes_log` (
   CONSTRAINT `fk_sincronizacoes_usuario` FOREIGN KEY (`id_usuario`) REFERENCES `usuarios` (`id_usuario`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
-CREATE TABLE `usuarios` (
-  `id_usuario` int NOT NULL AUTO_INCREMENT,
-  `nome` varchar(100) NOT NULL,
-  `razao_social` varchar(150) DEFAULT NULL,
-  `email` varchar(100) NOT NULL,
-  `senha` varchar(255) NOT NULL,
-  `cnpj` varchar(14) DEFAULT NULL,
-  `cnpj_original` varchar(18) DEFAULT NULL,
-  `telefone` varchar(20) DEFAULT NULL,
-  `tipo` enum('cliente','equipe') NOT NULL DEFAULT 'cliente',
-  `pode_gerenciar_equipe` tinyint(1) NOT NULL DEFAULT '0',
-  `ativo` tinyint(1) NOT NULL DEFAULT '1',
-  `cargo` varchar(50) DEFAULT NULL,
-  `criado_em` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id_usuario`),
-  UNIQUE KEY `email` (`email`),
-  UNIQUE KEY `uk_usuarios_cnpj` (`cnpj`),
-  CONSTRAINT `ck_usuarios_cnpj` CHECK (((`cnpj` is null) or regexp_like(`cnpj`,_utf8mb4'^[0-9]{14}$'))),
-  CONSTRAINT `ck_usuarios_marca_equipe` CHECK (((`tipo` = _utf8mb4'equipe') or (`pode_gerenciar_equipe` = false)))
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
-
 SET FOREIGN_KEY_CHECKS = 1;
 
 -- Marca as migrations como aplicadas para que "npm run migrar" continue a partir daqui.
@@ -262,4 +287,5 @@ INSERT INTO schema_migrations (versao, nome, checksum) VALUES
 ('005', 'coluna_cnpj', '8a5d7ba4d1f2eb61684c6c6fade49369744d812d0d943c34621ff3d5b024ca9f'),
 ('006', 'pedidos', 'd1399aba1a98f090112b3989aa9bee2a1e0dd18b65da23fb92324388099c15da'),
 ('007', 'perfis_cliente_equipe', 'ece3b96f65fab70c24ab937552b739d59f63c48876995f34a795b3ca7fdf72b2'),
-('008', 'operacao', '6782d706ec5d18105f84e7daf60553c1cef6107bd5e106400cceb58518547daa');
+('008', 'operacao', '6782d706ec5d18105f84e7daf60553c1cef6107bd5e106400cceb58518547daa'),
+('009', 'campanhas', 'd0cf2e273a5be6c2060402809c19bdaa4e94649b8200f56d11a26129488c5f5b');

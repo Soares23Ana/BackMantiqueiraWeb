@@ -12,6 +12,21 @@ const PedidoHistorico = require('./PedidoHistorico');
 const BlocoCms = require('./BlocoCms');
 const Configuracao = require('./Configuracao');
 const SincronizacaoLog = require('./SincronizacaoLog');
+const Campanha = require('./Campanha');
+const CampanhaProduto = require('./CampanhaProduto');
+
+Campanha.belongsToMany(Produto, {
+    through: CampanhaProduto,
+    foreignKey: 'id_campanha',
+    otherKey: 'id_produto',
+    as: 'produtos'
+});
+Produto.belongsToMany(Campanha, {
+    through: CampanhaProduto,
+    foreignKey: 'id_produto',
+    otherKey: 'id_campanha',
+    as: 'campanhas'
+});
 
 SincronizacaoLog.belongsTo(Usuario, {
     foreignKey: 'id_usuario',
@@ -121,5 +136,7 @@ module.exports = {
     PedidoHistorico,
     BlocoCms,
     Configuracao,
-    SincronizacaoLog
+    SincronizacaoLog,
+    Campanha,
+    CampanhaProduto
 };
