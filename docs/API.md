@@ -391,6 +391,7 @@ O formato do CSV, as colunas e os jobs estão no [README](../README.md#importaç
 | GET | `/pedidos/meus` | cliente | Pedidos do cliente |
 | GET | `/pedidos` | equipe | Todos, com filtros |
 | GET | `/pedidos/:id_pedido` | equipe, ou cliente dono | Detalhe com histórico |
+| GET | `/pedidos/:id_pedido/repetir` | cliente dono | Sugestão para repetir o pedido |
 | PUT/PATCH | `/pedidos/:id_pedido/status` | equipe | Avança o status |
 | POST | `/pedidos/:id_pedido/cancelar` | equipe, ou cliente dono | Cancela e devolve o estoque |
 
@@ -481,6 +482,33 @@ Equipe vê qualquer pedido; cliente só os próprios (o de outro cliente respond
     "data": "2026-10-26T23:27:34.000Z", "usuario": { "id_usuario": 1, "nome": "Administrador", "tipo": "equipe" } }
 ]
 ```
+
+### GET /pedidos/:id_pedido/repetir (cliente dono)
+Sugere os itens de um pedido anterior (de qualquer status) ajustados ao catálogo de agora. **Não reserva estoque**: o checkout valida tudo de novo.
+```json
+{
+  "id_pedido_origem": 12,
+  "itens": [
+    { "id_produto": 15, "sku": "SKU-115", "nome": "Anti-séptico bucal Colgate Plax ...", "imagem_url": "/img/colgate-plax.webp",
+      "multiplo_venda": 1, "disponibilidade": "disponivel", "estoque": 24,
+      "quantidade_anterior": 4, "quantidade_sugerida": 4, "ajuste": null },
+    { "id_produto": 7, "sku": "SKU-107", "nome": "Fralda Huggies ...", "imagem_url": "/img/huggies.webp",
+      "multiplo_venda": 1, "disponibilidade": "ultimas_unidades", "estoque": 6,
+      "quantidade_anterior": 10, "quantidade_sugerida": 6, "ajuste": "reduzido_ao_estoque" }
+  ],
+  "itens_para_checkout": [{ "id_produto": 15, "quantidade": 4 }, { "id_produto": 7, "quantidade": 6 }],
+  "itens_ajustados": 1
+}
+```
+| `ajuste` | Significado |
+|---|---|
+| `null` | Mesma quantidade do pedido anterior |
+| `ajustado_ao_multiplo` | O múltiplo de venda mudou; arredondado para baixo, com no mínimo um múltiplo |
+| `reduzido_ao_estoque` | Menos estoque que o pedido anterior; sugere o máximo disponível |
+| `indisponivel` | Sem estoque agora (`quantidade_sugerida: 0`) |
+| `produto_inativo` | Produto fora de linha (`quantidade_sugerida: 0`) |
+
+`itens_para_checkout` já vem no formato de `POST /pedidos` (sem os itens zerados). Pedido de outro cliente ou inexistente: `404`.
 
 ### PUT /pedidos/:id_pedido/status (equipe)
 ```json

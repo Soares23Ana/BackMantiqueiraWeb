@@ -12,6 +12,7 @@ router.get('/', verificarPerfil(['equipe']), pedidoControlador.listarPedidos);
 router.get('/meus', verificarPerfil(['cliente']), pedidoControlador.listarMeusPedidos);
 // Equipe vê qualquer pedido; cliente só o próprio (a checagem de dono fica no controlador).
 router.get('/:id_pedido', verificarPerfil(['equipe', 'cliente']), pedidoControlador.obterPedido);
+router.get('/:id_pedido/repetir', verificarPerfil(['cliente']), pedidoControlador.repetirPedido);
 router.put('/:id_pedido/status', verificarPerfil(['equipe']), pedidoControlador.atualizarStatus);
 router.patch('/:id_pedido/status', verificarPerfil(['equipe']), pedidoControlador.atualizarStatus);
 router.post('/:id_pedido/cancelar', verificarPerfil(['equipe', 'cliente']), pedidoControlador.cancelarPedido);

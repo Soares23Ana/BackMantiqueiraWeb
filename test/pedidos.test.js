@@ -329,3 +329,53 @@ describe('consulta de pedidos', () => {
         await request(app).get('/api/v1/pedidos').set('Authorization', cliente.auth).expect(403);
     });
 });
+
+describe('repetir pedido (GET /pedidos/:id/repetir)', () => {
+    test('sugere os itens ajustados ao catálogo atual e o resultado serve direto no checkout', async () => {
+        const criar = (sku, estoque) => Produto.create({ sku, nome: `Produto ${sku}`, quantidade_estoque: estoque });
+        const ok = await criar('R-OK', 100);
+        const mult = await criar('R-MULT', 30);
+        const pouco = await criar('R-POUCO', 50);
+        const inativo = await criar('R-INATIVO', 50);
+        const zerado = await criar('R-ZERO', 50);
+        const { body } = await pedir(cliente.auth, {
+            itens: [
+                { id_produto: ok.id_produto, quantidade: 4 },
+                { id_produto: mult.id_produto, quantidade: 5 },
+                { id_produto: pouco.id_produto, quantidade: 10 },
+                { id_produto: inativo.id_produto, quantidade: 2 },
+                { id_produto: zerado.id_produto, quantidade: 2 }
+            ]
+        }).expect(201);
+        const id = body.pedido.id_pedido;
+
+        // O catálogo muda depois do pedido.
+        await mult.update({ multiplo_venda: 6 });
+        await pouco.update({ quantidade_estoque: 3 });
+        await inativo.update({ ativo: false });
+        await zerado.update({ quantidade_estoque: 0 });
+
+        const resposta = await request(app).get(`/api/v1/pedidos/${id}/repetir`).set('Authorization', cliente.auth).expect(200);
+        const porSku = Object.fromEntries(resposta.body.itens.map((i) => [i.sku, [i.quantidade_anterior, i.quantidade_sugerida, i.ajuste]]));
+        assert.deepEqual(porSku, {
+            'R-OK': [4, 4, null],
+            'R-MULT': [5, 6, 'ajustado_ao_multiplo'],
+            'R-POUCO': [10, 3, 'reduzido_ao_estoque'],
+            'R-INATIVO': [2, 0, 'produto_inativo'],
+            'R-ZERO': [2, 0, 'indisponivel']
+        });
+        assert.equal(resposta.body.id_pedido_origem, id);
+        assert.equal(resposta.body.itens_ajustados, 4);
+        assert.equal(resposta.body.itens_para_checkout.length, 3);
+
+        await pedir(cliente.auth, { itens: resposta.body.itens_para_checkout }).expect(201);
+    });
+
+    test('só o cliente dono pode repetir', async () => {
+        const { body } = await pedir(cliente.auth, { itens: [{ id_produto: produtos['SKU-101'], quantidade: 1 }] }).expect(201);
+        const url = `/api/v1/pedidos/${body.pedido.id_pedido}/repetir`;
+        await request(app).get(url).set('Authorization', outroCliente.auth).expect(404);
+        await request(app).get(url).set('Authorization', gerente.auth).expect(403);
+        await request(app).get('/api/v1/pedidos/999999/repetir').set('Authorization', cliente.auth).expect(404);
+    });
+});

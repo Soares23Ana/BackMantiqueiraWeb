@@ -7,6 +7,7 @@ const { somenteDigitos } = require('../lib/cnpj');
 const { apresentarCliente } = require('../lib/apresentacao');
 const { lerPaginacao, montarPaginacao } = require('../lib/paginacao');
 const servicoPedidos = require('../servicos/pedidos');
+const { disponibilidade } = require('../servicos/estoque');
 
 const INCLUDE_ITENS = {
     model: ItemPedido,
@@ -242,11 +243,78 @@ async function cancelarPedido(req, res) {
     });
 }
 
+/**
+ * GET /pedidos/:id_pedido/repetir (cliente dono): sugere os itens de um pedido anterior ajustados ao
+ * catálogo de agora. Não reserva estoque; o checkout valida tudo de novo.
+ * ajuste por item: null (igual ao anterior), ajustado_ao_multiplo, reduzido_ao_estoque, indisponivel ou produto_inativo.
+ */
+async function repetirPedido(req, res) {
+    const idPedido = lerIdPedido(req.params.id_pedido);
+    const pedido = await Pedido.findByPk(idPedido, {
+        attributes: ['id_pedido', 'id_cliente'],
+        include: [{
+            model: ItemPedido,
+            as: 'itens',
+            attributes: ['id_produto', 'quantidade'],
+            include: [{
+                model: Produto,
+                as: 'produto',
+                attributes: ['id_produto', 'sku', 'nome', 'imagem_url', 'ativo', 'quantidade_estoque', 'estoque_minimo', 'multiplo_venda']
+            }]
+        }]
+    });
+    if (!pedido || Number(pedido.id_cliente) !== Number(req.usuario.id)) {
+        throw new ErroApi(404, 'PEDIDO_NAO_ENCONTRADO', 'Pedido não encontrado.');
+    }
+
+    const itens = pedido.itens.map(({ quantidade: anterior, produto }) => {
+        const multiplo = Math.max(produto.multiplo_venda, 1);
+        // Múltiplo de venda pode ter mudado: arredonda para baixo, com no mínimo um múltiplo.
+        const ajustada = Math.max(Math.floor(anterior / multiplo), 1) * multiplo;
+        const maximoAgora = Math.floor(produto.quantidade_estoque / multiplo) * multiplo;
+        let sugerida = Math.min(ajustada, maximoAgora);
+        let ajuste = null;
+        if (!produto.ativo) {
+            sugerida = 0;
+            ajuste = 'produto_inativo';
+        } else if (maximoAgora === 0) {
+            ajuste = 'indisponivel';
+        } else if (sugerida < ajustada) {
+            ajuste = 'reduzido_ao_estoque';
+        } else if (ajustada !== anterior) {
+            ajuste = 'ajustado_ao_multiplo';
+        }
+        return {
+            id_produto: produto.id_produto,
+            sku: produto.sku,
+            nome: produto.nome,
+            imagem_url: produto.imagem_url,
+            multiplo_venda: multiplo,
+            disponibilidade: produto.ativo ? disponibilidade(produto) : 'indisponivel',
+            estoque: produto.quantidade_estoque,
+            quantidade_anterior: anterior,
+            quantidade_sugerida: sugerida,
+            ajuste
+        };
+    });
+
+    return res.status(200).json({
+        id_pedido_origem: pedido.id_pedido,
+        itens,
+        // Pronto para enviar em POST /pedidos (só os itens com quantidade sugerida).
+        itens_para_checkout: itens
+            .filter((item) => item.quantidade_sugerida > 0)
+            .map((item) => ({ id_produto: item.id_produto, quantidade: item.quantidade_sugerida })),
+        itens_ajustados: itens.filter((item) => item.ajuste !== null).length
+    });
+}
+
 module.exports = {
     criarPedido,
     listarPedidos,
     listarMeusPedidos,
     obterPedido,
     atualizarStatus,
-    cancelarPedido
+    cancelarPedido,
+    repetirPedido
 };
