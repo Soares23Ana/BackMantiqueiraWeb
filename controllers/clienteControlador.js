@@ -1,6 +1,7 @@
 const { Op } = require('sequelize');
 const sequelize = require('../db/conn');
 const { Endereco, ItemPedido, Pedido, Produto, Usuario } = require('../models');
+const logger = require('../lib/logger');
 
 const CAMPOS_ENDERECO = [
     'cep',
@@ -125,7 +126,7 @@ async function listarClientes(req, res) {
             }
         });
     } catch (erro) {
-        console.error('Erro ao listar clientes:', erro);
+        logger.error('Erro ao listar clientes.', { erro });
         return res.status(500).json({ mensagem: 'Erro ao listar clientes.' });
     }
 }
@@ -198,7 +199,7 @@ async function obterDetalhesCliente(req, res) {
             produtosMaisSolicitados
         });
     } catch (erro) {
-        console.error('Erro ao obter detalhes do cliente:', erro);
+        logger.error('Erro ao obter detalhes do cliente.', { erro });
         return res.status(500).json({ mensagem: 'Erro ao obter detalhes do cliente.' });
     }
 }
@@ -317,7 +318,7 @@ async function atualizarCliente(req, res) {
         if (erro.status === 404) {
             return res.status(404).json({ mensagem: erro.message });
         }
-        console.error('Erro ao atualizar cliente:', erro);
+        logger.error('Erro ao atualizar cliente.', { erro });
         return res.status(500).json({ mensagem: 'Erro ao atualizar cliente.' });
     }
 }

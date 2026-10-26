@@ -26,7 +26,6 @@ const Pedido = sequelize.define('Pedido', {
     },
     status: {
         type: DataTypes.ENUM(
-            'Pendente',
             'Aguardando Separação',
             'Em Separação',
             'Saiu para Entrega',

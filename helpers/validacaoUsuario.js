@@ -4,7 +4,7 @@ const regrasCadastro = () => {
     return [
         body('nome').trim().notEmpty().withMessage('O nome é obrigatório.'),
         body('email').trim().isEmail().withMessage('Informe um e-mail válido.'),
-        body('senha').notEmpty().withMessage('A senha é obrigatória.'),
+        body('senha').isLength({ min: 8, max: 72 }).withMessage('A senha deve ter entre 8 e 72 caracteres.'),
         body('telefone').optional({ checkFalsy: true }).trim().isLength({ max: 20 })
             .withMessage('O telefone deve ter no máximo 20 caracteres.'),
         body('razao_social').optional({ checkFalsy: true }).trim().isLength({ max: 150 })

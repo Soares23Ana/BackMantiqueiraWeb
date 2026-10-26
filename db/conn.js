@@ -1,14 +1,22 @@
 const { Sequelize } = require('sequelize');
+const config = require('../config/ambiente');
 
-const sequelize = new Sequelize(
-    process.env.DB_NAME || 'mantiqueira_db',
-    process.env.DB_USER || 'root',
-    process.env.DB_PASSWORD || '',
-    {
-        host: process.env.DB_HOST || 'localhost',
-        dialect: 'mysql',
-        logging: false
+const sequelize = new Sequelize(config.db.nome, config.db.usuario, config.db.senha, {
+    host: config.db.host,
+    port: config.db.porta,
+    dialect: 'mysql',
+    logging: false,
+    timezone: config.db.timezone,
+    pool: {
+        max: config.db.poolMax,
+        min: 0,
+        acquire: 30000,
+        idle: 10000
+    },
+    dialectOptions: {
+        connectTimeout: 10000,
+        charset: 'utf8mb4'
     }
-);
+});
 
 module.exports = sequelize;

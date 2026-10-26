@@ -1,5 +1,6 @@
 const { Op } = require('sequelize');
 const { Usuario, Produto, Pedido } = require('../models');
+const logger = require('../lib/logger');
 
 async function contarIndicadoresOperacionais() {
     const [pedidosPendentes, estoqueBaixo] = await Promise.all([
@@ -23,7 +24,7 @@ async function obterEstatisticas(req, res) {
             clientesAtivos
         });
     } catch (erro) {
-        console.error('Erro ao obter estatísticas do painel:', erro);
+        logger.error('Erro ao obter estatísticas do painel.', { erro });
         return res.status(500).json({ mensagem: 'Erro ao carregar estatísticas do painel.' });
     }
 }
@@ -32,7 +33,7 @@ async function obterContadores(req, res) {
     try {
         return res.status(200).json(await contarIndicadoresOperacionais());
     } catch (erro) {
-        console.error('Erro ao obter contadores operacionais:', erro);
+        logger.error('Erro ao obter contadores operacionais.', { erro });
         return res.status(500).json({ mensagem: 'Erro ao carregar contadores operacionais.' });
     }
 }
@@ -58,7 +59,7 @@ async function obterAlertasReposicao(req, res) {
         });
         return res.status(200).json({ alertas });
     } catch (erro) {
-        console.error('Erro ao obter alertas de reposição:', erro);
+        logger.error('Erro ao obter alertas de reposição.', { erro });
         return res.status(500).json({ mensagem: 'Erro ao carregar alertas de reposição.' });
     }
 }

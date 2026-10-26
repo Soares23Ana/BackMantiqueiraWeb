@@ -2,19 +2,12 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const { UniqueConstraintError } = require('sequelize');
 const { Usuario } = require('../models');
-const sequelize = require('../db/conn');
+const logger = require('../lib/logger');
 
 async function cadastrar(req, res) {
     const { nome, email, senha, telefone, razao_social, cnpj_cpf, tipo, chave_gestor } = req.body;
     const emailCorporativo = typeof email === 'string' &&
         email.toLowerCase().endsWith('@mantiqueira.com');
-    console.log('BODY RECEBIDO:', {
-        tipo,
-        emailCorporativo,
-        chaveGestorEnviada: typeof chave_gestor === 'string'
-    });
-    console.log('CHAVE ENV CONFIGURADA:', Boolean(process.env.CHAVE_CADASTRO_GESTOR));
-
     let tipoFinal = 'cliente';
     if (tipo === 'gerente') {
         const chaveGestorValida = typeof process.env.CHAVE_CADASTRO_GESTOR === 'string' &&
@@ -38,7 +31,6 @@ async function cadastrar(req, res) {
         }
 
         const senhaHash = await bcrypt.hash(senha, 12);
-        console.log('TIPO QUE SERÁ SALVO:', tipoFinal);
         const usuarioNovo = await Usuario.create({
             nome,
             razao_social,
@@ -56,7 +48,7 @@ async function cadastrar(req, res) {
         if (erro instanceof UniqueConstraintError) {
             return res.status(409).json({ mensagem: 'E-mail já cadastrado.' });
         }
-        console.error('Erro ao cadastrar usuário:', erro);
+        logger.error('Erro ao cadastrar usuário.', { erro });
         return res.status(500).json({ mensagem: 'Erro ao cadastrar usuário.' });
     }
 }
@@ -76,7 +68,7 @@ async function autenticar(req, res) {
             return res.status(401).json({ mensagem: 'E-mail ou senha incorretos.' });
         }
         if (!process.env.JWT_SECRET) {
-            console.error('JWT_SECRET não está configurado.');
+            logger.error('JWT_SECRET não está configurado.');
             return res.status(500).json({ mensagem: 'Erro ao autenticar usuário.' });
         }
 
@@ -98,7 +90,7 @@ async function autenticar(req, res) {
             }
         });
     } catch (erro) {
-        console.error('Erro ao autenticar usuário:', erro);
+        logger.error('Erro ao autenticar usuário.', { erro });
         return res.status(500).json({ mensagem: 'Erro ao autenticar usuário.' });
     }
 }
@@ -115,21 +107,9 @@ async function listarTodos(req, res) {
         });
         return res.status(200).json({ usuarios });
     } catch (erro) {
-        console.error('Erro ao listar usuários:', erro);
+        logger.error('Erro ao listar usuários.', { erro });
         return res.status(500).json({ mensagem: 'Erro ao listar usuários.' });
     }
 }
 
-async function verificarConexao(req, res) {
-    try {
-        await sequelize.authenticate();
-        return res.status(200).json({
-            mensagem: 'API e banco de dados estão funcionando.'
-        });
-    } catch (erro) {
-        console.error('Erro ao verificar conexão com o banco de dados:', erro);
-        return res.status(500).json({ mensagem: 'Erro ao conectar ao banco de dados.' });
-    }
-}
-
-module.exports = { cadastrar, autenticar, obterSessao, listarTodos, verificarConexao };
+module.exports = { cadastrar, autenticar, obterSessao, listarTodos };

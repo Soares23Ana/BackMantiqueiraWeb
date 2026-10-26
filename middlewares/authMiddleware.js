@@ -1,4 +1,5 @@
 const jwt = require('jsonwebtoken');
+const logger = require('../lib/logger');
 
 function autenticarToken(req, res, next) {
     const authHeader = req.get('Authorization');
@@ -13,7 +14,7 @@ function autenticarToken(req, res, next) {
     }
 
     if (!process.env.JWT_SECRET) {
-        console.error('JWT_SECRET não está configurado.');
+        logger.error('JWT_SECRET não está configurado.');
         return res.status(500).json({ mensagem: 'Erro ao validar autenticação.' });
     }
 

@@ -3,6 +3,7 @@ const fsPromises = require('node:fs/promises');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 const multer = require('multer');
+const logger = require('../lib/logger');
 
 const pastaUploads = path.join(__dirname, '..', 'publico', 'uploads');
 fs.mkdirSync(pastaUploads, { recursive: true });
@@ -81,10 +82,10 @@ async function verificarConteudoImagem(req, res, next) {
             await fsPromises.unlink(req.file.path);
         } catch (erroRemocao) {
             if (erroRemocao.code !== 'ENOENT') {
-                console.error('Erro ao remover imagem inválida:', erroRemocao);
+                logger.error('Erro ao remover imagem inválida.', { erro: erroRemocao });
             }
         }
-        console.error('Erro ao validar imagem enviada:', erro);
+        logger.error('Erro ao validar imagem enviada.', { erro });
         return res.status(500).json({ mensagem: 'Não foi possível validar a imagem enviada.' });
     }
 }

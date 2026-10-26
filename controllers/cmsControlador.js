@@ -1,5 +1,6 @@
 const fs = require('node:fs/promises');
 const { Banner } = require('../models');
+const logger = require('../lib/logger');
 
 async function removerArquivo(caminho) {
     if (!caminho) {
@@ -9,7 +10,7 @@ async function removerArquivo(caminho) {
         await fs.unlink(caminho);
     } catch (erro) {
         if (erro.code !== 'ENOENT') {
-            console.error('Erro ao remover upload não utilizado:', erro);
+            logger.error('Erro ao remover upload não utilizado.', { erro });
         }
     }
 }
@@ -22,7 +23,7 @@ async function listarBanners(req, res) {
         });
         return res.status(200).json({ banners });
     } catch (erro) {
-        console.error('Erro ao listar banners:', erro);
+        logger.error('Erro ao listar banners.', { erro });
         return res.status(500).json({ mensagem: 'Erro ao listar banners.' });
     }
 }
@@ -73,7 +74,7 @@ async function salvarBanner(req, res) {
         });
     } catch (erro) {
         await removerArquivo(req.file.path);
-        console.error('Erro ao salvar banner:', erro);
+        logger.error('Erro ao salvar banner.', { erro });
         return res.status(500).json({ mensagem: 'Erro ao salvar banner.' });
     }
 }

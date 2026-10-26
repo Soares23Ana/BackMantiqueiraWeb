@@ -1,6 +1,7 @@
 const { Op } = require('sequelize');
 const sequelize = require('../db/conn');
 const { Usuario, Produto, Pedido, ItemPedido } = require('../models');
+const logger = require('../lib/logger');
 
 const STATUS_PEDIDO = [
     'Aguardando Separação',
@@ -105,7 +106,7 @@ async function criarPedido(req, res) {
         if (erro.statusHttp) {
             return res.status(erro.statusHttp).json({ mensagem: erro.message });
         }
-        console.error('Erro ao criar pedido:', erro);
+        logger.error('Erro ao criar pedido.', { erro });
         return res.status(500).json({ mensagem: 'Erro ao criar pedido.' });
     }
 }
@@ -140,7 +141,7 @@ async function listarPedidos(req, res) {
         });
         return res.status(200).json({ pedidos });
     } catch (erro) {
-        console.error('Erro ao listar pedidos:', erro);
+        logger.error('Erro ao listar pedidos.', { erro });
         return res.status(500).json({ mensagem: 'Erro ao listar pedidos.' });
     }
 }
@@ -182,7 +183,7 @@ async function obterPedido(req, res) {
 
         return res.status(200).json({ pedido });
     } catch (erro) {
-        console.error('Erro ao obter pedido:', erro);
+        logger.error('Erro ao obter pedido.', { erro });
         return res.status(500).json({ mensagem: 'Erro ao obter pedido.' });
     }
 }
@@ -206,7 +207,7 @@ async function atualizarStatus(req, res) {
             status,
             data_entrega: status === 'Entregue' ? new Date() : null
         });
-        console.log(`[NOTIFICAÇÃO AUTOMÁTICA] Pedido #${idPedido} atualizado para: ${status}`);
+        logger.info('[NOTIFICAÇÃO AUTOMÁTICA] Status do pedido atualizado.', { id_pedido: idPedido, status });
         return res.status(200).json({
             mensagem: 'Status do pedido atualizado.',
             pedido: {
@@ -216,7 +217,7 @@ async function atualizarStatus(req, res) {
             }
         });
     } catch (erro) {
-        console.error('Erro ao atualizar status do pedido:', erro);
+        logger.error('Erro ao atualizar status do pedido.', { erro });
         return res.status(500).json({ mensagem: 'Erro ao atualizar status do pedido.' });
     }
 }

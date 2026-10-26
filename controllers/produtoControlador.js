@@ -1,4 +1,5 @@
 const { Fornecedor, Produto } = require('../models');
+const logger = require('../lib/logger');
 
 async function listarTodos(req, res) {
     try {
@@ -11,7 +12,7 @@ async function listarTodos(req, res) {
         });
         return res.status(200).json(produtos);
     } catch (erro) {
-        console.error('Erro ao procurar produtos:', erro);
+        logger.error('Erro ao procurar produtos.', { erro });
         return res.status(500).json({ mensagem: 'Erro ao procurar produtos.' });
     }
 }
@@ -35,7 +36,7 @@ async function cadastrar(req, res) {
             id_produto: produto.id_produto
         });
     } catch (erro) {
-        console.error('Erro ao cadastrar produto:', erro);
+        logger.error('Erro ao cadastrar produto.', { erro });
         return res.status(500).json({ mensagem: 'Erro ao cadastrar produto.' });
     }
 }
