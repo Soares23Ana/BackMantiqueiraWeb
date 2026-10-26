@@ -198,6 +198,10 @@ async function importarCatalogo(conteudo, {
             let produto = porSku.get(dados.sku.toUpperCase());
             let alterado = false;
             if (!produto) {
+                if (somenteEstoque) {
+                    registrarErros(item.linha, dados.sku, [{ campo: 'sku', mensagem: 'SKU não cadastrado. O arquivo de estoque não cria produtos.' }]);
+                    continue;
+                }
                 if (!dados.nome) {
                     registrarErros(item.linha, dados.sku, [{ campo: 'nome', mensagem: 'Produto novo exige o nome.' }]);
                     continue;

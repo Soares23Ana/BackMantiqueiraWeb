@@ -180,6 +180,31 @@ describe('importação por pasta (jobs)', () => {
         assert.deepEqual(inativos.map((p) => p.sku), ['LATIN-1', 'NOVO-A']);
     });
 
+    test('arquivos de importacao/exemplos/ funcionam como esperado na demo', async () => {
+        const { processarPasta } = require('../servicos/sincronizacao');
+        const { importarCatalogo } = require('../servicos/importadorCatalogo');
+        const exemplos = path.join(__dirname, '..', 'importacao', 'exemplos');
+
+        const catalogo = await importarCatalogo(fs.readFileSync(path.join(exemplos, 'catalogo_exemplo.csv'), 'utf8'),
+            { simular: true, desativarAusentes: true });
+        assert.equal(catalogo.com_erro, 0);
+        assert.equal(catalogo.criados, 1);
+
+        fs.copyFileSync(path.join(exemplos, 'estoque_exemplo.csv'), path.join(entrada(), 'estoque_exemplo.csv'));
+        const [resultado] = await processarPasta('estoque', base);
+        assert.equal(resultado.status, 'parcial');
+        assert.equal(await estoqueDe('SKU-109'), 20);
+        const [[log]] = await sequelize.query('SELECT relatorio FROM sincronizacoes_log WHERE id_sincronizacao = ?',
+            { replacements: [resultado.id_sincronizacao] });
+        assert.deepEqual(log.relatorio.erros.map((e) => [e.sku, e.mensagem]),
+            [['SKU-999', 'SKU não cadastrado. O arquivo de estoque não cria produtos.']]);
+
+        // Volta o estoque do catálogo original; o teste do painel depende dele.
+        for (const [sku, quantidade] of [['SKU-103', 8], ['SKU-107', 6], ['SKU-109', 4], ['SKU-115', 25]]) {
+            await Produto.update({ quantidade_estoque: quantidade }, { where: { sku } });
+        }
+    });
+
     test('jobs têm expressões válidas e ficam desligados nos testes', () => {
         const cron = require('node-cron');
         const { DEFINICOES, situacaoJobs } = require('../jobs');

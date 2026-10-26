@@ -4,5 +4,7 @@ node_modules/
 !.env.example
 *.pem
 publico/uploads/
-importacao/*
-!importacao/.gitkeep
+# Pastas usadas pelos jobs de importação (os exemplos em importacao/exemplos/ ficam no Git)
+importacao/entrada/
+importacao/processados/
+importacao/rejeitados/

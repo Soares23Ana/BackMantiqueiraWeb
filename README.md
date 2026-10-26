@@ -91,6 +91,8 @@ Os testes usam o banco `DB_NAME_TEST` (padrão `mantiqueira_test`), que é **apa
 
 ## 📌 Convenções da API
 
+> O contrato completo, com exemplos de requisição e resposta de cada endpoint e as limitações conhecidas, está em [`docs/API.md`](docs/API.md).
+
 * Todas as rotas ficam sob **`/api/v1`**. Exceções: `GET /saude` e os arquivos em `/arquivos/...`.
 * Erros sempre no formato:
 
@@ -179,6 +181,8 @@ A API lê arquivos colocados em `importacao/entrada/` (pasta configurável em `I
 |---|---|---|---|
 | `carga-completa` | Meia-noite | `catalogo*.csv` | Importa tudo e desativa produtos ausentes |
 | `estoque` | A cada 30 min | `estoque*.csv` | Aplica só `sku` e `estoque` (outras colunas são ignoradas) |
+
+Arquivos de exemplo para demonstração ficam em `importacao/exemplos/` (fora das pastas lidas pelos jobs): `catalogo_exemplo.csv` (o catálogo completo com 1 produto novo e 4 alterações, seguro para a carga completa) e `estoque_exemplo.csv` (4 atualizações e 1 SKU inexistente, para mostrar o relatório de erros). Para testar um job, copie o arquivo para `importacao/entrada/`.
 
 Os arquivos são processados em ordem alfabética (use data/hora no nome, ex.: `estoque_20261026_1430.csv`) e depois movidos para `processados/` ou `rejeitados/`, com um `.relatorio.json` ao lado. Cada execução fica em `sincronizacoes_log`. Uma trava do MySQL (`GET_LOCK`) garante que, com várias instâncias da API, só uma rode cada job, e que job e upload não importem ao mesmo tempo. `JOBS_ATIVOS=false` desliga os jobs.
 
