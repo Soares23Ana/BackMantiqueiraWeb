@@ -10,6 +10,15 @@ USE mantiqueira_db;
 
 SET FOREIGN_KEY_CHECKS = 0;
 
+CREATE TABLE `schema_migrations` (
+  `versao` varchar(20) NOT NULL,
+  `nome` varchar(200) NOT NULL,
+  `checksum` char(64) NOT NULL,
+  `aplicado_em` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `duracao_ms` int NOT NULL DEFAULT '0',
+  PRIMARY KEY (`versao`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
 CREATE TABLE `categorias` (
   `id_categoria` int NOT NULL AUTO_INCREMENT,
   `nome` varchar(100) NOT NULL,
@@ -129,15 +138,6 @@ CREATE TABLE `produtos` (
   CONSTRAINT `ck_produtos_multiplo` CHECK ((`multiplo_venda` >= 1))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
-CREATE TABLE `schema_migrations` (
-  `versao` varchar(20) NOT NULL,
-  `nome` varchar(200) NOT NULL,
-  `checksum` char(64) NOT NULL,
-  `aplicado_em` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  `duracao_ms` int NOT NULL DEFAULT '0',
-  PRIMARY KEY (`versao`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
-
 CREATE TABLE `pedido_historico` (
   `id_historico` int NOT NULL AUTO_INCREMENT,
   `id_pedido` int NOT NULL,
@@ -185,14 +185,16 @@ CREATE TABLE `usuarios` (
   `cnpj` varchar(14) DEFAULT NULL,
   `cnpj_original` varchar(18) DEFAULT NULL,
   `telefone` varchar(20) DEFAULT NULL,
-  `tipo` enum('cliente','funcionario','gerente','admin') NOT NULL DEFAULT 'cliente',
+  `tipo` enum('cliente','equipe') NOT NULL DEFAULT 'cliente',
+  `pode_gerenciar_equipe` tinyint(1) NOT NULL DEFAULT '0',
   `ativo` tinyint(1) NOT NULL DEFAULT '1',
   `cargo` varchar(50) DEFAULT NULL,
   `criado_em` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id_usuario`),
   UNIQUE KEY `email` (`email`),
   UNIQUE KEY `uk_usuarios_cnpj` (`cnpj`),
-  CONSTRAINT `ck_usuarios_cnpj` CHECK (((`cnpj` is null) or regexp_like(`cnpj`,_utf8mb4'^[0-9]{14}$')))
+  CONSTRAINT `ck_usuarios_cnpj` CHECK (((`cnpj` is null) or regexp_like(`cnpj`,_utf8mb4'^[0-9]{14}$'))),
+  CONSTRAINT `ck_usuarios_marca_equipe` CHECK (((`tipo` = _utf8mb4'equipe') or (`pode_gerenciar_equipe` = false)))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 SET FOREIGN_KEY_CHECKS = 1;
@@ -204,4 +206,5 @@ INSERT INTO schema_migrations (versao, nome, checksum) VALUES
 ('003', 'catalogo', 'dbbb60290a47a4ab6b6f3790a1dc2e0d5fdc0c077815a004b1b3c2783f5c5c56'),
 ('004', 'autenticacao_b2b', '88bd98595b6de344c817744c8a4710dea2c23fd93668edbc695a7b8819cd5069'),
 ('005', 'coluna_cnpj', '8a5d7ba4d1f2eb61684c6c6fade49369744d812d0d943c34621ff3d5b024ca9f'),
-('006', 'pedidos', 'd1399aba1a98f090112b3989aa9bee2a1e0dd18b65da23fb92324388099c15da');
+('006', 'pedidos', 'd1399aba1a98f090112b3989aa9bee2a1e0dd18b65da23fb92324388099c15da'),
+('007', 'perfis_cliente_equipe', 'ece3b96f65fab70c24ab937552b739d59f63c48876995f34a795b3ca7fdf72b2');

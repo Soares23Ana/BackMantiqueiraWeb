@@ -2,24 +2,24 @@ const express = require('express');
 const router = express.Router();
 const painelControlador = require('../controllers/painelControlador');
 const autenticarToken = require('../middlewares/authMiddleware');
-const verificarPerfil = require('../middlewares/roleMiddleware');
+const { exigirEquipe } = require('../middlewares/roleMiddleware');
 
 router.get(
     '/alertas-reposicao',
     autenticarToken,
-    verificarPerfil(['gerente', 'admin']),
+    exigirEquipe,
     painelControlador.obterAlertasReposicao
 );
 router.get(
     '/contadores',
     autenticarToken,
-    verificarPerfil(['gerente', 'funcionario', 'admin']),
+    exigirEquipe,
     painelControlador.obterContadores
 );
 router.get(
     '/',
     autenticarToken,
-    verificarPerfil(['gerente', 'funcionario', 'admin']),
+    exigirEquipe,
     painelControlador.obterEstatisticas
 );
 

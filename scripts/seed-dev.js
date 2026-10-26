@@ -7,9 +7,10 @@ const config = require('../config/ambiente');
 const SENHA_PADRAO = process.env.SEED_SENHA || 'Mantiqueira@2026';
 
 const USUARIOS = [
-    { nome: 'Administrador Mantiqueira', email: 'admin@mantiqueira.com', tipo: 'admin', cargo: 'Administrador' },
-    { nome: 'Gerente Geral', email: 'gerente@mantiqueira.com', tipo: 'gerente', cargo: 'Gerente' },
-    { nome: 'Carlos Estoquista', email: 'funcionario@mantiqueira.com', tipo: 'funcionario', cargo: 'Estoquista', telefone: '11977777777' },
+    // O primeiro usuário da equipe pode gerenciar a equipe (criar, editar e desativar usuários).
+    { nome: 'Administrador Mantiqueira', email: 'admin@mantiqueira.com', tipo: 'equipe', pode_gerenciar_equipe: true, cargo: 'Administrador' },
+    { nome: 'Gerente Geral', email: 'gerente@mantiqueira.com', tipo: 'equipe', cargo: 'Gerente' },
+    { nome: 'Carlos Estoquista', email: 'funcionario@mantiqueira.com', tipo: 'equipe', cargo: 'Estoquista', telefone: '11977777777' },
     {
         nome: 'Mercadinho da Esquina',
         razao_social: 'Mercadinho da Esquina LTDA',
@@ -63,7 +64,7 @@ async function principal() {
             if (criado && endereco) {
                 await Endereco.create({ ...endereco, id_usuario: usuario.id_usuario });
             }
-            console.log(`${criado ? 'criado   ' : 'existente'} ${dados.tipo.padEnd(11)} ${dados.cnpj || dados.email}`);
+            console.log(`${criado ? 'criado   ' : 'existente'} ${dados.tipo.padEnd(8)} ${dados.cnpj || dados.email}${dados.pode_gerenciar_equipe ? ' (gerencia a equipe)' : ''}`);
         }
         console.log(`\nSenha dos usuários criados${redefinir ? '/redefinidos' : ''}: ${SENHA_PADRAO}`);
     } finally {

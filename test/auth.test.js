@@ -43,7 +43,7 @@ const CREDENCIAIS_INVALIDAS = { sucesso: false, mensagem: 'Credenciais inválida
 
 before(async () => {
     ({ app, sequelize } = await prepararApp());
-    admin = await criarUsuario('admin');
+    admin = await criarUsuario('equipe', { pode_gerenciar_equipe: true });
 });
 
 after(async () => {
@@ -116,7 +116,7 @@ describe('login', () => {
 
     before(async () => {
         const criada = await request(app).post('/api/v1/admin/usuarios').set('Authorization', admin.auth)
-            .send({ nome: 'Gerente Teste', email: 'gerente.login@mantiqueira.com', senha: SENHA, tipo: 'gerente' })
+            .send({ nome: 'Gerente Teste', email: 'gerente.login@mantiqueira.com', senha: SENHA, cargo: 'Gerente' })
             .expect(201);
         equipeEmail = criada.body.usuario.email;
     });
@@ -124,7 +124,7 @@ describe('login', () => {
     test('cliente entra com CNPJ (com ou sem pontuação) e recebe { token, usuario }', async () => {
         const resposta = await login(CNPJ_CLIENTE).expect(200);
         assert.deepEqual(Object.keys(resposta.body).sort(), ['token', 'usuario']);
-        assert.deepEqual(Object.keys(resposta.body.usuario).sort(), ['email', 'id', 'nome', 'tipo']);
+        assert.deepEqual(Object.keys(resposta.body.usuario).sort(), ['email', 'id', 'nome', 'pode_gerenciar_equipe', 'tipo']);
         assert.equal(resposta.body.usuario.tipo, 'cliente');
         await login('11222333000181').expect(200);
         await request(app).get('/api/v1/auth/me').set('Authorization', `Bearer ${resposta.body.token}`).expect(200);
@@ -132,7 +132,8 @@ describe('login', () => {
 
     test('equipe entra com e-mail (sem diferenciar maiúsculas)', async () => {
         const resposta = await login('Gerente.Login@Mantiqueira.com').expect(200);
-        assert.equal(resposta.body.usuario.tipo, 'gerente');
+        assert.equal(resposta.body.usuario.tipo, 'equipe');
+        assert.equal(resposta.body.usuario.pode_gerenciar_equipe, false);
     });
 
     test('cliente usando e-mail no lugar do CNPJ falha', async () => {
@@ -197,7 +198,7 @@ describe('permissões', () => {
 
     before(async () => {
         cliente = await criarUsuario('cliente');
-        funcionario = await criarUsuario('funcionario');
+        funcionario = await criarUsuario('equipe');
     });
 
     test('cliente em rotas administrativas recebe 403 genérico', async () => {
@@ -220,9 +221,10 @@ describe('permissões', () => {
         }
     });
 
-    test('/admin é só do admin; visitante recebe 401', async () => {
+    test('/admin exige pode_gerenciar_equipe; visitante recebe 401', async () => {
         await request(app).get('/api/v1/admin/usuarios').set('Authorization', funcionario.auth).expect(403);
-        const gerente = await criarUsuario('gerente');
+        await request(app).get('/api/v1/auth/users').set('Authorization', funcionario.auth).expect(403);
+        const gerente = await criarUsuario('equipe', { cargo: 'Gerente' });
         await request(app).post('/api/v1/admin/usuarios').set('Authorization', gerente.auth).send({}).expect(403);
         await request(app).get('/api/v1/admin/usuarios').expect(401);
         await request(app).get('/api/v1/admin/usuarios').set('Authorization', admin.auth).expect(200);
@@ -231,17 +233,19 @@ describe('permissões', () => {
     test('perfil alterado no banco vale na hora, sem esperar o token expirar', async () => {
         const promovido = await criarUsuario('cliente');
         await request(app).get('/api/v1/clientes').set('Authorization', promovido.auth).expect(403);
-        await sequelize.query("UPDATE usuarios SET tipo = 'gerente' WHERE id_usuario = ?", { replacements: [promovido.usuario.id_usuario] });
+        await sequelize.query("UPDATE usuarios SET tipo = 'equipe' WHERE id_usuario = ?", { replacements: [promovido.usuario.id_usuario] });
         await request(app).get('/api/v1/clientes').set('Authorization', promovido.auth).expect(200);
     });
 });
 
 describe('equipe (POST/PATCH /admin/usuarios)', () => {
-    test('admin cria funcionário sem CNPJ; não aceita tipo cliente nem campo cnpj', async () => {
+    test('cria usuário da equipe sem CNPJ; não aceita tipo nem campo cnpj', async () => {
         const criado = await request(app).post('/api/v1/admin/usuarios').set('Authorization', admin.auth)
-            .send({ nome: 'Ana Separação', email: 'ana@mantiqueira.com', senha: SENHA, tipo: 'funcionario', cargo: 'Separadora' })
+            .send({ nome: 'Ana Separação', email: 'ana@mantiqueira.com', senha: SENHA, cargo: 'Separadora' })
             .expect(201);
         assert.equal(criado.body.usuario.cnpj, null);
+        assert.equal(criado.body.usuario.tipo, 'equipe');
+        assert.equal(criado.body.usuario.pode_gerenciar_equipe, false);
         assert.equal(criado.body.usuario.senha, undefined);
         await login('ana@mantiqueira.com').expect(200);
 
@@ -250,10 +254,10 @@ describe('equipe (POST/PATCH /admin/usuarios)', () => {
         assert.deepEqual(cliente.body.detalhes.map((d) => d.campo).sort(), ['cnpj', 'tipo']);
 
         await request(app).post('/api/v1/admin/usuarios').set('Authorization', admin.auth)
-            .send({ nome: 'Ana 2', email: 'ANA@mantiqueira.com', senha: SENHA, tipo: 'gerente' }).expect(409);
+            .send({ nome: 'Ana 2', email: 'ANA@mantiqueira.com', senha: SENHA }).expect(409);
     });
 
-    test('admin desativa e reativa usuário; não pode desativar a si mesmo', async () => {
+    test('desativa e reativa usuário; ninguém desativa a si mesmo', async () => {
         const { body } = await request(app).get('/api/v1/admin/usuarios?busca=ana@').set('Authorization', admin.auth);
         const ana = body.usuarios[0];
         await request(app).patch(`/api/v1/admin/usuarios/${ana.id_usuario}`).set('Authorization', admin.auth)
@@ -269,7 +273,7 @@ describe('equipe (POST/PATCH /admin/usuarios)', () => {
     });
 
     test('gerente bloqueia cliente por PUT /clientes/:id e corrige CNPJ pendente', async () => {
-        const gerente = await criarUsuario('gerente');
+        const gerente = await criarUsuario('equipe');
         const semCnpj = await criarUsuario('cliente', { cnpj_original: '123.456' });
         const pendentes = await request(app).get('/api/v1/clientes?sem_cnpj=true').set('Authorization', gerente.auth).expect(200);
         assert.ok(pendentes.body.clientes.some((c) => c.id_usuario === semCnpj.usuario.id_usuario));
@@ -390,6 +394,111 @@ describe('migration 004 com dados antigos', () => {
                 /Duplicate entry/
             );
             await assert.rejects(conexao.query("UPDATE usuarios SET cnpj = '11.222' WHERE id_usuario = 3"));
+        } finally {
+            await conexao.query(`DROP DATABASE IF EXISTS \`${nome}\``);
+            await conexao.end();
+        }
+    });
+});
+
+describe('perfis cliente/equipe e pode_gerenciar_equipe', () => {
+    test('cargo é texto livre: um "Estoquista" tem as mesmas permissões da área do gestor', async () => {
+        const estoquista = await criarUsuario('equipe', { cargo: 'Estoquista' });
+        await request(app).get('/api/v1/clientes').set('Authorization', estoquista.auth).expect(200);
+        await request(app).get('/api/v1/painel/alertas-reposicao').set('Authorization', estoquista.auth).expect(200);
+        await request(app).post('/api/v1/categorias').set('Authorization', estoquista.auth)
+            .send({ nome: 'Criada pelo estoquista' }).expect(201);
+        // Mas não gerencia usuários sem a marca.
+        await request(app).post('/api/v1/admin/usuarios').set('Authorization', estoquista.auth).send({}).expect(403);
+    });
+
+    test('a marca pode ser concedida; quem a recebe passa a gerenciar a equipe na hora', async () => {
+        const novo = await criarUsuario('equipe');
+        await request(app).get('/api/v1/admin/usuarios').set('Authorization', novo.auth).expect(403);
+        await request(app).patch(`/api/v1/admin/usuarios/${novo.usuario.id_usuario}`).set('Authorization', admin.auth)
+            .send({ pode_gerenciar_equipe: true }).expect(200);
+        await request(app).get('/api/v1/admin/usuarios').set('Authorization', novo.auth).expect(200);
+        // Com duas pessoas com a marca, uma pode tirá-la da outra.
+        await request(app).patch(`/api/v1/admin/usuarios/${novo.usuario.id_usuario}`).set('Authorization', admin.auth)
+            .send({ pode_gerenciar_equipe: false }).expect(200);
+        await request(app).get('/api/v1/admin/usuarios').set('Authorization', novo.auth).expect(403);
+    });
+
+    test('não remove a marca nem desativa o último usuário ativo que a tem', async () => {
+        // Deixa só o "admin" deste arquivo com a marca.
+        await sequelize.query('UPDATE usuarios SET pode_gerenciar_equipe = FALSE WHERE id_usuario <> ?',
+            { replacements: [admin.usuario.id_usuario] });
+        const propria = await request(app).patch(`/api/v1/admin/usuarios/${admin.usuario.id_usuario}`)
+            .set('Authorization', admin.auth).send({ pode_gerenciar_equipe: false }).expect(409);
+        assert.equal(propria.body.codigo, 'OPERACAO_NAO_PERMITIDA');
+
+        // Com outro gestor, o próprio pode abrir mão da marca.
+        const outro = await criarUsuario('equipe', { pode_gerenciar_equipe: true });
+        await request(app).patch(`/api/v1/admin/usuarios/${admin.usuario.id_usuario}`)
+            .set('Authorization', outro.auth).send({ pode_gerenciar_equipe: false }).expect(200);
+        // Agora "outro" é o último: o ex-gestor não consegue mais nada em /admin, e "outro" não pode ser desativado por ninguém.
+        await request(app).get('/api/v1/admin/usuarios').set('Authorization', admin.auth).expect(403);
+        await request(app).patch(`/api/v1/admin/usuarios/${outro.usuario.id_usuario}`)
+            .set('Authorization', outro.auth).send({ ativo: false }).expect(409);
+        // Devolve a marca ao "admin" para os testes seguintes.
+        await request(app).patch(`/api/v1/admin/usuarios/${admin.usuario.id_usuario}`)
+            .set('Authorization', outro.auth).send({ pode_gerenciar_equipe: true }).expect(200);
+    });
+
+    test('cliente não recebe a marca e usuário de cliente só tem "ativo" editável', async () => {
+        const clienteX = await criarUsuario('cliente');
+        const resposta = await request(app).patch(`/api/v1/admin/usuarios/${clienteX.usuario.id_usuario}`)
+            .set('Authorization', admin.auth).send({ pode_gerenciar_equipe: true }).expect(422);
+        assert.match(resposta.body.mensagem, /clientes/);
+        await assert.rejects(sequelize.query('UPDATE usuarios SET pode_gerenciar_equipe = TRUE WHERE id_usuario = ?',
+            { replacements: [clienteX.usuario.id_usuario] }));
+    });
+
+    test('migration 007 converte admin/gerente/funcionario em equipe e marca quem era admin', async () => {
+        const nome = 'mantiqueira_perfis_test';
+        const conexao = await abrirConexao();
+        try {
+            await conexao.query(`DROP DATABASE IF EXISTS \`${nome}\``);
+            await aplicarMigracoes({ nomeBanco: nome, ateVersao: '006' });
+            await conexao.query(`USE \`${nome}\``);
+            await conexao.query(`
+                INSERT INTO usuarios (id_usuario, nome, email, senha, tipo, cargo) VALUES
+                (1, 'Admin', 'a@x.com', 'h', 'admin', NULL),
+                (2, 'Gerente', 'b@x.com', 'h', 'gerente', 'Gerente de Compras'),
+                (3, 'Func', 'c@x.com', 'h', 'funcionario', NULL),
+                (4, 'Cliente', 'd@x.com', 'h', 'cliente', NULL)
+            `);
+            await aplicarMigracoes({ nomeBanco: nome });
+            const [linhas] = await conexao.query('SELECT id_usuario, tipo, pode_gerenciar_equipe AS marca, cargo FROM usuarios ORDER BY id_usuario');
+            assert.deepEqual(linhas, [
+                { id_usuario: 1, tipo: 'equipe', marca: 1, cargo: 'Administrador' },
+                { id_usuario: 2, tipo: 'equipe', marca: 0, cargo: 'Gerente de Compras' },
+                { id_usuario: 3, tipo: 'equipe', marca: 0, cargo: 'Funcionário' },
+                { id_usuario: 4, tipo: 'cliente', marca: 0, cargo: null }
+            ]);
+            await assert.rejects(conexao.query("UPDATE usuarios SET tipo = 'gerente' WHERE id_usuario = 2"));
+        } finally {
+            await conexao.query(`DROP DATABASE IF EXISTS \`${nome}\``);
+            await conexao.end();
+        }
+    });
+
+    test('migration 007 sem nenhum admin: o usuário ativo mais antigo da equipe recebe a marca', async () => {
+        const nome = 'mantiqueira_perfis2_test';
+        const conexao = await abrirConexao();
+        try {
+            await conexao.query(`DROP DATABASE IF EXISTS \`${nome}\``);
+            await aplicarMigracoes({ nomeBanco: nome, ateVersao: '006' });
+            await conexao.query(`USE \`${nome}\``);
+            await conexao.query(`
+                INSERT INTO usuarios (id_usuario, nome, email, senha, tipo, ativo) VALUES
+                (1, 'Inativo', 'a@x.com', 'h', 'gerente', FALSE),
+                (2, 'Gerente', 'b@x.com', 'h', 'gerente', TRUE),
+                (3, 'Func', 'c@x.com', 'h', 'funcionario', TRUE)
+            `);
+            await aplicarMigracoes({ nomeBanco: nome });
+            const [linhas] = await conexao.query('SELECT id_usuario FROM usuarios WHERE pode_gerenciar_equipe = TRUE');
+            assert.deepEqual(linhas, [{ id_usuario: 2 }]);
         } finally {
             await conexao.query(`DROP DATABASE IF EXISTS \`${nome}\``);
             await conexao.end();

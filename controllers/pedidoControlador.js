@@ -204,7 +204,7 @@ async function obterPedido(req, res) {
     return res.status(200).json({ pedido: apresentarPedido(pedido, req.usuario, { comHistorico: true }) });
 }
 
-// PUT/PATCH /pedidos/:id_pedido/status { status, observacao? } (gerente/admin)
+// PUT/PATCH /pedidos/:id_pedido/status { status, observacao? } (equipe)
 async function atualizarStatus(req, res) {
     const idPedido = lerIdPedido(req.params.id_pedido);
     const { status, observacao } = req.body || {};
@@ -229,7 +229,7 @@ async function atualizarStatus(req, res) {
     });
 }
 
-// POST /pedidos/:id_pedido/cancelar { motivo } (cliente dono ou gerente/admin)
+// POST /pedidos/:id_pedido/cancelar { motivo } (cliente dono ou equipe)
 async function cancelarPedido(req, res) {
     const idPedido = lerIdPedido(req.params.id_pedido);
     const motivo = req.body && typeof req.body.motivo === 'string' ? req.body.motivo.trim() : '';

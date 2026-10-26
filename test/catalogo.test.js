@@ -17,8 +17,9 @@ let cliente;
 before(async () => {
     ({ app, sequelize } = await prepararApp());
     ({ importarCatalogo } = require('../servicos/importadorCatalogo'));
-    gerente = await criarUsuario('gerente');
-    funcionario = await criarUsuario('funcionario');
+    // Dois usuários da equipe (cargos diferentes não mudam permissões).
+    gerente = await criarUsuario('equipe', { cargo: 'Gerente' });
+    funcionario = await criarUsuario('equipe', { cargo: 'Estoquista' });
     cliente = await criarUsuario('cliente');
 });
 
@@ -221,13 +222,11 @@ describe('vitrine pública', () => {
 describe('gestão de produtos', () => {
     let idCriado;
 
-    test('visitante recebe 401 e cliente/funcionário recebem 403 ao cadastrar', async () => {
+    test('visitante recebe 401 e cliente recebe 403 ao cadastrar', async () => {
         await request(app).post('/api/v1/produtos').send({ sku: 'X-1', nome: 'X' }).expect(401);
         const doCliente = await request(app).post('/api/v1/produtos').set('Authorization', cliente.auth)
             .send({ sku: 'X-1', nome: 'X' }).expect(403);
         assert.equal(doCliente.body.codigo, 'ACESSO_NEGADO');
-        await request(app).post('/api/v1/produtos').set('Authorization', funcionario.auth)
-            .send({ sku: 'X-1', nome: 'X' }).expect(403);
     });
 
     test('gerente cadastra com estoque inicial registrado como movimentação', async () => {
@@ -355,7 +354,7 @@ describe('categorias e marcas (gestão)', () => {
 
         await request(app).patch(`/api/v1/categorias/${id}`).set('Authorization', gerente.auth)
             .send({ nome: 'Perfumaria' }).expect(200);
-        await request(app).post('/api/v1/categorias').set('Authorization', funcionario.auth)
+        await request(app).post('/api/v1/categorias').set('Authorization', cliente.auth)
             .send({ nome: 'X' }).expect(403);
 
         const granado = (await request(app).get('/api/v1/marcas')).body.marcas.find((m) => m.slug === 'granado');

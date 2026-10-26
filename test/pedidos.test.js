@@ -60,8 +60,8 @@ before(async () => {
 
     cliente = await criarClienteComEndereco();
     outroCliente = await criarClienteComEndereco();
-    funcionario = await criarUsuario('funcionario');
-    gerente = await criarUsuario('gerente');
+    funcionario = await criarUsuario('equipe', { cargo: 'Estoquista' });
+    gerente = await criarUsuario('equipe', { cargo: 'Gerente' });
 });
 
 after(async () => {
@@ -201,10 +201,9 @@ describe('cancelamento', () => {
         const resposta = await cancelar(cliente.auth, id).expect(409);
         assert.equal(resposta.body.codigo, 'CANCELAMENTO_NAO_PERMITIDO');
 
-        // Gerente ainda pode cancelar em "Em Separação"; funcionário não cancela.
-        await cancelar(funcionario.auth, id).expect(403);
+        // Qualquer usuário da equipe ainda pode cancelar em "Em Separação".
         const antes = await estoqueDe('SKU-106');
-        await cancelar(gerente.auth, id, 'Avaria no estoque').expect(200);
+        await cancelar(funcionario.auth, id, 'Avaria no estoque').expect(200);
         assert.equal(await estoqueDe('SKU-106'), antes + 1);
     });
 
@@ -254,9 +253,11 @@ describe('transições de status', () => {
         assert.equal(detalhe.body.pedido.proximo_status, null);
     });
 
-    test('funcionário e cliente não mudam status', async () => {
-        await mudarStatus(funcionario.auth, id, 'Em Separação').expect(403);
+    test('cliente não muda status; qualquer usuário da equipe muda', async () => {
         await mudarStatus(cliente.auth, id, 'Em Separação').expect(403);
+        const { body } = await pedir(cliente.auth, { itens: [{ id_produto: produtos['SKU-110'], quantidade: 1 }] }).expect(201);
+        const resposta = await mudarStatus(funcionario.auth, body.pedido.id_pedido, 'Em Separação').expect(200);
+        assert.equal(resposta.body.pedido.id_funcionario, funcionario.usuario.id_usuario);
     });
 });
 
@@ -266,10 +267,10 @@ describe('consulta de pedidos', () => {
         await pedir(outroCliente.auth, { itens: [{ id_produto: produtos['SKU-113'], quantidade: 1 }] }).expect(201);
     });
 
-    test('funcionário, gerente e admin veem qualquer pedido; cliente só o próprio', async () => {
+    test('a equipe vê qualquer pedido; cliente só o próprio', async () => {
         const { body } = await pedir(cliente.auth, { itens: [{ id_produto: produtos['SKU-111'], quantidade: 1 }] }).expect(201);
         const id = body.pedido.id_pedido;
-        const admin = await criarUsuario('admin');
+        const admin = await criarUsuario('equipe', { pode_gerenciar_equipe: true });
         for (const usuario of [funcionario, gerente, admin]) {
             const resposta = await request(app).get(`/api/v1/pedidos/${id}`).set('Authorization', usuario.auth).expect(200);
             assert.equal(resposta.body.pedido.cliente.id_usuario, cliente.usuario.id_usuario);

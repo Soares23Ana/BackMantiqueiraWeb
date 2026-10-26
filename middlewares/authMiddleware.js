@@ -25,11 +25,19 @@ async function carregarUsuario(token) {
     }
     // Carregado aqui para evitar dependência circular com os models na inicialização.
     const { Usuario } = require('../models');
-    const usuario = await Usuario.findByPk(payload.id, { attributes: ['id_usuario', 'nome', 'email', 'tipo', 'ativo'] });
+    const usuario = await Usuario.findByPk(payload.id, {
+        attributes: ['id_usuario', 'nome', 'email', 'tipo', 'pode_gerenciar_equipe', 'ativo']
+    });
     if (!usuario || !usuario.ativo) {
         return null;
     }
-    return { id: usuario.id_usuario, nome: usuario.nome, email: usuario.email, tipo: usuario.tipo };
+    return {
+        id: usuario.id_usuario,
+        nome: usuario.nome,
+        email: usuario.email,
+        tipo: usuario.tipo,
+        pode_gerenciar_equipe: usuario.pode_gerenciar_equipe
+    };
 }
 
 async function autenticarToken(req, res, next) {

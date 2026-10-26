@@ -40,15 +40,22 @@ const Usuario = sequelize.define('Usuario', {
         allowNull: true
     },
     tipo: {
-        type: DataTypes.ENUM('cliente', 'funcionario', 'gerente', 'admin'),
+        type: DataTypes.ENUM('cliente', 'equipe'),
         allowNull: false,
         defaultValue: 'cliente'
+    },
+    // Só para a equipe: permite criar, editar e desativar usuários da equipe (/admin/usuarios).
+    pode_gerenciar_equipe: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false
     },
     ativo: {
         type: DataTypes.BOOLEAN,
         allowNull: false,
         defaultValue: true
     },
+    // Texto livre (ex.: "Estoquista"); não interfere nas permissões.
     cargo: {
         type: DataTypes.STRING(50),
         allowNull: true

@@ -19,7 +19,7 @@ function podeCancelar(pedido, usuario) {
     if (usuario.tipo === 'cliente') {
         return Number(pedido.id_cliente) === Number(usuario.id) && CANCELAVEL_PELO_CLIENTE.includes(pedido.status);
     }
-    return ['gerente', 'admin'].includes(usuario.tipo) && CANCELAVEL_PELA_EQUIPE.includes(pedido.status);
+    return usuario.tipo === 'equipe' && CANCELAVEL_PELA_EQUIPE.includes(pedido.status);
 }
 
 async function registrarHistorico(pedido, statusAnterior, { idUsuario, observacao = null, transacao }) {
@@ -253,7 +253,7 @@ async function avancarStatus(idPedido, novoStatus, usuario, observacao = null) {
 
 /**
  * Cancela o pedido e devolve o estoque de todos os itens na mesma transação.
- * Cliente: só o próprio pedido e só em "Aguardando Separação". Gerente/admin: até "Em Separação".
+ * Cliente: só o próprio pedido e só em "Aguardando Separação". Equipe: até "Em Separação".
  */
 async function cancelarPedido(idPedido, usuario, motivo) {
     const pedido = await sequelize.transaction(async (transacao) => {

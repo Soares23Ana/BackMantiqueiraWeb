@@ -1,12 +1,12 @@
 const express = require('express');
 const adminUsuarioControlador = require('../controllers/adminUsuarioControlador');
 const autenticarToken = require('../middlewares/authMiddleware');
-const verificarPerfil = require('../middlewares/roleMiddleware');
+const { exigirGestaoDeEquipe } = require('../middlewares/roleMiddleware');
 
 const router = express.Router();
 
-// Todas as rotas /admin são exclusivas do perfil admin.
-router.use(autenticarToken, verificarPerfil(['admin']));
+// Gestão de usuários: só equipe com pode_gerenciar_equipe.
+router.use(autenticarToken, exigirGestaoDeEquipe);
 
 router.get('/usuarios', adminUsuarioControlador.listar);
 router.post('/usuarios', adminUsuarioControlador.criar);

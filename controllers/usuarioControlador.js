@@ -6,7 +6,6 @@ const { Usuario, Endereco } = require('../models');
 const config = require('../config/ambiente');
 const { ErroApi } = require('../lib/erros');
 const { cnpjValido, somenteDigitos } = require('../lib/cnpj');
-const { EQUIPE } = require('../lib/perfis');
 const { validarCadastroCliente } = require('../helpers/validacaoUsuario');
 
 const CUSTO_BCRYPT = 12;
@@ -76,7 +75,7 @@ async function cadastrar(req, res) {
 
 /**
  * Descobre como buscar o usuário pelo identificador:
- * - com "@": e-mail, apenas entre funcionario/gerente/admin;
+ * - com "@": e-mail, apenas na equipe;
  * - sem "@": CNPJ válido de 14 dígitos, apenas entre clientes.
  * Retorna null se o formato não serve para nenhum dos dois.
  */
@@ -84,7 +83,7 @@ function criterioDeBusca(identificador) {
     if (typeof identificador !== 'string' || identificador.length > 100) return null;
     const valor = identificador.trim();
     if (valor.includes('@')) {
-        return { email: valor.toLowerCase(), tipo: { [Op.in]: EQUIPE } };
+        return { email: valor.toLowerCase(), tipo: 'equipe' };
     }
     const cnpj = somenteDigitos(valor);
     if (!cnpjValido(cnpj)) return null;
@@ -100,7 +99,10 @@ async function autenticar(req, res) {
     const { identificador, senha } = req.body || {};
     const criterio = criterioDeBusca(identificador);
     const usuario = criterio
-        ? await Usuario.findOne({ where: criterio, attributes: ['id_usuario', 'nome', 'email', 'senha', 'tipo', 'ativo'] })
+        ? await Usuario.findOne({
+            where: criterio,
+            attributes: ['id_usuario', 'nome', 'email', 'senha', 'tipo', 'pode_gerenciar_equipe', 'ativo']
+        })
         : null;
 
     const senhaTexto = typeof senha === 'string' ? senha.slice(0, 72) : '';
@@ -109,20 +111,22 @@ async function autenticar(req, res) {
         throw credenciaisInvalidas();
     }
 
+    // pode_gerenciar_equipe diz ao front se mostra o menu de gestão de usuários da equipe.
     return res.status(200).json({
         token: gerarToken(usuario),
         usuario: {
             id: usuario.id_usuario,
             nome: usuario.nome,
             email: usuario.email,
-            tipo: usuario.tipo
+            tipo: usuario.tipo,
+            pode_gerenciar_equipe: usuario.pode_gerenciar_equipe
         }
     });
 }
 
 function obterSessao(req, res) {
-    const { id, nome, email, tipo } = req.usuario;
-    return res.status(200).json({ id, nome, email, tipo });
+    const { id, nome, email, tipo, pode_gerenciar_equipe: podeGerenciarEquipe } = req.usuario;
+    return res.status(200).json({ id, nome, email, tipo, pode_gerenciar_equipe: podeGerenciarEquipe });
 }
 
 async function listarTodos(req, res) {

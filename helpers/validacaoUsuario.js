@@ -5,7 +5,6 @@ const UFS = [
     'AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA', 'MT', 'MS', 'MG', 'PA',
     'PB', 'PR', 'PE', 'PI', 'RJ', 'RN', 'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO'
 ];
-const TIPOS_EQUIPE = ['funcionario', 'gerente', 'admin'];
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 // Coletor de erros: cada validação registra { campo, mensagem } e devolve o valor limpo.
@@ -149,26 +148,25 @@ function validarCadastroCliente(corpo) {
     return { usuario, endereco: { ...endereco.dados, principal: true } };
 }
 
-// POST/PATCH /admin/usuarios: equipe interna, sem CNPJ.
+// POST/PATCH /admin/usuarios: usuários da equipe, sem CNPJ. O perfil é sempre "equipe";
+// o cargo é texto livre e não muda permissões.
 function validarUsuarioEquipe(corpo, { parcial = false } = {}) {
     exigirObjeto(corpo);
     const v = criarValidador();
-    v.camposPermitidos(corpo, ['nome', 'email', 'senha', 'tipo', 'cargo', 'telefone', 'ativo']);
+    v.camposPermitidos(corpo, ['nome', 'email', 'senha', 'cargo', 'telefone', 'pode_gerenciar_equipe', 'ativo']);
     const enviado = (campo) => !parcial || corpo[campo] !== undefined;
     const dados = {};
 
     if (enviado('nome')) dados.nome = v.texto(corpo.nome, 'nome', { maximo: 100, minimo: 2, rotulo: 'O nome' });
     if (enviado('email')) dados.email = v.email(corpo.email);
     if (enviado('senha')) dados.senha = v.senha(corpo.senha);
-    if (enviado('tipo')) {
-        if (!TIPOS_EQUIPE.includes(corpo.tipo)) v.erro('tipo', `O tipo deve ser: ${TIPOS_EQUIPE.join(', ')}.`);
-        dados.tipo = corpo.tipo;
-    }
     if (corpo.cargo !== undefined) dados.cargo = v.texto(corpo.cargo, 'cargo', { maximo: 50, obrigatorio: false, rotulo: 'O cargo' });
     if (corpo.telefone !== undefined) dados.telefone = v.telefone(corpo.telefone, 'telefone', { obrigatorio: false });
-    if (corpo.ativo !== undefined) {
-        if (typeof corpo.ativo !== 'boolean') v.erro('ativo', 'O campo ativo deve ser true ou false.');
-        dados.ativo = corpo.ativo;
+    for (const campo of ['pode_gerenciar_equipe', 'ativo']) {
+        if (corpo[campo] !== undefined) {
+            if (typeof corpo[campo] !== 'boolean') v.erro(campo, `O campo ${campo} deve ser true ou false.`);
+            dados[campo] = corpo[campo];
+        }
     }
     if (parcial && Object.keys(corpo).length === 0) {
         v.erros.push({ campo: null, mensagem: 'Informe ao menos um campo para atualizar.' });
@@ -210,6 +208,5 @@ module.exports = {
     validarPerfilProprio,
     validarTrocaSenha,
     lancarSeHouverErros,
-    criarValidador,
-    TIPOS_EQUIPE
+    criarValidador
 };

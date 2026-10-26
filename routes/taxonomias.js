@@ -3,12 +3,11 @@ const { Categoria, Marca } = require('../models');
 const { criarControladorTaxonomia } = require('../controllers/taxonomiaControlador');
 const autenticarToken = require('../middlewares/authMiddleware');
 const { autenticacaoOpcional } = require('../middlewares/authMiddleware');
-const verificarPerfil = require('../middlewares/roleMiddleware');
-const { GESTAO } = require('../lib/perfis');
+const { exigirEquipe } = require('../middlewares/roleMiddleware');
 
 function criarRotas(controlador) {
     const router = express.Router();
-    const gestao = [autenticarToken, verificarPerfil(GESTAO)];
+    const gestao = [autenticarToken, exigirEquipe];
     router.get('/', autenticacaoOpcional, controlador.listar);
     router.post('/', ...gestao, controlador.criar);
     router.put('/:id', ...gestao, controlador.atualizar);

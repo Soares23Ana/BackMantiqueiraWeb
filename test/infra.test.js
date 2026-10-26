@@ -141,7 +141,7 @@ describe('HTTP', () => {
 
     test('erros dos controladores ganham sucesso:false e codigo', async () => {
         // Erro lançado no controlador também sai no formato padrão.
-        const { auth } = await criarUsuario('gerente');
+        const { auth } = await criarUsuario('equipe');
         const resposta = await request(app)
             .get('/api/v1/pedidos/abc')
             .set('Authorization', auth)
