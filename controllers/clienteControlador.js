@@ -5,6 +5,9 @@ const { apresentarCliente } = require('../lib/apresentacao');
 const sequelize = require('../db/conn');
 const { Endereco, ItemPedido, Pedido, Produto, Usuario } = require('../models');
 const logger = require('../lib/logger');
+const bcrypt = require('bcrypt');
+const { ErroApi } = require('../lib/erros');
+const { CUSTO_BCRYPT } = require('./usuarioControlador');
 
 const CAMPOS_ENDERECO = [
     'cep',
@@ -346,4 +349,31 @@ async function atualizarCliente(req, res) {
     }
 }
 
-module.exports = { listarClientes, obterDetalhesCliente, atualizarCliente };
+/**
+ * PUT /clientes/:id/senha { senha } (equipe): define uma senha temporária para o cliente que esqueceu a dele.
+ * Só o hash é gravado; não há envio de e-mail. A equipe informa a senha ao cliente, que deve trocá-la
+ * em PATCH /minha-conta/senha.
+ */
+async function definirSenhaTemporaria(req, res) {
+    const idCliente = obterIdCliente(req.params.id);
+    if (!idCliente) {
+        throw new ErroApi(400, 'REQUISICAO_INVALIDA', 'Identificador de cliente inválido.');
+    }
+    const corpo = req.body || {};
+    const extras = Object.keys(corpo).filter((campo) => campo !== 'senha');
+    if (extras.length > 0 || typeof corpo.senha !== 'string' || corpo.senha.length < 8 || corpo.senha.length > 72) {
+        const mensagem = extras.length > 0 ? `Campo não permitido: ${extras[0]}.` : 'A senha deve ter entre 8 e 72 caracteres.';
+        throw new ErroApi(422, 'VALIDACAO', mensagem, [{ campo: extras[0] || 'senha', mensagem }]);
+    }
+    const cliente = await Usuario.findOne({ where: { id_usuario: idCliente, tipo: 'cliente' }, attributes: ['id_usuario'] });
+    if (!cliente) {
+        throw new ErroApi(404, 'NAO_ENCONTRADO', 'Cliente não encontrado.');
+    }
+    await cliente.update({ senha: await bcrypt.hash(corpo.senha, CUSTO_BCRYPT) });
+    logger.info('Senha temporária definida para cliente.', { id_cliente: idCliente, por: req.usuario.id });
+    return res.status(200).json({
+        mensagem: 'Senha temporária definida. Informe-a ao cliente e oriente a troca em "Minha conta".'
+    });
+}
+
+module.exports = { listarClientes, obterDetalhesCliente, atualizarCliente, definirSenhaTemporaria };

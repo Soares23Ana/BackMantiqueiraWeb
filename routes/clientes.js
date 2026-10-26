@@ -9,5 +9,6 @@ const acessoGestor = [autenticarToken, exigirEquipe];
 router.get('/', ...acessoGestor, clienteControlador.listarClientes);
 router.get('/:id/detalhes', ...acessoGestor, clienteControlador.obterDetalhesCliente);
 router.put('/:id', ...acessoGestor, clienteControlador.atualizarCliente);
+router.put('/:id/senha', ...acessoGestor, clienteControlador.definirSenhaTemporaria);
 
 module.exports = router;

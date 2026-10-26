@@ -69,3 +69,29 @@ describe('contrato padronizado', () => {
         assert.ok(body.usuarios.every((u) => /^\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}$/.test(u.cnpj)));
     });
 });
+
+describe('PUT /clientes/:id/senha (senha temporária)', () => {
+    const login = (identificador, senha) => request(app).post('/api/v1/auth/login').send({ identificador, senha });
+
+    test('a equipe define a senha e o cliente entra com ela', async () => {
+        await login('11.444.777/0001-61', 'Temporaria@1').expect(401);
+        const resposta = await request(app).put(`/api/v1/clientes/${semRazao.usuario.id_usuario}/senha`)
+            .set('Authorization', equipe.auth).send({ senha: 'Temporaria@1' }).expect(200);
+        assert.match(resposta.body.mensagem, /Senha temporária/);
+        await login('11.444.777/0001-61', 'Temporaria@1').expect(200);
+
+        const [[usuario]] = await sequelize.query('SELECT senha FROM usuarios WHERE id_usuario = ?',
+            { replacements: [semRazao.usuario.id_usuario] });
+        assert.match(usuario.senha, /^\$2b\$12\$/);
+    });
+
+    test('valida a senha, recusa outros campos e não serve para equipe', async () => {
+        const url = `/api/v1/clientes/${semRazao.usuario.id_usuario}/senha`;
+        await request(app).put(url).set('Authorization', equipe.auth).send({ senha: 'curta' }).expect(422);
+        await request(app).put(url).set('Authorization', equipe.auth).send({ senha: 'Temporaria@2', ativo: true }).expect(422);
+        await request(app).put(`/api/v1/clientes/${equipe.usuario.id_usuario}/senha`).set('Authorization', equipe.auth)
+            .send({ senha: 'Temporaria@2' }).expect(404);
+        await request(app).put(url).set('Authorization', comRazao.auth).send({ senha: 'Temporaria@2' }).expect(403);
+        await request(app).put(url).send({ senha: 'Temporaria@2' }).expect(401);
+    });
+});

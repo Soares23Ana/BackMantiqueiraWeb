@@ -516,6 +516,7 @@ Erros: `422 VALIDACAO` (motivo com 3 a 500 caracteres), `409 CANCELAMENTO_NAO_PE
 | GET | `/clientes` | equipe | Lista com busca e paginação |
 | GET | `/clientes/:id/detalhes` | equipe | Dados, endereços, histórico e produtos mais pedidos |
 | PUT | `/clientes/:id` | equipe | Atualiza dados operacionais |
+| PUT | `/clientes/:id/senha` | equipe | Define uma senha temporária |
 
 ### GET /clientes
 `?busca=&pagina=&limite=&sem_cnpj=true` (padrão 20, máximo 100). `busca` procura em nome, razão social, e-mail e CNPJ (com ou sem pontuação). `sem_cnpj=true` lista quem não consegue entrar por falta de CNPJ válido.
@@ -543,6 +544,13 @@ Erros: `422 VALIDACAO` (motivo com 3 a 500 caracteres), `409 CANCELAMENTO_NAO_PE
 
 ### PUT /clientes/:id
 Um ou mais de: `razao_social`, `cnpj` (válido e único; corrigir limpa a pendência de `cnpj_original`), `telefone`, `ativo` (bloqueia/desbloqueia o login) e `enderecos` (lista; com `id_endereco` atualiza, sem ele cria; os omitidos não são removidos). `200`: `{ "mensagem": "Dados operacionais do cliente atualizados.", "cliente": { ... } }`. Erros: `422` (CNPJ inválido), `409 CNPJ_JA_CADASTRADO`, `404`.
+
+### PUT /clientes/:id/senha
+Para o cliente que esqueceu a senha (não há recuperação por e-mail). A equipe define uma senha temporária, informa ao cliente por telefone/WhatsApp e orienta a troca em `PATCH /minha-conta/senha`.
+```json
+{ "senha": "Temporaria@2026" }
+```
+`200`: `{ "mensagem": "Senha temporária definida. Informe-a ao cliente e oriente a troca em \"Minha conta\"." }`. Só o hash é gravado. Erros: `422 VALIDACAO` (8 a 72 caracteres; nenhum outro campo), `404` (não é cliente).
 
 ---
 
@@ -702,7 +710,7 @@ Erros: `422 VALIDACAO`, `404` (chave desconhecida).
 9. Imagens do catálogo (`/img/...`) são servidas pelo front; imagens enviadas pela API (`/arquivos/uploads/...`) ficam no disco do servidor e são perdidas se a instância for recriada (não há S3).
 
 **Autenticação**
-10. Não há recuperação de senha. A equipe redefine senhas de outros usuários da equipe em `PATCH /admin/usuarios/:id`, mas **não existe forma de redefinir a senha de um cliente** que a esqueceu.
+10. Não há recuperação de senha por e-mail. Cliente que esqueceu a senha: a equipe define uma temporária em `PUT /clientes/:id/senha` e o cliente troca em "Minha conta" (a troca não é obrigatória; a API não força). Usuário da equipe: o gestor redefine em `PATCH /admin/usuarios/:id`.
 11. Não há refresh token: depois de 2 horas o usuário precisa entrar de novo. "Sair" é só descartar o token no front (ele continua válido até expirar, a menos que o usuário seja desativado).
 12. Os limites de requisições ficam na memória de cada instância: com várias instâncias, o limite efetivo é multiplicado; reiniciar a API zera as contagens.
 

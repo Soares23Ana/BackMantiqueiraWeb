@@ -255,6 +255,7 @@ Erros de validação voltam com `422 VALIDACAO` e a lista de todos os campos com
 ### Clientes (`/api/v1/clientes`)
 * `GET /api/v1/clientes?busca=texto&pagina=1&limite=20` - Lista clientes (com `nome_exibicao` e CNPJ formatado) com busca por nome, razão social, e-mail ou CNPJ (com ou sem pontuação) e paginação. `sem_cnpj=true` lista os clientes que não conseguem entrar por falta de CNPJ válido (o valor antigo fica em `cnpj_original`). Equipe.
 * `GET /api/v1/clientes/:id/detalhes` - `{ cliente, historico_pedidos, produtos_mais_solicitados }`: dados cadastrais, endereços, histórico de pedidos e produtos mais solicitados.
+* `PUT /api/v1/clientes/:id/senha` - `{ senha }`: define uma senha temporária para o cliente que esqueceu a dele (só o hash é gravado; sem e-mail). Equipe.
 * `PUT /api/v1/clientes/:id` - Atualiza `razao_social`, `cnpj` (precisa ser um CNPJ válido e único; corrigir limpa a pendência), `telefone`, `ativo` e/ou `enderecos`. Cada endereço pode incluir `id_endereco` para atualizar um endereço existente; sem esse identificador, um endereço novo é cadastrado. Endereços omitidos não são removidos.
 
 Clientes mantêm dados operacionais/comerciais (`razao_social`, `cnpj`, `telefone` e endereços de entrega). Nenhum dado bancário, de cartão ou limite de crédito é armazenado. Em uma atualização de status para `Entregue`, o pedido registra `data_entrega`.
