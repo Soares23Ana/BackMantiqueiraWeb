@@ -340,7 +340,7 @@ describe('painel com estoque mínimo e meta configuráveis', () => {
         assert.deepEqual({ estoque: plax.estoque_atual, minimo: plax.estoque_minimo, sugestao: plax.sugestao_compra }, { estoque: 25, minimo: 30, sugestao: 75 });
 
         const contadores = await request(app).get('/api/v1/painel/contadores').set('Authorization', equipe.auth).expect(200);
-        assert.equal(contadores.body.estoqueBaixo, 6);
+        assert.equal(contadores.body.estoque_baixo, 6);
     });
 });
 

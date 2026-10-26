@@ -1,5 +1,7 @@
 const { Op, UniqueConstraintError } = require('sequelize');
 const { cnpjValido, somenteDigitos } = require('../lib/cnpj');
+const { lerPaginacao, montarPaginacao } = require('../lib/paginacao');
+const { apresentarCliente } = require('../lib/apresentacao');
 const sequelize = require('../db/conn');
 const { Endereco, ItemPedido, Pedido, Produto, Usuario } = require('../models');
 const logger = require('../lib/logger');
@@ -88,13 +90,7 @@ function normalizarEnderecos(enderecos) {
 }
 
 async function listarClientes(req, res) {
-    const pagina = req.query.pagina === undefined ? 1 : Number(req.query.pagina);
-    const limite = req.query.limite === undefined ? 20 : Number(req.query.limite);
-    if (!Number.isSafeInteger(pagina) || pagina < 1 ||
-        !Number.isSafeInteger(limite) || limite < 1 || limite > 100 ||
-        !Number.isSafeInteger((pagina - 1) * limite)) {
-        return res.status(400).json({ mensagem: 'Parâmetros de paginação inválidos.' });
-    }
+    const paginacao = lerPaginacao(req.query, { limitePadrao: 20, limiteMaximo: 100 });
 
     const busca = typeof req.query.busca === 'string' ? req.query.busca.trim() : '';
     if (busca.length > 100) {
@@ -120,18 +116,13 @@ async function listarClientes(req, res) {
         const resultado = await Usuario.findAndCountAll({
             where,
             attributes: ['id_usuario', 'nome', 'razao_social', 'cnpj', 'cnpj_original', 'email', 'telefone', 'ativo', 'criado_em'],
-            limit: limite,
-            offset: (pagina - 1) * limite,
+            limit: paginacao.limite,
+            offset: paginacao.offset,
             order: [['nome', 'ASC']]
         });
         return res.status(200).json({
-            clientes: resultado.rows,
-            paginacao: {
-                pagina,
-                limite,
-                total: resultado.count,
-                totalPaginas: Math.ceil(resultado.count / limite)
-            }
+            clientes: resultado.rows.map(apresentarCliente),
+            paginacao: montarPaginacao(resultado.count, paginacao)
         });
     } catch (erro) {
         logger.error('Erro ao listar clientes.', { erro });
@@ -148,7 +139,7 @@ async function obterDetalhesCliente(req, res) {
     try {
         const cliente = await Usuario.findOne({
             where: { id_usuario: idCliente, tipo: 'cliente' },
-            attributes: ['id_usuario', 'nome', 'razao_social', 'cnpj', 'email', 'telefone', 'criado_em'],
+            attributes: ['id_usuario', 'nome', 'razao_social', 'cnpj', 'email', 'telefone', 'ativo', 'criado_em'],
             include: [
                 { model: Endereco, as: 'enderecos', attributes: { exclude: ['id_usuario'] } },
                 {
@@ -182,29 +173,30 @@ async function obterDetalhesCliente(req, res) {
                 const atual = quantidadePorProduto.get(idProduto) || {
                     id_produto: idProduto,
                     nome: item.produto ? item.produto.nome : null,
-                    quantidadeSolicitada: 0
+                    quantidade_solicitada: 0
                 };
-                atual.quantidadeSolicitada += item.quantidade;
+                atual.quantidade_solicitada += item.quantidade;
                 quantidadePorProduto.set(idProduto, atual);
             }
         }
         const produtosMaisSolicitados = [...quantidadePorProduto.values()]
-            .sort((a, b) => b.quantidadeSolicitada - a.quantidadeSolicitada ||
+            .sort((a, b) => b.quantidade_solicitada - a.quantidade_solicitada ||
                 (a.nome || '').localeCompare(b.nome || ''));
 
         return res.status(200).json({
-            cliente: {
+            cliente: apresentarCliente({
                 id_usuario: clienteJson.id_usuario,
                 nome: clienteJson.nome,
                 razao_social: clienteJson.razao_social,
                 cnpj: clienteJson.cnpj,
                 email: clienteJson.email,
                 telefone: clienteJson.telefone,
+                ativo: clienteJson.ativo,
                 criado_em: clienteJson.criado_em,
                 enderecos: clienteJson.enderecos
-            },
-            historicoPedidos: clienteJson.pedidosComoCliente,
-            produtosMaisSolicitados
+            }),
+            historico_pedidos: clienteJson.pedidosComoCliente,
+            produtos_mais_solicitados: produtosMaisSolicitados
         });
     } catch (erro) {
         logger.error('Erro ao obter detalhes do cliente.', { erro });
@@ -340,7 +332,7 @@ async function atualizarCliente(req, res) {
         });
         return res.status(200).json({
             mensagem: 'Dados operacionais do cliente atualizados.',
-            cliente: clienteAtualizado
+            cliente: apresentarCliente(clienteAtualizado)
         });
     } catch (erro) {
         if (erro.status === 404) {

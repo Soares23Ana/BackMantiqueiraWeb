@@ -16,7 +16,7 @@ async function contarIndicadoresOperacionais() {
         }),
         Produto.count({ where: ESTOQUE_BAIXO })
     ]);
-    return { pedidosPendentes, estoqueBaixo };
+    return { pedidos_pendentes: pedidosPendentes, estoque_baixo: estoqueBaixo };
 }
 
 async function obterEstatisticas(req, res) {
@@ -26,7 +26,7 @@ async function obterEstatisticas(req, res) {
     ]);
     return res.status(200).json({
         ...indicadores,
-        clientesAtivos
+        clientes_ativos: clientesAtivos
     });
 }
 

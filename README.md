@@ -109,8 +109,8 @@ Os testes usam o banco `DB_NAME_TEST` (padrão `mantiqueira_test`), que é **apa
 ### Painel
 "Estoque baixo" é um produto ativo com estoque menor ou igual ao **`estoque_minimo` do próprio produto** (padrão 10, editável no produto).
 
-* `GET /api/v1/painel` - `{ pedidosPendentes, estoqueBaixo, clientesAtivos }`. Equipe.
-* `GET /api/v1/painel/contadores` - `{ pedidosPendentes, estoqueBaixo }` para os badges do menu. Equipe.
+* `GET /api/v1/painel` - `{ pedidos_pendentes, estoque_baixo, clientes_ativos }`. Equipe.
+* `GET /api/v1/painel/contadores` - `{ pedidos_pendentes, estoque_baixo }` para os badges do menu. Equipe.
 * `GET /api/v1/painel/alertas-reposicao` - `{ meta_reposicao, alertas: [{ produto, estoque_atual, estoque_minimo, sugestao_compra }] }`. A sugestão completa o estoque até a meta, definida na configuração `meta_reposicao` (padrão 50). Equipe.
 
 ### Pedidos (`/api/v1/pedidos`)
@@ -253,8 +253,8 @@ Erros de validação voltam com `422 VALIDACAO` e a lista de todos os campos com
 * `POST` (`nome`, opcionalmente `slug` e, nas categorias, `ordem`), `PUT`/`PATCH /:id` e `DELETE /:id` - equipe. O slug é gerado do nome (`Loja do bebê` → `loja-do-bebe`). Só é possível excluir se nenhum produto usar (`409 EM_USO`); caso contrário, desative com `{ "ativo": false }`.
 
 ### Clientes (`/api/v1/clientes`)
-* `GET /api/v1/clientes?busca=texto&pagina=1&limite=20` - Lista clientes com busca por nome, razão social, e-mail ou CNPJ (com ou sem pontuação) e paginação. `sem_cnpj=true` lista os clientes que não conseguem entrar por falta de CNPJ válido (o valor antigo fica em `cnpj_original`). Equipe.
-* `GET /api/v1/clientes/:id/detalhes` - Retorna dados cadastrais, endereços de entrega, histórico operacional de pedidos e produtos mais solicitados.
+* `GET /api/v1/clientes?busca=texto&pagina=1&limite=20` - Lista clientes (com `nome_exibicao` e CNPJ formatado) com busca por nome, razão social, e-mail ou CNPJ (com ou sem pontuação) e paginação. `sem_cnpj=true` lista os clientes que não conseguem entrar por falta de CNPJ válido (o valor antigo fica em `cnpj_original`). Equipe.
+* `GET /api/v1/clientes/:id/detalhes` - `{ cliente, historico_pedidos, produtos_mais_solicitados }`: dados cadastrais, endereços, histórico de pedidos e produtos mais solicitados.
 * `PUT /api/v1/clientes/:id` - Atualiza `razao_social`, `cnpj` (precisa ser um CNPJ válido e único; corrigir limpa a pendência), `telefone`, `ativo` e/ou `enderecos`. Cada endereço pode incluir `id_endereco` para atualizar um endereço existente; sem esse identificador, um endereço novo é cadastrado. Endereços omitidos não são removidos.
 
 Clientes mantêm dados operacionais/comerciais (`razao_social`, `cnpj`, `telefone` e endereços de entrega). Nenhum dado bancário, de cartão ou limite de crédito é armazenado. Em uma atualização de status para `Entregue`, o pedido registra `data_entrega`.

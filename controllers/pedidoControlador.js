@@ -3,7 +3,8 @@ const { Usuario, Produto, Pedido, ItemPedido, PedidoHistorico } = require('../mo
 const { STATUS_PEDIDO } = require('../models/Pedido');
 const { ErroApi } = require('../lib/erros');
 const { ehEquipe } = require('../lib/perfis');
-const { somenteDigitos, formatarCnpj } = require('../lib/cnpj');
+const { somenteDigitos } = require('../lib/cnpj');
+const { apresentarCliente } = require('../lib/apresentacao');
 const { lerPaginacao, montarPaginacao } = require('../lib/paginacao');
 const servicoPedidos = require('../servicos/pedidos');
 
@@ -49,10 +50,7 @@ function apresentarPedido(pedido, usuario, { comHistorico = false } = {}) {
         pode_cancelar: servicoPedidos.podeCancelar(pedido, usuario)
     };
     if (ehEquipe(usuario)) {
-        dados.cliente = pedido.cliente ? {
-            ...pedido.cliente.toJSON(),
-            cnpj: pedido.cliente.cnpj ? formatarCnpj(pedido.cliente.cnpj) : null
-        } : null;
+        dados.cliente = pedido.cliente ? apresentarCliente(pedido.cliente) : null;
         dados.funcionario = pedido.funcionario || null;
         dados.proximo_status = servicoPedidos.PROXIMO_STATUS[pedido.status] || null;
     }

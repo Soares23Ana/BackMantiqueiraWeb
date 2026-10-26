@@ -3,7 +3,7 @@ const { Op, UniqueConstraintError } = require('sequelize');
 const sequelize = require('../db/conn');
 const { Usuario, Endereco } = require('../models');
 const { ErroApi } = require('../lib/erros');
-const { formatarCnpj } = require('../lib/cnpj');
+const { cnpjParaResposta } = require('../lib/apresentacao');
 const {
     validarEndereco,
     validarPerfilProprio,
@@ -21,7 +21,7 @@ async function carregarConta(idUsuario) {
         order: [[{ model: Endereco, as: 'enderecos' }, 'principal', 'DESC'], [{ model: Endereco, as: 'enderecos' }, 'id_endereco', 'ASC']]
     });
     const conta = usuario.toJSON();
-    conta.cnpj = conta.cnpj ? formatarCnpj(conta.cnpj) : null;
+    conta.cnpj = cnpjParaResposta(conta.cnpj);
     return conta;
 }
 

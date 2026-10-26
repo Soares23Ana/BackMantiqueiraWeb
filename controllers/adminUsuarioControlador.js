@@ -6,11 +6,14 @@ const { ErroApi } = require('../lib/erros');
 const { lerPaginacao, montarPaginacao } = require('../lib/paginacao');
 const { validarUsuarioEquipe } = require('../helpers/validacaoUsuario');
 const { CUSTO_BCRYPT } = require('./usuarioControlador');
+const { cnpjParaResposta } = require('../lib/apresentacao');
 
 const ATRIBUTOS = [
     'id_usuario', 'nome', 'email', 'tipo', 'pode_gerenciar_equipe', 'cargo', 'telefone',
     'razao_social', 'cnpj', 'ativo', 'criado_em'
 ];
+
+const apresentar = (usuario) => ({ ...usuario.toJSON(), cnpj: cnpjParaResposta(usuario.cnpj) });
 
 function emailDuplicado(erro) {
     if (erro instanceof UniqueConstraintError) {
@@ -31,7 +34,7 @@ async function criar(req, res) {
         emailDuplicado(erro);
     }
     const criado = await Usuario.findByPk(usuario.id_usuario, { attributes: ATRIBUTOS });
-    return res.status(201).json({ mensagem: 'Usuário da equipe criado.', usuario: criado });
+    return res.status(201).json({ mensagem: 'Usuário da equipe criado.', usuario: apresentar(criado) });
 }
 
 // GET /admin/usuarios?tipo=equipe&ativo=false&busca=...&pagina=1
@@ -64,7 +67,7 @@ async function listar(req, res) {
         limit: paginacao.limite,
         offset: paginacao.offset
     });
-    return res.status(200).json({ usuarios: rows, paginacao: montarPaginacao(count, paginacao) });
+    return res.status(200).json({ usuarios: rows.map(apresentar), paginacao: montarPaginacao(count, paginacao) });
 }
 
 /**
@@ -120,7 +123,7 @@ async function atualizar(req, res) {
     });
 
     const atualizado = await Usuario.findByPk(idUsuario, { attributes: ATRIBUTOS });
-    return res.status(200).json({ mensagem: 'Usuário atualizado.', usuario: atualizado });
+    return res.status(200).json({ mensagem: 'Usuário atualizado.', usuario: apresentar(atualizado) });
 }
 
 module.exports = { criar, listar, atualizar };

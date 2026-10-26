@@ -1,0 +1,71 @@
+const { test, before, after, describe } = require('node:test');
+const assert = require('node:assert/strict');
+const request = require('supertest');
+const { prepararApp, criarUsuario } = require('./ajuda');
+
+let app;
+let sequelize;
+let equipe;
+let comRazao;
+let semRazao;
+
+before(async () => {
+    ({ app, sequelize } = await prepararApp());
+    const { Produto, Endereco } = require('../models');
+    equipe = await criarUsuario('equipe');
+    comRazao = await criarUsuario('cliente', { nome: 'Ana Compras', razao_social: 'Mercado Bom Preço LTDA', cnpj: '11222333000181' });
+    semRazao = await criarUsuario('cliente', { nome: 'Bruno Responsável', cnpj: '11444777000161' });
+    await Endereco.create({
+        id_usuario: semRazao.usuario.id_usuario, cep: '13870-000', logradouro: 'Rua A', numero: '1',
+        bairro: 'Centro', cidade: 'São João da Boa Vista', estado: 'SP', principal: true
+    });
+    const produto = await Produto.create({ sku: 'C-1', nome: 'Produto contrato', quantidade_estoque: 10 });
+    await request(app).post('/api/v1/pedidos').set('Authorization', semRazao.auth)
+        .send({ itens: [{ id_produto: produto.id_produto, quantidade: 2 }] }).expect(201);
+});
+
+after(async () => {
+    await sequelize.close();
+});
+
+describe('contrato padronizado', () => {
+    test('GET /clientes: paginação padrão, CNPJ formatado e nome_exibicao', async () => {
+        const { body } = await request(app).get('/api/v1/clientes?limite=1').set('Authorization', equipe.auth).expect(200);
+        assert.deepEqual(body.paginacao, { total: 2, pagina: 1, limite: 1, total_paginas: 2 });
+        const todos = (await request(app).get('/api/v1/clientes').set('Authorization', equipe.auth)).body.clientes;
+        const porId = Object.fromEntries(todos.map((c) => [c.id_usuario, c]));
+        assert.equal(porId[comRazao.usuario.id_usuario].nome_exibicao, 'Mercado Bom Preço LTDA');
+        assert.equal(porId[semRazao.usuario.id_usuario].nome_exibicao, 'Bruno Responsável');
+        assert.equal(porId[comRazao.usuario.id_usuario].cnpj, '11.222.333/0001-81');
+        await request(app).get('/api/v1/clientes?limite=500').set('Authorization', equipe.auth).expect(400);
+    });
+
+    test('GET /clientes/:id/detalhes em snake_case', async () => {
+        const { body } = await request(app).get(`/api/v1/clientes/${semRazao.usuario.id_usuario}/detalhes`)
+            .set('Authorization', equipe.auth).expect(200);
+        assert.deepEqual(Object.keys(body).sort(), ['cliente', 'historico_pedidos', 'produtos_mais_solicitados']);
+        assert.equal(body.cliente.nome_exibicao, 'Bruno Responsável');
+        assert.equal(body.cliente.cnpj, '11.444.777/0001-61');
+        assert.deepEqual(body.produtos_mais_solicitados[0].quantidade_solicitada, 2);
+    });
+
+    test('pedidos trazem nome_exibicao e CNPJ formatado do cliente', async () => {
+        const { body } = await request(app).get('/api/v1/pedidos').set('Authorization', equipe.auth).expect(200);
+        assert.equal(body.pedidos[0].cliente.nome_exibicao, 'Bruno Responsável');
+        assert.equal(body.pedidos[0].cliente.cnpj, '11.444.777/0001-61');
+    });
+
+    test('GET /painel e /painel/contadores em snake_case', async () => {
+        const painel = await request(app).get('/api/v1/painel').set('Authorization', equipe.auth).expect(200);
+        assert.deepEqual(Object.keys(painel.body).sort(), ['clientes_ativos', 'estoque_baixo', 'pedidos_pendentes']);
+        assert.equal(painel.body.pedidos_pendentes, 1);
+        const contadores = await request(app).get('/api/v1/painel/contadores').set('Authorization', equipe.auth).expect(200);
+        assert.deepEqual(Object.keys(contadores.body).sort(), ['estoque_baixo', 'pedidos_pendentes']);
+    });
+
+    test('/admin/usuarios devolve o CNPJ formatado', async () => {
+        const gestor = await criarUsuario('equipe', { pode_gerenciar_equipe: true });
+        const { body } = await request(app).get('/api/v1/admin/usuarios?tipo=cliente').set('Authorization', gestor.auth).expect(200);
+        assert.ok(body.usuarios.every((u) => /^\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}$/.test(u.cnpj)));
+    });
+});

@@ -285,7 +285,7 @@ describe('equipe (POST/PATCH /admin/usuarios)', () => {
         assert.equal(duplicado.body.codigo, 'CNPJ_JA_CADASTRADO');
         const corrigido = await request(app).put(`/api/v1/clientes/${semCnpj.usuario.id_usuario}`).set('Authorization', gerente.auth)
             .send({ cnpj: '11.444.777/0001-61', ativo: false }).expect(200);
-        assert.equal(corrigido.body.cliente.cnpj, CNPJ_2);
+        assert.equal(corrigido.body.cliente.cnpj, '11.444.777/0001-61');
         assert.equal(corrigido.body.cliente.ativo, false);
     });
 });

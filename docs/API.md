@@ -79,7 +79,6 @@ Parâmetros `pagina` (padrão 1) e `limite` (padrão e máximo variam por rota).
 ```json
 { "produtos": [ ... ], "paginacao": { "total": 38, "pagina": 1, "limite": 24, "total_paginas": 2 } }
 ```
-> Exceção: `GET /clientes` usa `totalPaginas` (ver [Limitações](#13-limitações-conhecidas)).
 
 ### Outros
 - Datas e horas nas respostas: ISO 8601 em UTC (`2026-10-26T23:27:34.000Z`). Campos só de data (`data_entrega_desejada`): `AAAA-MM-DD`.
@@ -87,6 +86,8 @@ Parâmetros `pagina` (padrão 1) e `limite` (padrão e máximo variam por rota).
 - Toda resposta tem o cabeçalho `X-Request-Id`; informe-o ao relatar um erro.
 - Limite geral: 100 requisições por minuto por IP em `/api/v1`.
 - **Nenhuma resposta tem valores financeiros** (preço, total, desconto). O `preco` do produto só aparece para a equipe.
+- Campos sempre em `snake_case`. CNPJ sempre formatado nas respostas (`11.222.333/0001-81`); nas requisições, aceito com ou sem pontuação.
+- Clientes (em `/clientes` e no `cliente` dos pedidos) trazem `nome_exibicao`: a razão social quando houver, senão o nome do responsável. Use esse campo para exibir o cliente.
 
 ---
 
@@ -463,8 +464,8 @@ Outros erros: `422 VALIDACAO`, `422 ENDERECO_OBRIGATORIO` (cliente sem endereço
 Cada pedido traz, além dos campos do checkout, `cliente`, `funcionario` (quem mudou o status por último) e `proximo_status`:
 ```json
 {
-  "cliente": { "id_usuario": 2, "nome": "Maria Souza", "razao_social": null, "cnpj": "11.222.333/0001-81",
-               "email": "compras@mercadinho.com", "telefone": "19999990000" },
+  "cliente": { "id_usuario": 2, "nome": "Maria Souza", "razao_social": null, "nome_exibicao": "Maria Souza",
+               "cnpj": "11.222.333/0001-81", "email": "compras@mercadinho.com", "telefone": "19999990000" },
   "funcionario": { "id_usuario": 1, "nome": "Administrador", "cargo": "Administrador" },
   "proximo_status": "Saiu para Entrega"
 }
@@ -517,19 +518,28 @@ Erros: `422 VALIDACAO` (motivo com 3 a 500 caracteres), `409 CANCELAMENTO_NAO_PE
 | PUT | `/clientes/:id` | equipe | Atualiza dados operacionais |
 
 ### GET /clientes
-`?busca=&pagina=&limite=&sem_cnpj=true`. `busca` procura em nome, razão social, e-mail e CNPJ (com ou sem pontuação). `sem_cnpj=true` lista quem não consegue entrar por falta de CNPJ válido.
+`?busca=&pagina=&limite=&sem_cnpj=true` (padrão 20, máximo 100). `busca` procura em nome, razão social, e-mail e CNPJ (com ou sem pontuação). `sem_cnpj=true` lista quem não consegue entrar por falta de CNPJ válido.
 ```json
 {
   "clientes": [
-    { "id_usuario": 2, "nome": "Maria Souza", "razao_social": null, "cnpj": "11222333000181", "cnpj_original": null,
-      "email": "compras@mercadinho.com", "telefone": "19999990000", "ativo": true, "criado_em": "2026-10-26T23:27:34.000Z" }
+    { "id_usuario": 2, "nome": "Maria Souza", "razao_social": null, "nome_exibicao": "Maria Souza", "cnpj": "11.222.333/0001-81",
+      "cnpj_original": null, "email": "compras@mercadinho.com", "telefone": "19999990000", "ativo": true,
+      "criado_em": "2026-10-26T23:27:34.000Z" }
   ],
-  "paginacao": { "pagina": 1, "limite": 20, "total": 1, "totalPaginas": 1 }
+  "paginacao": { "total": 1, "pagina": 1, "limite": 20, "total_paginas": 1 }
 }
 ```
 
 ### GET /clientes/:id/detalhes
-`{ "cliente": { ..., "enderecos": [...] }, "historicoPedidos": [...], "produtosMaisSolicitados": [{ "id_produto", "nome", "quantidadeSolicitada" }] }`.
+```json
+{
+  "cliente": { "id_usuario": 2, "nome": "Maria Souza", "razao_social": null, "nome_exibicao": "Maria Souza", "cnpj": "11.222.333/0001-81",
+               "email": "...", "telefone": "...", "ativo": true, "criado_em": "...", "enderecos": [ ... ] },
+  "historico_pedidos": [ { "id_pedido": 1, "status": "Entregue", "data_pedido": "...", "itens": [ ... ] } ],
+  "produtos_mais_solicitados": [ { "id_produto": 15, "nome": "...", "quantidade_solicitada": 12 } ]
+}
+```
+`produtos_mais_solicitados` ignora pedidos cancelados.
 
 ### PUT /clientes/:id
 Um ou mais de: `razao_social`, `cnpj` (válido e único; corrigir limpa a pendência de `cnpj_original`), `telefone`, `ativo` (bloqueia/desbloqueia o login) e `enderecos` (lista; com `id_endereco` atualiza, sem ele cria; os omitidos não são removidos). `200`: `{ "mensagem": "Dados operacionais do cliente atualizados.", "cliente": { ... } }`. Erros: `422` (CNPJ inválido), `409 CNPJ_JA_CADASTRADO`, `404`.
@@ -571,11 +581,11 @@ Todas: **equipe**. "Estoque baixo" = produto ativo com estoque menor ou igual ao
 
 | Método | Rota | Resposta |
 |---|---|---|
-| GET | `/painel` | `{ "pedidosPendentes": 0, "estoqueBaixo": 5, "clientesAtivos": 1 }` |
-| GET | `/painel/contadores` | `{ "pedidosPendentes": 0, "estoqueBaixo": 5 }` |
+| GET | `/painel` | `{ "pedidos_pendentes": 0, "estoque_baixo": 5, "clientes_ativos": 1 }` |
+| GET | `/painel/contadores` | `{ "pedidos_pendentes": 0, "estoque_baixo": 5 }` |
 | GET | `/painel/alertas-reposicao` | Ver abaixo |
 
-`pedidosPendentes` conta `Aguardando Separação` + `Em Separação`.
+`pedidos_pendentes` conta `Aguardando Separação` + `Em Separação`; `clientes_ativos` conta clientes não bloqueados.
 
 ```json
 {
@@ -686,8 +696,8 @@ Erros: `422 VALIDACAO`, `404` (chave desconhecida).
 5. Uma linha com vários problemas pode aparecer mais de uma vez em `erros` (uma por campo).
 
 **Contrato e formatos**
-6. Formatos antigos ainda não padronizados: `GET /clientes` usa `paginacao.totalPaginas` (as outras listas usam `total_paginas`) e devolve `cnpj` só com dígitos (pedidos e "minha conta" devolvem formatado). `GET /painel` e `/clientes/:id/detalhes` usam nomes em camelCase (`pedidosPendentes`, `historicoPedidos`).
-7. A razão social não faz parte do cadastro; clientes novos têm `razao_social: null`. A API devolve `nome` (responsável) e `razao_social` separados; para exibir, use `razao_social || nome`.
+6. A razão social não faz parte do cadastro; clientes novos têm `razao_social: null` até a equipe preencher em `PUT /clientes/:id`. Use `nome_exibicao` para exibir.
+7. Os objetos de pedido em `historico_pedidos` (detalhes do cliente) vêm no formato do banco, mais simples que o de `GET /pedidos` (sem `pode_cancelar`, `total_itens` nem `sku` nos itens).
 8. Datas e horas vêm em UTC; converta para o fuso de Brasília na exibição.
 9. Imagens do catálogo (`/img/...`) são servidas pelo front; imagens enviadas pela API (`/arquivos/uploads/...`) ficam no disco do servidor e são perdidas se a instância for recriada (não há S3).
 
