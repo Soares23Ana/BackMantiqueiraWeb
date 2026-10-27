@@ -105,13 +105,16 @@ function lerPeriodo(de, ate) {
     return Object.getOwnPropertySymbols(condicao).length > 0 ? condicao : null;
 }
 
-// POST /pedidos (cliente)
+// POST /pedidos (cliente). Com Idempotency-Key repetida, devolve o pedido já criado (200).
 async function criarPedido(req, res) {
-    const pedido = await servicoPedidos.criarPedido(req.usuario.id, req.body);
-    await registrarEvento({ tipo: 'pedido_concluido', id_pedido: pedido.id_pedido, id_usuario: req.usuario.id });
+    const chaveIdempotencia = servicoPedidos.lerChaveIdempotencia(req.get('Idempotency-Key'));
+    const { pedido, repetido } = await servicoPedidos.criarPedido(req.usuario.id, req.body, { chaveIdempotencia });
+    if (!repetido) {
+        await registrarEvento({ tipo: 'pedido_concluido', id_pedido: pedido.id_pedido, id_usuario: req.usuario.id });
+    }
     const completo = await Pedido.findByPk(pedido.id_pedido, { include: [INCLUDE_ITENS] });
-    return res.status(201).json({
-        mensagem: 'Pedido criado com sucesso.',
+    return res.status(repetido ? 200 : 201).json({
+        mensagem: repetido ? 'Este pedido já foi criado.' : 'Pedido criado com sucesso.',
         pedido: apresentarPedido(completo, req.usuario)
     });
 }

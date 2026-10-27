@@ -148,6 +148,7 @@ async function obterDetalhesCliente(req, res) {
                 {
                     model: Pedido,
                     as: 'pedidosComoCliente',
+                    attributes: { exclude: ['chave_idempotencia'] },
                     separate: true,
                     order: [['data_pedido', 'DESC']],
                     include: [{

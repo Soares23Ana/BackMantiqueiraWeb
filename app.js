@@ -52,7 +52,7 @@ function criarApp() {
             callback(null, !origem || origensPermitidas.has(origem));
         },
         credentials: true,
-        allowedHeaders: ['Authorization', 'Content-Type', 'X-Request-Id'],
+        allowedHeaders: ['Authorization', 'Content-Type', 'X-Request-Id', 'Idempotency-Key'],
         exposedHeaders: ['X-Request-Id']
     }));
 

@@ -13,6 +13,11 @@ const Pedido = sequelize.define('Pedido', {
         type: DataTypes.INTEGER,
         allowNull: false
     },
+    // Valor do cabeçalho Idempotency-Key do checkout (único por cliente).
+    chave_idempotencia: {
+        type: DataTypes.STRING(64),
+        allowNull: true
+    },
     // Último usuário da equipe que mudou o status do pedido.
     id_funcionario: {
         type: DataTypes.INTEGER,

@@ -389,7 +389,7 @@ O formato do CSV, as colunas e os jobs estão no [README](../README.md#importaç
 
 | Método | Rota | Perfil | Descrição |
 |---|---|---|---|
-| POST | `/pedidos` | cliente | Checkout |
+| POST | `/pedidos` | cliente | Checkout (aceita `Idempotency-Key`) |
 | GET | `/pedidos/meus` | cliente | Pedidos do cliente |
 | GET | `/pedidos` | equipe | Todos, com filtros |
 | GET | `/pedidos/:id_pedido` | equipe, ou cliente dono | Detalhe com histórico |
@@ -411,6 +411,14 @@ Ciclo: `Aguardando Separação` → `Em Separação` → `Saiu para Entrega` →
 - `id_endereco` opcional (padrão: o principal); precisa ser do cliente. Uma cópia do endereço fica no pedido.
 - `data_entrega_desejada` opcional, de amanhã até 90 dias.
 - Itens repetidos são somados. Até 100 itens.
+
+**Idempotência (recomendado).** Envie o cabeçalho opcional `Idempotency-Key` com um valor novo por checkout (ex.: `crypto.randomUUID()` gerado ao abrir a tela de finalização) e repita **o mesmo valor** se precisar reenviar (timeout, duplo clique, queda de rede):
+```
+Idempotency-Key: 9b2f6c1e-4a7d-4c1b-9e1f-2d3a4b5c6d7e
+```
+- De 8 a 64 caracteres visíveis, sem espaços nem acentos; diferencia maiúsculas. Fora disso: `400 REQUISICAO_INVALIDA`.
+- A chave vale por cliente. Se ela já gerou um pedido, a API devolve **`200`** com `"mensagem": "Este pedido já foi criado."` e o mesmo objeto `pedido`, sem validar o corpo de novo e sem baixar estoque outra vez. Requisições simultâneas com a mesma chave também resultam em um único pedido.
+- Um checkout que falhou (`409`, `422`) não grava a chave: corrija e reenvie com a mesma.
 
 `201`:
 ```json

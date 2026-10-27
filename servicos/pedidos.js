@@ -1,4 +1,4 @@
-const { Op } = require('sequelize');
+const { Op, UniqueConstraintError } = require('sequelize');
 const sequelize = require('../db/conn');
 const { Produto, Pedido, ItemPedido, Endereco, PedidoHistorico } = require('../models');
 const logger = require('../lib/logger');
@@ -167,16 +167,61 @@ function verificarItens(itens, produtosPorId) {
     return problemas;
 }
 
+// Cabeçalho Idempotency-Key: opcional, de 8 a 64 caracteres visíveis (sem espaços), como um UUID.
+function lerChaveIdempotencia(valor) {
+    if (valor === undefined) return null;
+    if (!/^[!-~]{8,64}$/.test(valor)) {
+        throw new ErroApi(400, 'REQUISICAO_INVALIDA',
+            'O cabeçalho Idempotency-Key deve ter de 8 a 64 caracteres, sem espaços nem acentos.');
+    }
+    return valor;
+}
+
+function buscarPorChave(idCliente, chave) {
+    return Pedido.findOne({ where: { id_cliente: idCliente, chave_idempotencia: chave } });
+}
+
 /**
  * Cria o pedido do cliente. Produtos, pedido, itens, baixa de estoque, movimentações e histórico
  * são gravados na mesma transação; o bloqueio das linhas de produto (em ordem de id, para evitar
  * deadlock) impede que dois pedidos simultâneos usem o mesmo estoque.
+ *
+ * Com chave de idempotência, a mesma chave devolve o pedido já criado ({ repetido: true }) sem baixar
+ * estoque de novo. O pedido é inserido antes de bloquear os produtos: uma segunda requisição simultânea
+ * com a mesma chave espera no índice único até a primeira terminar e então cai no pedido já gravado.
  */
-async function criarPedido(idCliente, corpo) {
+async function criarPedido(idCliente, corpo, { chaveIdempotencia = null } = {}) {
+    if (chaveIdempotencia) {
+        const existente = await buscarPorChave(idCliente, chaveIdempotencia);
+        if (existente) return { pedido: existente, repetido: true };
+    }
     const { itens, idEndereco, observacao, dataEntregaDesejada } = validarCheckout(corpo);
 
+    try {
+        const pedido = await gravarPedido(idCliente, { itens, idEndereco, observacao, dataEntregaDesejada, chaveIdempotencia });
+        return { pedido, repetido: false };
+    } catch (erro) {
+        if (chaveIdempotencia && erro instanceof UniqueConstraintError) {
+            const existente = await buscarPorChave(idCliente, chaveIdempotencia);
+            if (existente) return { pedido: existente, repetido: true };
+        }
+        throw erro;
+    }
+}
+
+function gravarPedido(idCliente, { itens, idEndereco, observacao, dataEntregaDesejada, chaveIdempotencia }) {
     return sequelize.transaction(async (transacao) => {
         const endereco = await resolverEndereco(idCliente, idEndereco, transacao);
+        const pedido = await Pedido.create({
+            id_cliente: idCliente,
+            chave_idempotencia: chaveIdempotencia,
+            id_endereco: endereco.id_endereco,
+            endereco_entrega: endereco,
+            observacao,
+            data_entrega_desejada: dataEntregaDesejada,
+            status: 'Aguardando Separação'
+        }, { transaction: transacao });
+
         const produtos = await Produto.findAll({
             where: { id_produto: { [Op.in]: itens.map((item) => item.id_produto) } },
             order: [['id_produto', 'ASC']],
@@ -189,15 +234,6 @@ async function criarPedido(idCliente, corpo) {
             throw new ErroApi(409, 'ITENS_INDISPONIVEIS',
                 `${problemas.length} item(ns) do pedido precisa(m) de ajuste.`, problemas);
         }
-
-        const pedido = await Pedido.create({
-            id_cliente: idCliente,
-            id_endereco: endereco.id_endereco,
-            endereco_entrega: endereco,
-            observacao,
-            data_entrega_desejada: dataEntregaDesejada,
-            status: 'Aguardando Separação'
-        }, { transaction: transacao });
 
         await ItemPedido.bulkCreate(
             itens.map((item) => ({ id_pedido: pedido.id_pedido, id_produto: item.id_produto, quantidade: item.quantidade })),
@@ -303,6 +339,7 @@ async function cancelarPedido(idPedido, usuario, motivo) {
 
 module.exports = {
     criarPedido,
+    lerChaveIdempotencia,
     avancarStatus,
     cancelarPedido,
     podeCancelar,

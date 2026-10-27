@@ -54,7 +54,8 @@ before(async () => {
     await Produto.create({ sku: 'T-MULT6', nome: 'Caixa com 6', multiplo_venda: 6, quantidade_estoque: 30 });
     await Produto.create({ sku: 'T-INATIVO', nome: 'Fora de linha', ativo: false, quantidade_estoque: 50 });
     await Produto.create({ sku: 'T-ULTIMOS', nome: 'Últimas 5', quantidade_estoque: 5 });
-    for (const produto of await Produto.findAll({ where: { sku: ['T-MULT6', 'T-INATIVO', 'T-ULTIMOS'] } })) {
+    await Produto.create({ sku: 'T-IDEMP', nome: 'Últimas 4', quantidade_estoque: 4 });
+    for (const produto of await Produto.findAll({ where: { sku: ['T-MULT6', 'T-INATIVO', 'T-ULTIMOS', 'T-IDEMP'] } })) {
         produtos[produto.sku] = produto.id_produto;
     }
 
@@ -165,6 +166,73 @@ describe('checkout (POST /pedidos)', () => {
             { replacements: [produtos['T-ULTIMOS']] }
         );
         assert.equal(total, 1);
+    });
+});
+
+describe('idempotência do checkout (Idempotency-Key)', () => {
+    const pedirComChave = (auth, chave, corpo) => pedir(auth, corpo).set('Idempotency-Key', chave);
+
+    test('requisições simultâneas com a mesma chave criam um pedido só e baixam o estoque uma vez', async () => {
+        // O estoque dá para exatamente um pedido: as repetições não podem cair em 409.
+        assert.equal(await estoqueDe('T-IDEMP'), 4);
+        const corpo = { itens: [{ id_produto: produtos['T-IDEMP'], quantidade: 4 }] };
+        const chave = 'checkout-simultaneo-0001';
+        const respostas = await Promise.all([
+            pedirComChave(cliente.auth, chave, corpo),
+            pedirComChave(cliente.auth, chave, corpo),
+            pedirComChave(cliente.auth, chave, corpo)
+        ]);
+        assert.deepEqual(respostas.map((r) => r.status).sort(), [200, 200, 201]);
+        assert.equal(new Set(respostas.map((r) => r.body.pedido.id_pedido)).size, 1);
+        assert.equal(await estoqueDe('T-IDEMP'), 0);
+
+        const idPedido = respostas[0].body.pedido.id_pedido;
+        const [[{ movimentacoes }]] = await sequelize.query(
+            'SELECT COUNT(*) AS movimentacoes FROM movimentacoes_estoque WHERE id_pedido = ?', { replacements: [idPedido] });
+        assert.equal(movimentacoes, 1);
+        const [[{ eventos }]] = await sequelize.query(
+            "SELECT COUNT(*) AS eventos FROM eventos WHERE tipo = 'pedido_concluido' AND id_pedido = ?", { replacements: [idPedido] });
+        assert.equal(eventos, 1);
+
+        // Depois, a mesma chave continua devolvendo o mesmo pedido, mesmo com outro corpo.
+        const repetida = await pedirComChave(cliente.auth, chave, { itens: [{ id_produto: produtos['SKU-102'], quantidade: 1 }] }).expect(200);
+        assert.equal(repetida.body.pedido.id_pedido, idPedido);
+        assert.equal(repetida.body.mensagem, 'Este pedido já foi criado.');
+        assert.deepEqual(repetida.body.pedido.itens.map((i) => [i.sku, i.quantidade]), [['T-IDEMP', 4]]);
+        assert.equal(repetida.body.pedido.chave_idempotencia, undefined);
+    });
+
+    test('a chave vale por cliente e diferencia maiúsculas', async () => {
+        const corpo = { itens: [{ id_produto: produtos['SKU-102'], quantidade: 1 }] };
+        const primeiro = await pedirComChave(cliente.auth, 'chave-por-cliente', corpo).expect(201);
+        const outro = await pedirComChave(outroCliente.auth, 'chave-por-cliente', corpo).expect(201);
+        const maiusculas = await pedirComChave(cliente.auth, 'CHAVE-POR-CLIENTE', corpo).expect(201);
+        assert.equal(new Set([primeiro, outro, maiusculas].map((r) => r.body.pedido.id_pedido)).size, 3);
+    });
+
+    test('chave inválida devolve 400 e não cria pedido', async () => {
+        const corpo = { itens: [{ id_produto: produtos['SKU-102'], quantidade: 1 }] };
+        const antes = await estoqueDe('SKU-102');
+        for (const chave of ['curta', 'x'.repeat(65), 'com espaço no meio']) {
+            const resposta = await pedirComChave(cliente.auth, chave, corpo).expect(400);
+            assert.equal(resposta.body.codigo, 'REQUISICAO_INVALIDA');
+        }
+        assert.equal(await estoqueDe('SKU-102'), antes);
+    });
+
+    test('um checkout que falhou não "gasta" a chave', async () => {
+        const chave = 'falhou-e-tentou-de-novo';
+        await pedirComChave(cliente.auth, chave, { itens: [{ id_produto: produtos['T-MULT6'], quantidade: 4 }] }).expect(409);
+        await pedirComChave(cliente.auth, chave, { itens: [{ id_produto: produtos['T-MULT6'], quantidade: 6 }] }).expect(201);
+    });
+
+    test('o CORS libera o cabeçalho Idempotency-Key', async () => {
+        const resposta = await request(app)
+            .options('/api/v1/pedidos')
+            .set('Origin', 'http://localhost:5173')
+            .set('Access-Control-Request-Method', 'POST')
+            .set('Access-Control-Request-Headers', 'idempotency-key');
+        assert.match(resposta.headers['access-control-allow-headers'], /Idempotency-Key/);
     });
 });
 
