@@ -41,6 +41,15 @@ const limitadorCadastro = rateLimit({
     })
 });
 
+// Eventos de uso (POST /eventos): por IP, bem acima do uso normal de uma pessoa navegando.
+const limitadorEventos = rateLimit({
+    windowMs: 60 * 1000,
+    limit: config.teste ? 10000 : 120,
+    standardHeaders: 'draft-8',
+    legacyHeaders: false,
+    message: respostaLimite
+});
+
 // Enquanto a primeira conexão com o banco não acontece, a API responde 503 em vez de erros genéricos.
 function exigirBanco(req, res, next) {
     if (estado.conectado) {
@@ -93,4 +102,4 @@ function tratarErros(erro, req, res, next) {
     return res.status(status).json(corpoErro(status, corpo));
 }
 
-module.exports = { limitadorGlobal, limitadorLogin, limitadorCadastro, exigirBanco, rotaNaoEncontrada, tratarErros };
+module.exports = { limitadorGlobal, limitadorLogin, limitadorCadastro, limitadorEventos, exigirBanco, rotaNaoEncontrada, tratarErros };

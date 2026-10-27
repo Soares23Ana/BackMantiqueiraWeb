@@ -10,6 +10,7 @@ const { lerPaginacao, montarPaginacao } = require('../lib/paginacao');
 const { escaparLike, termosDeBusca } = require('../lib/texto');
 const { validarDadosProduto } = require('../helpers/validacaoProduto');
 const { alterarEstoque, disponibilidade } = require('../servicos/estoque');
+const { registrarEvento } = require('../servicos/eventos');
 
 const PASTA_UPLOADS = path.join(__dirname, '..', 'publico', 'uploads');
 const DISPONIBILIDADES = ['disponivel', 'ultimas_unidades', 'indisponivel', 'em_estoque'];
@@ -178,6 +179,15 @@ async function listar(req, res) {
         limit: paginacao.limite,
         offset: paginacao.offset
     });
+    // Métrica de busca: só a primeira página (trocar de página não é nova busca) e não para a equipe.
+    if (filtros.termos.length > 0 && paginacao.pagina === 1 && !ehEquipe(req.usuario)) {
+        await registrarEvento({
+            tipo: count > 0 ? 'busca' : 'busca_sem_resultado',
+            termo: filtros.termos.join(' ').toLowerCase().slice(0, 100),
+            resultados: count,
+            id_usuario: req.usuario ? req.usuario.id : null
+        });
+    }
     return res.status(200).json({
         produtos: rows.map((produto) => apresentarProduto(produto, req.usuario)),
         paginacao: montarPaginacao(count, paginacao)

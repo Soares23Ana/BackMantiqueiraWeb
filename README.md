@@ -152,6 +152,10 @@ Sem desconto: título, selo de texto (até 40 caracteres), período e produtos. 
 * `GET /api/v1/campanhas/ativas` - Público: campanhas no período, com os produtos ativos no formato da vitrine.
 * `GET /api/v1/campanhas?situacao=`, `GET /:id`, `POST`, `PATCH /:id` (produtos substitui a lista), `DELETE /:id` - Equipe.
 
+### Eventos e métricas
+* `POST /api/v1/eventos` - Público: `produto_visto`, `carrinho_adicionar`, `checkout_iniciado`, `banner_clique`, `campanha_clique`. Sem IP; associa ao usuário se houver token. Busca e pedido concluído são registrados pelo servidor.
+* `GET /api/v1/metricas/resumo`, `/buscas`, `/produtos-mais-pedidos`, `/clientes-inativos?dias=` - Equipe; período com `de`/`ate` (padrão: últimos 30 dias).
+
 ### Configurações (`/api/v1/configuracoes`)
 * `GET /api/v1/configuracoes/publicas` - Público: `{ whatsapp, telefone_contato, email_contato, horario_atendimento, aviso_topo }` (`null` quando não preenchido).
 * `GET /api/v1/configuracoes` - Equipe: todas, com descrição e se são públicas (inclui a privada `meta_reposicao`).
@@ -187,6 +191,7 @@ A API lê arquivos colocados em `importacao/entrada/` (pasta configurável em `I
 |---|---|---|---|
 | `carga-completa` | Meia-noite | `catalogo*.csv` | Importa tudo e desativa produtos ausentes |
 | `estoque` | A cada 30 min | `estoque*.csv` | Aplica só `sku` e `estoque` (outras colunas são ignoradas) |
+| `limpeza-eventos` | 3h | — | Apaga eventos de uso com mais de 12 meses |
 
 Arquivos de exemplo para demonstração ficam em `importacao/exemplos/` (fora das pastas lidas pelos jobs): `catalogo_exemplo.csv` (o catálogo completo com 1 produto novo e 4 alterações, seguro para a carga completa) e `estoque_exemplo.csv` (4 atualizações e 1 SKU inexistente, para mostrar o relatório de erros). Para testar um job, copie o arquivo para `importacao/entrada/`.
 

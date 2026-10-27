@@ -17,6 +17,7 @@ Versão da API: **v1**. Os exemplos abaixo foram capturados da API rodando com o
 12. [Saúde](#12-saúde)
 13. [Limitações conhecidas](#13-limitações-conhecidas)
 14. [Campanhas](#14-campanhas)
+15. [Eventos e métricas](#15-eventos-e-métricas)
 
 ---
 
@@ -743,17 +744,21 @@ Erros: `422 VALIDACAO`, `404` (chave desconhecida).
 11. Não há refresh token: depois de 2 horas o usuário precisa entrar de novo. "Sair" é só descartar o token no front (ele continua válido até expirar, a menos que o usuário seja desativado).
 12. Os limites de requisições ficam na memória de cada instância: com várias instâncias, o limite efetivo é multiplicado; reiniciar a API zera as contagens.
 
+**Métricas**
+13. As métricas contam eventos, não pessoas: duas visitas da mesma pessoa ao mesmo produto contam 2. `produto_visto`, `carrinho_adicionar`, `checkout_iniciado` e os cliques só existem se o front enviar `POST /eventos`. Eventos com mais de 12 meses são apagados.
+14. Buscas da equipe e trocas de página não entram nas métricas de busca. O termo é guardado em minúsculas; termos com e sem acento são agrupados juntos.
+
 **Pedidos e notificações**
-13. A notificação de mudança de status é só um registro no log; o cliente não recebe e-mail nem mensagem.
-14. Não há edição de pedido: para mudar itens, cancela-se e faz-se outro (enquanto o status permitir).
+15. A notificação de mudança de status é só um registro no log; o cliente não recebe e-mail nem mensagem.
+16. Não há edição de pedido: para mudar itens, cancela-se e faz-se outro (enquanto o status permitir).
 
 **Busca e catálogo**
-15. A busca é por trechos de texto (sem tolerância a erros de digitação: "colgat" encontra, "golgate" não). Adequada para milhares de produtos.
-16. Desativar uma categoria ou marca não esconde os produtos dela: ela some de `GET /categorias` / `GET /marcas`, mas os produtos continuam na vitrine e ela ainda aparece nas contagens de `GET /produtos/filtros`. Para tirar produtos da vitrine, desative os produtos.
-17. `DELETE /produtos/:id` apenas desativa; não existe exclusão definitiva de produto. Já a exclusão de banner é definitiva e apaga a imagem.
+17. A busca é por trechos de texto (sem tolerância a erros de digitação: "colgat" encontra, "golgate" não). Adequada para milhares de produtos.
+18. Desativar uma categoria ou marca não esconde os produtos dela: ela some de `GET /categorias` / `GET /marcas`, mas os produtos continuam na vitrine e ela ainda aparece nas contagens de `GET /produtos/filtros`. Para tirar produtos da vitrine, desative os produtos.
+19. `DELETE /produtos/:id` apenas desativa; não existe exclusão definitiva de produto. Já a exclusão de banner é definitiva e apaga a imagem.
 
 **Ferramentas**
-18. Testando com `curl` no Windows, acentos no corpo da requisição podem chegar fora do UTF-8 (`"Em Separação"` dá `422`). Use Insomnia/Postman ou envie o corpo de um arquivo UTF-8 (`--data-binary @arquivo.json`). O navegador não tem esse problema.
+20. Testando com `curl` no Windows, acentos no corpo da requisição podem chegar fora do UTF-8 (`"Em Separação"` dá `422`). Use Insomnia/Postman ou envie o corpo de um arquivo UTF-8 (`--data-binary @arquivo.json`). O navegador não tem esse problema.
 
 ---
 
@@ -816,3 +821,85 @@ Qualquer subconjunto dos campos do `POST`. `produtos`, quando enviado, **substit
 
 ### DELETE /campanhas/:id (equipe)
 Exclui a campanha e os vínculos (os produtos não são afetados). `200`: `{ "mensagem": "Campanha excluída." }`.
+
+---
+
+## 15. Eventos e métricas
+
+### POST /eventos (público)
+O front envia o que acontece na navegação. **A API não guarda IP.** Se houver token válido, o evento fica associado ao usuário; para visitantes, o front pode mandar `sessao` (um identificador aleatório que ele gera e guarda, de 8 a 64 caracteres `[A-Za-z0-9_-]`). Limite: 120 eventos por minuto por IP.
+
+| `tipo` | Campos | Quando enviar |
+|---|---|---|
+| `produto_visto` | `id_produto` | Abriu a página do produto |
+| `carrinho_adicionar` | `id_produto`, `quantidade` (opcional) | Adicionou ao carrinho |
+| `checkout_iniciado` | — | Abriu o checkout |
+| `banner_clique` | `id_banner` | Clicou num banner |
+| `campanha_clique` | `id_campanha` | Clicou numa campanha |
+
+Todos aceitam `sessao` (opcional).
+```json
+{ "tipo": "carrinho_adicionar", "id_produto": 15, "quantidade": 6, "sessao": "a1b2c3d4e5f6" }
+```
+`202`: `{ "registrado": true }`. Erros: `422 VALIDACAO` (tipo não aceito, campo faltando ou a mais), `429`.
+
+**Registrados pelo próprio servidor** (o front não envia e a API recusa): `busca` e `busca_sem_resultado` (na `GET /produtos` com `busca`, só na 1ª página e não para a equipe) e `pedido_concluido` (no `POST /pedidos`).
+
+### Métricas (equipe)
+Todas aceitam `de` e `ate` (`AAAA-MM-DD`, inclusive; padrão: últimos 30 dias até hoje; máximo 366 dias).
+
+| Método | Rota | Descrição |
+|---|---|---|
+| GET | `/metricas/resumo` | Pedidos por status, unidades, clientes que compraram e contagem de eventos |
+| GET | `/metricas/buscas?limite=10` | Termos mais buscados e buscas sem resultado |
+| GET | `/metricas/produtos-mais-pedidos?limite=10` | Ranking em unidades |
+| GET | `/metricas/clientes-inativos?dias=60&pagina=` | Clientes sem comprar há X dias |
+
+`limite`: 1 a 50 (padrão 10). Unidades, clientes e produtos mais pedidos **não contam pedidos cancelados**.
+
+`GET /metricas/resumo`:
+```json
+{
+  "periodo": { "de": "2026-09-27", "ate": "2026-10-26" },
+  "pedidos": {
+    "total": 1,
+    "por_status": { "Aguardando Separação": 1, "Em Separação": 0, "Saiu para Entrega": 0, "Entregue": 0, "Cancelado": 0 }
+  },
+  "unidades_pedidas": 5,
+  "clientes_que_compraram": 1,
+  "eventos": {
+    "busca": 2, "busca_sem_resultado": 1, "produto_visto": 1, "carrinho_adicionar": 1,
+    "checkout_iniciado": 1, "pedido_concluido": 1, "banner_clique": 1, "campanha_clique": 1
+  }
+}
+```
+
+`GET /metricas/buscas`:
+```json
+{
+  "periodo": { "de": "2026-09-27", "ate": "2026-10-26" },
+  "mais_buscadas": [
+    { "termo": "sabonete", "total": 2, "sem_resultado": 0 },
+    { "termo": "perfume importado", "total": 1, "sem_resultado": 1 }
+  ],
+  "sem_resultado": [{ "termo": "perfume importado", "total": 1, "ultima_vez": "2026-10-26T23:50:12.000Z" }]
+}
+```
+
+`GET /metricas/produtos-mais-pedidos`:
+```json
+{ "periodo": { "...": "..." }, "produtos": [{ "id_produto": 1, "sku": "M-1", "nome": "Sabonete Lavanda", "unidades": 4, "pedidos": 1 }] }
+```
+
+`GET /metricas/clientes-inativos?dias=30` (`dias` de 1 a 730, padrão 60): clientes ativos sem pedido não cancelado no período, **incluindo quem nunca comprou**; quem está há mais tempo sem comprar vem primeiro.
+```json
+{
+  "dias": 30,
+  "clientes": [
+    { "id_usuario": 3, "nome": "Cliente Sumido", "razao_social": "Sumido LTDA", "nome_exibicao": "Sumido LTDA",
+      "cnpj": "11.222.333/0001-81", "email": "...", "telefone": "...", "criado_em": "...",
+      "ultimo_pedido_em": null, "total_pedidos": 0 }
+  ],
+  "paginacao": { "total": 1, "pagina": 1, "limite": 20, "total_paginas": 1 }
+}
+```

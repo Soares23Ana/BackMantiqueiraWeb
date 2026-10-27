@@ -8,6 +8,7 @@ const { apresentarCliente } = require('../lib/apresentacao');
 const { lerPaginacao, montarPaginacao } = require('../lib/paginacao');
 const servicoPedidos = require('../servicos/pedidos');
 const { disponibilidade } = require('../servicos/estoque');
+const { registrarEvento } = require('../servicos/eventos');
 
 const INCLUDE_ITENS = {
     model: ItemPedido,
@@ -107,6 +108,7 @@ function lerPeriodo(de, ate) {
 // POST /pedidos (cliente)
 async function criarPedido(req, res) {
     const pedido = await servicoPedidos.criarPedido(req.usuario.id, req.body);
+    await registrarEvento({ tipo: 'pedido_concluido', id_pedido: pedido.id_pedido, id_usuario: req.usuario.id });
     const completo = await Pedido.findByPk(pedido.id_pedido, { include: [INCLUDE_ITENS] });
     return res.status(201).json({
         mensagem: 'Pedido criado com sucesso.',

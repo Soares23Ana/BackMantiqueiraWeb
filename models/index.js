@@ -14,6 +14,7 @@ const Configuracao = require('./Configuracao');
 const SincronizacaoLog = require('./SincronizacaoLog');
 const Campanha = require('./Campanha');
 const CampanhaProduto = require('./CampanhaProduto');
+const Evento = require('./Evento');
 
 Campanha.belongsToMany(Produto, {
     through: CampanhaProduto,
@@ -138,5 +139,6 @@ module.exports = {
     Configuracao,
     SincronizacaoLog,
     Campanha,
-    CampanhaProduto
+    CampanhaProduto,
+    Evento
 };

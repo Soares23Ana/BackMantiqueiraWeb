@@ -26,6 +26,8 @@ const adminRoutes = require('./routes/admin');
 const minhaContaRoutes = require('./routes/minhaConta');
 const configuracoesRoutes = require('./routes/configuracoes');
 const campanhasRoutes = require('./routes/campanhas');
+const eventosRoutes = require('./routes/eventos');
+const metricasRoutes = require('./routes/metricas');
 const autenticarToken = require('./middlewares/authMiddleware');
 const { exigirEquipe } = require('./middlewares/roleMiddleware');
 
@@ -77,6 +79,8 @@ function criarApp() {
     api.use('/minha-conta', minhaContaRoutes);
     api.use('/configuracoes', configuracoesRoutes);
     api.use('/campanhas', campanhasRoutes);
+    api.use('/eventos', eventosRoutes);
+    api.use('/metricas', metricasRoutes);
 
     app.use('/api/v1', limitadorGlobal, api);
 

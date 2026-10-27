@@ -3,6 +3,7 @@ const config = require('../config/ambiente');
 const logger = require('../lib/logger');
 const { executarComTrava } = require('../lib/travaMysql');
 const { processarPastaComTrava } = require('../servicos/sincronizacao');
+const { limparEventosAntigos } = require('../servicos/eventos');
 
 const FUSO = 'America/Sao_Paulo';
 
@@ -19,6 +20,12 @@ const DEFINICOES = [
         expressao: '*/30 * * * *',
         descricao: 'A cada 30 min: importa importacao/entrada/estoque*.csv (só as colunas sku e estoque).',
         executar: () => processarPastaComTrava('estoque')
+    },
+    {
+        nome: 'limpeza-eventos',
+        expressao: '0 3 * * *',
+        descricao: '3h: apaga eventos de uso com mais de 12 meses.',
+        executar: () => limparEventosAntigos()
     }
 ];
 

@@ -208,7 +208,7 @@ describe('importação por pasta (jobs)', () => {
     test('jobs têm expressões válidas e ficam desligados nos testes', () => {
         const cron = require('node-cron');
         const { DEFINICOES, situacaoJobs } = require('../jobs');
-        assert.deepEqual(DEFINICOES.map((d) => [d.nome, d.expressao]), [['carga-completa', '0 0 * * *'], ['estoque', '*/30 * * * *']]);
+        assert.deepEqual(DEFINICOES.map((d) => [d.nome, d.expressao]), [['carga-completa', '0 0 * * *'], ['estoque', '*/30 * * * *'], ['limpeza-eventos', '0 3 * * *']]);
         assert.ok(DEFINICOES.every((d) => cron.validate(d.expressao)));
         assert.ok(situacaoJobs().every((job) => job.ativo === false && job.fuso === 'America/Sao_Paulo'));
     });
@@ -350,7 +350,7 @@ describe('/saude/detalhado', () => {
         assert.equal(resposta.body.status, 'ok');
         assert.deepEqual(resposta.body.banco.migracoes_pendentes, []);
         assert.equal(typeof resposta.body.banco.latencia_ms, 'number');
-        assert.equal(resposta.body.jobs.length, 2);
+        assert.equal(resposta.body.jobs.length, 3);
         assert.ok(resposta.body.sincronizacoes.ultima_carga_completa);
         assert.ok(resposta.body.sincronizacoes.ultima_estoque);
     });
