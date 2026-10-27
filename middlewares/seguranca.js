@@ -9,8 +9,7 @@ const respostaLimite = corpoErro(429);
 
 const limitadorGlobal = rateLimit({
     windowMs: 60 * 1000,
-    // Nos testes automatizados, centenas de requisições saem do mesmo IP em segundos.
-    limit: config.teste ? 10000 : 100,
+    limit: config.limites.global,
     standardHeaders: 'draft-8',
     legacyHeaders: false,
     message: respostaLimite

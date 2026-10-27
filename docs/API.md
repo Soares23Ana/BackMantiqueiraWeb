@@ -86,7 +86,7 @@ Parâmetros `pagina` (padrão 1) e `limite` (padrão e máximo variam por rota).
 - Datas e horas nas respostas: ISO 8601 em UTC (`2026-10-26T23:27:34.000Z`). Campos só de data (`data_entrega_desejada`): `AAAA-MM-DD`.
 - Envie JSON em UTF-8 (`Content-Type: application/json`). Corpo máximo: 200 KB.
 - Toda resposta tem o cabeçalho `X-Request-Id`; informe-o ao relatar um erro.
-- Limite geral: 100 requisições por minuto por IP em `/api/v1`.
+- Limite geral: 600 requisições por minuto por IP em `/api/v1` (configurável por `LIMITE_GLOBAL`). Login tem limite próprio (10 tentativas com falha a cada 15 min) e cadastro também (10 por hora).
 - **Nenhuma resposta tem valores financeiros** (preço, total, desconto). O `preco` do produto só aparece para a equipe.
 - Campos sempre em `snake_case`. CNPJ sempre formatado nas respostas (`11.222.333/0001-81`); nas requisições, aceito com ou sem pontuação.
 - Clientes (em `/clientes` e no `cliente` dos pedidos) trazem `nome_exibicao`: a razão social quando houver, senão o nome do responsável. Use esse campo para exibir o cliente.

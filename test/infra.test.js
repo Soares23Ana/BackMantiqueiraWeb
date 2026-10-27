@@ -39,6 +39,14 @@ describe('variáveis de ambiente', () => {
         assert.deepEqual(erros, ['CORS_ORIGINS contém uma origem inválida: nao-e-url']);
     });
 
+    test('limite global: 600 por minuto por padrão, configurável por LIMITE_GLOBAL', () => {
+        assert.equal(validarAmbiente(base).config.limites.global, 600);
+        assert.equal(validarAmbiente({ ...base, LIMITE_GLOBAL: '900' }).config.limites.global, 900);
+        assert.deepEqual(validarAmbiente({ ...base, LIMITE_GLOBAL: '0' }).erros, ['LIMITE_GLOBAL deve ser um inteiro maior que zero.']);
+        // Os limites estritos de login e cadastro não mudam.
+        assert.deepEqual(validarAmbiente(base).config.limites, { global: 600, login: 10, cadastro: 10 });
+    });
+
     test('nos testes só aceita banco com sufixo _test', () => {
         const { erros } = validarAmbiente({ ...base, NODE_ENV: 'test', DB_NAME_TEST: 'mantiqueira_db' });
         assert.match(erros[0], /_test/);

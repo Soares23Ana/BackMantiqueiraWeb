@@ -76,6 +76,11 @@ function validarAmbiente(env) {
     if (!(limiteLogin >= 1) || !(limiteCadastro >= 1)) {
         erros.push('LOGIN_LIMITE e CADASTRO_LIMITE devem ser inteiros maiores que zero.');
     }
+    // Nos testes automatizados, centenas de requisições saem do mesmo IP em segundos.
+    const limiteGlobal = inteiro(env.LIMITE_GLOBAL, teste ? 10000 : 600);
+    if (!(limiteGlobal >= 1)) {
+        erros.push('LIMITE_GLOBAL deve ser um inteiro maior que zero.');
+    }
 
     if (env.JOBS_ATIVOS && !['true', 'false'].includes(env.JOBS_ATIVOS)) {
         erros.push('JOBS_ATIVOS deve ser true ou false.');
@@ -100,8 +105,8 @@ function validarAmbiente(env) {
             jwtSecret,
             origensCors,
             limiteJson: env.JSON_LIMIT || '200kb',
-            // Tentativas de login com falha a cada 15 min e cadastros por hora, por IP.
-            limites: { login: limiteLogin, cadastro: limiteCadastro },
+            // Por IP: requisições por minuto em /api/v1, tentativas de login com falha a cada 15 min e cadastros por hora.
+            limites: { global: limiteGlobal, login: limiteLogin, cadastro: limiteCadastro },
             // Jobs agendados (carga do catálogo e estoque). Desligados nos testes.
             jobs: { ativos: env.JOBS_ATIVOS ? env.JOBS_ATIVOS === 'true' : !teste },
             importacao: { pasta: path.resolve(env.IMPORTACAO_DIR || path.join(__dirname, '..', 'importacao')) },
