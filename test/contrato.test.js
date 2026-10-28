@@ -40,6 +40,43 @@ describe('contrato padronizado', () => {
         await request(app).get('/api/v1/clientes?limite=500').set('Authorization', equipe.auth).expect(400);
     });
 
+    test('GET /clientes: cidade do endereço principal, total_pedidos sem cancelados, ordenar e busca por cidade', async (t) => {
+        const { Endereco, Pedido } = require('../models');
+        const id = comRazao.usuario.id_usuario;
+        await Endereco.create({ id_usuario: id, cep: '13040-000', logradouro: 'Rua B', numero: '2', bairro: 'Centro', cidade: 'Campinas', estado: 'SP', principal: false });
+        await Endereco.create({ id_usuario: id, cep: '13730-000', logradouro: 'Rua C', numero: '3', bairro: 'Centro', cidade: 'Mococa', estado: 'SP', principal: true });
+        for (const status of ['Entregue', 'Aguardando Separação', 'Cancelado', 'Cancelado']) {
+            await Pedido.create({ id_cliente: id, status });
+        }
+        const listar = (consulta) => request(app).get(`/api/v1/clientes${consulta}`).set('Authorization', equipe.auth);
+        // Os outros testes deste arquivo contam pedidos e endereços: o que foi criado aqui é apagado no fim.
+        t.after(async () => {
+            await Pedido.destroy({ where: { id_cliente: id } });
+            await Endereco.destroy({ where: { id_usuario: id } });
+        });
+
+        const porPedidos = (await listar('?ordenar=mais_pedidos').expect(200)).body.clientes;
+        assert.deepEqual(porPedidos.map((c) => [c.nome_exibicao, c.cidade, c.total_pedidos]), [
+            ['Mercado Bom Preço LTDA', 'Mococa', 2],
+            ['Bruno Responsável', 'São João da Boa Vista', 1]
+        ]);
+        // Padrão continua por nome.
+        assert.deepEqual((await listar('').expect(200)).body.clientes.map((c) => c.nome), ['Ana Compras', 'Bruno Responsável']);
+
+        assert.deepEqual((await listar('?busca=mococa').expect(200)).body.clientes.map((c) => c.id_usuario), [id]);
+        assert.deepEqual((await listar('?busca=boa vista').expect(200)).body.clientes.map((c) => c.id_usuario), [semRazao.usuario.id_usuario]);
+        // Só a cidade do endereço principal entra na busca.
+        assert.deepEqual((await listar('?busca=campinas').expect(200)).body.clientes, []);
+
+        const invalido = await listar('?ordenar=receita').expect(400);
+        assert.equal(invalido.body.codigo, 'FILTRO_INVALIDO');
+        // Cliente sem endereço: cidade null.
+        const semEndereco = await criarUsuario('cliente', { nome: 'Zeca Sem Endereço' });
+        const zeca = (await listar('?busca=Zeca').expect(200)).body.clientes[0];
+        assert.deepEqual([zeca.id_usuario, zeca.cidade, zeca.total_pedidos], [semEndereco.usuario.id_usuario, null, 0]);
+        await semEndereco.usuario.destroy();
+    });
+
     test('GET /clientes/:id/detalhes em snake_case', async () => {
         const { body } = await request(app).get(`/api/v1/clientes/${semRazao.usuario.id_usuario}/detalhes`)
             .set('Authorization', equipe.auth).expect(200);

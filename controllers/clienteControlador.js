@@ -93,12 +93,29 @@ function normalizarEnderecos(enderecos) {
     return { enderecos: normalizados };
 }
 
+// Cidade do endereço principal (o mesmo critério do checkout) e pedidos não cancelados do cliente.
+const CIDADE_PRINCIPAL_SQL = `SELECT e.cidade FROM enderecos e WHERE e.id_usuario = Usuario.id_usuario
+    ORDER BY e.principal DESC, e.id_endereco ASC LIMIT 1`;
+const TOTAL_PEDIDOS_SQL = `SELECT COUNT(*) FROM pedidos p WHERE p.id_cliente = Usuario.id_usuario AND p.status <> 'Cancelado'`;
+const ORDENACOES_CLIENTES = {
+    nome: [['nome', 'ASC'], ['id_usuario', 'ASC']],
+    mais_pedidos: [[sequelize.literal('total_pedidos'), 'DESC'], ['nome', 'ASC'], ['id_usuario', 'ASC']]
+};
+
+/**
+ * GET /clientes (equipe): busca em nome, razão social, e-mail, CNPJ e cidade do endereço principal.
+ * ordenar=nome (padrão) ou mais_pedidos (quem tem mais pedidos não cancelados primeiro).
+ */
 async function listarClientes(req, res) {
     const paginacao = lerPaginacao(req.query, { limitePadrao: 20, limiteMaximo: 100 });
 
     const busca = typeof req.query.busca === 'string' ? req.query.busca.trim() : '';
     if (busca.length > 100) {
         return res.status(400).json({ mensagem: 'A busca deve ter no máximo 100 caracteres.' });
+    }
+    const ordenar = req.query.ordenar || 'nome';
+    if (!ORDENACOES_CLIENTES[ordenar]) {
+        throw new ErroApi(400, 'FILTRO_INVALIDO', `ordenar deve ser: ${Object.keys(ORDENACOES_CLIENTES).join(', ')}.`);
     }
     const where = { tipo: 'cliente' };
     if (busca) {
@@ -108,6 +125,7 @@ async function listarClientes(req, res) {
             { nome: { [Op.like]: `%${busca}%` } },
             { razao_social: { [Op.like]: `%${busca}%` } },
             { email: { [Op.like]: `%${busca}%` } },
+            sequelize.where(sequelize.literal(`(${CIDADE_PRINCIPAL_SQL})`), { [Op.like]: `%${busca}%` }),
             ...(digitos.length >= 2 ? [{ cnpj: { [Op.like]: `%${digitos}%` } }] : [])
         ];
     }
@@ -119,13 +137,20 @@ async function listarClientes(req, res) {
     try {
         const resultado = await Usuario.findAndCountAll({
             where,
-            attributes: ['id_usuario', 'nome', 'razao_social', 'cnpj', 'cnpj_original', 'email', 'telefone', 'ativo', 'criado_em'],
+            attributes: [
+                'id_usuario', 'nome', 'razao_social', 'cnpj', 'cnpj_original', 'email', 'telefone', 'ativo', 'criado_em',
+                [sequelize.literal(`(${CIDADE_PRINCIPAL_SQL})`), 'cidade'],
+                [sequelize.literal(`(${TOTAL_PEDIDOS_SQL})`), 'total_pedidos']
+            ],
             limit: paginacao.limite,
             offset: paginacao.offset,
-            order: [['nome', 'ASC']]
+            order: ORDENACOES_CLIENTES[ordenar]
         });
         return res.status(200).json({
-            clientes: resultado.rows.map(apresentarCliente),
+            clientes: resultado.rows.map((cliente) => {
+                const dados = apresentarCliente(cliente);
+                return { ...dados, total_pedidos: Number(dados.total_pedidos) };
+            }),
             paginacao: montarPaginacao(resultado.count, paginacao)
         });
     } catch (erro) {

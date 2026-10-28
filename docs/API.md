@@ -558,19 +558,23 @@ Erros: `422 VALIDACAO` (motivo com 3 a 500 caracteres), `409 CANCELAMENTO_NAO_PE
 
 | Método | Rota | Perfil | Descrição |
 |---|---|---|---|
-| GET | `/clientes` | equipe | Lista com busca e paginação |
+| GET | `/clientes` | equipe | Lista com busca, ordenação e paginação |
 | GET | `/clientes/:id/detalhes` | equipe | Dados, endereços, histórico e produtos mais pedidos |
 | PUT | `/clientes/:id` | equipe | Atualiza dados operacionais |
 | PUT | `/clientes/:id/senha` | equipe | Define uma senha temporária |
 
 ### GET /clientes
-`?busca=&pagina=&limite=&sem_cnpj=true` (padrão 20, máximo 100). `busca` procura em nome, razão social, e-mail e CNPJ (com ou sem pontuação). `sem_cnpj=true` lista quem não consegue entrar por falta de CNPJ válido.
+`?busca=&ordenar=&pagina=&limite=&sem_cnpj=true` (padrão 20, máximo 100).
+- `busca` procura em nome, razão social, e-mail, CNPJ (com ou sem pontuação) e na **cidade do endereço principal**.
+- `ordenar`: `nome` (padrão) ou `mais_pedidos` (quem tem mais pedidos não cancelados primeiro; empate por nome). Outro valor: `400 FILTRO_INVALIDO`.
+- `sem_cnpj=true` lista quem não consegue entrar por falta de CNPJ válido.
+- Cada cliente traz `cidade` (do endereço principal; `null` se não tiver endereço) e `total_pedidos` (pedidos **não cancelados**).
 ```json
 {
   "clientes": [
     { "id_usuario": 2, "nome": "Maria Souza", "razao_social": null, "nome_exibicao": "Maria Souza", "cnpj": "11.222.333/0001-81",
       "cnpj_original": null, "email": "compras@mercadinho.com", "telefone": "19999990000", "ativo": true,
-      "criado_em": "2026-10-26T23:27:34.000Z" }
+      "criado_em": "2026-10-26T23:27:34.000Z", "cidade": "São João da Boa Vista", "total_pedidos": 4 }
   ],
   "paginacao": { "total": 1, "pagina": 1, "limite": 20, "total_paginas": 1 }
 }
