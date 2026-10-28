@@ -104,7 +104,7 @@ Os testes usam o banco `DB_NAME_TEST` (padrão `mantiqueira_test`), que é **apa
 
 ## 📌 Principais Endpoints da API
 
-* `GET /saude` - Público. Responde `200` com `{ status: "ok", banco: "conectado", uptime_segundos, iniciado_em, versao, ultima_sincronizacao }` ou `503` com `status: "degradado"` quando o banco não responde.
+* `GET /saude` - Público. Responde `200` com `{ status: "ok", banco: "conectado" }` ou `503` com `{ status: "degradado", banco: "indisponivel" }` quando o banco não responde. Versão, uptime e data de início ficam em `GET /saude/detalhado`.
 
 ### Painel
 "Estoque baixo" é um produto ativo com estoque menor ou igual ao **`estoque_minimo` do próprio produto** (padrão 10, editável no produto).
@@ -198,8 +198,8 @@ Arquivos de exemplo para demonstração ficam em `importacao/exemplos/` (fora da
 Os arquivos são processados em ordem alfabética (use data/hora no nome, ex.: `estoque_20261026_1430.csv`) e depois movidos para `processados/` ou `rejeitados/`, com um `.relatorio.json` ao lado. Cada execução fica em `sincronizacoes_log`. Uma trava do MySQL (`GET_LOCK`) garante que, com várias instâncias da API, só uma rode cada job, e que job e upload não importem ao mesmo tempo. `JOBS_ATIVOS=false` desliga os jobs.
 
 ### Saúde
-* `GET /saude` - Público (ver acima). `ultima_sincronizacao` é a data da última importação gravada (upload ou job).
-* `GET /saude/detalhado` - Equipe: banco (latência e migrations pendentes), processo (uptime, memória, versão do Node), jobs (última e próxima execução, último resultado ou erro) e data da última sincronização de cada tipo.
+* `GET /saude` - Público (ver acima): só `status` e `banco`.
+* `GET /saude/detalhado` - Equipe: versão da API, banco (latência e migrations pendentes), processo (data de início, uptime, memória, versão do Node), jobs (última e próxima execução, último resultado ou erro) e data da última sincronização de cada tipo.
 
 ### Autenticação e contas
 Plataforma B2B: **clientes entram com CNPJ** e **a equipe entra com e-mail**.

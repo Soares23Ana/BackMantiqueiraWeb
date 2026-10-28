@@ -16,16 +16,13 @@ async function dataUltimaSincronizacao(tipo) {
     }
 }
 
-// GET /saude (público): para o balanceador e monitoramento simples.
+// GET /saude (público): para o balanceador e monitoramento simples. Versão, uptime e sincronizações
+// ficam só no /saude/detalhado, para não expor detalhes do servidor a qualquer um.
 async function verificarSaude(req, res) {
     const bancoOk = await verificarBanco();
     return res.status(bancoOk ? 200 : 503).json({
         status: bancoOk ? 'ok' : 'degradado',
-        banco: bancoOk ? 'conectado' : 'indisponivel',
-        uptime_segundos: Math.floor(process.uptime()),
-        iniciado_em: iniciadoEm.toISOString(),
-        versao: version,
-        ultima_sincronizacao: bancoOk ? await dataUltimaSincronizacao() : null
+        banco: bancoOk ? 'conectado' : 'indisponivel'
     });
 }
 

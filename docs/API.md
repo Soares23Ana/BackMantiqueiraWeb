@@ -714,9 +714,10 @@ Erros: `422 VALIDACAO`, `404` (chave desconhecida).
 
 ### GET /saude (público)
 ```json
-{ "status": "ok", "banco": "conectado", "uptime_segundos": 4, "iniciado_em": "2026-10-26T23:27:33.479Z", "versao": "1.0.0", "ultima_sincronizacao": null }
+{ "status": "ok", "banco": "conectado" }
 ```
 `503` com `"status": "degradado"` e `"banco": "indisponivel"` quando o banco não responde.
+Só esses dois campos. Versão, uptime, data de início e sincronizações ficam em `GET /saude/detalhado`.
 
 ### GET /saude/detalhado (equipe)
 ```json

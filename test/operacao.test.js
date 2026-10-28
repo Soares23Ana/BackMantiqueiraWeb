@@ -58,7 +58,7 @@ describe('importação por upload (POST /produtos/importar)', () => {
         assert.equal(log.body.importacao.status, 'sucesso');
     });
 
-    test('importa de verdade e aparece no histórico e no /saude', async () => {
+    test('importa de verdade e aparece no histórico e no /saude/detalhado', async () => {
         const resposta = await importar(CSV).expect(200);
         assert.equal(resposta.body.relatorio.criados, 38);
         assert.equal(resposta.body.status, 'sucesso');
@@ -68,8 +68,8 @@ describe('importação por upload (POST /produtos/importar)', () => {
         assert.equal(lista.body.importacoes[0].usuario.id_usuario, equipe.usuario.id_usuario);
         assert.equal(lista.body.importacoes[0].relatorio, undefined);
 
-        const saude = await request(app).get('/saude').expect(200);
-        assert.ok(saude.body.ultima_sincronizacao);
+        const saude = await request(app).get('/saude/detalhado').set('Authorization', equipe.auth).expect(200);
+        assert.ok(saude.body.sincronizacoes.ultima);
     });
 
     test('linhas com erro: status parcial e erros linha a linha no log', async () => {

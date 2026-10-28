@@ -128,13 +128,17 @@ describe('migrations', () => {
 });
 
 describe('HTTP', () => {
-    test('GET /saude informa banco, uptime e versão', async () => {
+    test('GET /saude público devolve só status e banco', async () => {
         const resposta = await request(app).get('/saude').expect(200);
-        assert.equal(resposta.body.status, 'ok');
-        assert.equal(resposta.body.banco, 'conectado');
-        assert.equal(typeof resposta.body.uptime_segundos, 'number');
+        assert.deepEqual(resposta.body, { status: 'ok', banco: 'conectado' });
+    });
+
+    test('versão, uptime e data de início ficam no /saude/detalhado (equipe)', async () => {
+        const { auth } = await criarUsuario('equipe');
+        const resposta = await request(app).get('/saude/detalhado').set('Authorization', auth).expect(200);
         assert.ok(resposta.body.versao);
-        assert.ok('ultima_sincronizacao' in resposta.body);
+        assert.equal(typeof resposta.body.processo.uptime_segundos, 'number');
+        assert.ok(!Number.isNaN(Date.parse(resposta.body.processo.iniciado_em)));
     });
 
     test('a API fica em /api/v1 e rotas sem versão respondem 404 padronizado', async () => {
