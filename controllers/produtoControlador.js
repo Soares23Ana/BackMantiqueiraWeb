@@ -64,8 +64,14 @@ function listaDoParametro(valor) {
     return valor.split(',').map((item) => item.trim()).filter(Boolean).slice(0, 20);
 }
 
+// "q" é apelido de "busca"; se vierem os dois, vale "busca".
+function lerBusca(query) {
+    const valor = query.busca !== undefined ? query.busca : query.q;
+    return typeof valor === 'string' ? valor.trim() : '';
+}
+
 function lerFiltros(query, usuario) {
-    const busca = typeof query.busca === 'string' ? query.busca.trim() : '';
+    const busca = lerBusca(query);
     if (busca.length > 100) {
         throw new ErroApi(400, 'FILTRO_INVALIDO', 'A busca deve ter no máximo 100 caracteres.');
     }
@@ -194,9 +200,9 @@ async function listar(req, res) {
     });
 }
 
-// GET /produtos/sugestoes?busca= (autocomplete)
+// GET /produtos/sugestoes?busca= ou ?q= (autocomplete)
 async function sugestoes(req, res) {
-    const busca = typeof req.query.busca === 'string' ? req.query.busca.trim() : '';
+    const busca = lerBusca(req.query);
     const termos = termosDeBusca(busca.slice(0, 100));
     if (busca.length < 2 || termos.length === 0) {
         return res.status(200).json({ produtos: [], categorias: [], marcas: [] });

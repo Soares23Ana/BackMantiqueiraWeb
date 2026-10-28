@@ -196,6 +196,18 @@ describe('vitrine pública', () => {
         assert.deepEqual(curta.body.produtos, []);
     });
 
+    test('"q" é apelido de "busca" na listagem e nas sugestões; parâmetros desconhecidos são ignorados', async () => {
+        assert.deepEqual(skus(await listar('?q=locao paixao')), ['SKU-101']);
+        // Com os dois, vale "busca".
+        assert.deepEqual(skus(await listar('?busca=calendula&q=locao')), ['SKU-134']);
+        assert.deepEqual(skus(await listar('?q=calendula&parametro_desconhecido=1')), ['SKU-134']);
+        await listar(`?q=${'x'.repeat(101)}`).expect(400);
+
+        const porQ = await request(app).get('/api/v1/produtos/sugestoes?q=gran').expect(200);
+        const porBusca = await request(app).get('/api/v1/produtos/sugestoes?busca=gran').expect(200);
+        assert.deepEqual(porQ.body, porBusca.body);
+    });
+
     test('filtros com contagem respeitam os outros filtros', async () => {
         const todos = await request(app).get('/api/v1/produtos/filtros').expect(200);
         const totalCategorias = todos.body.categorias.reduce((soma, c) => soma + c.total, 0);

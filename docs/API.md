@@ -215,12 +215,14 @@ Depois da troca, **todos os tokens emitidos antes dela deixam de valer, inclusiv
 ### GET /produtos
 | Parâmetro | Descrição |
 |---|---|
-| `busca` | Termos separados por espaço; **todos** precisam aparecer em nome, SKU, descrição, marca ou categoria. Ignora acentos e maiúsculas (`locao` encontra "Loção"). Até 100 caracteres. |
+| `busca` (ou `q`) | Termos separados por espaço; **todos** precisam aparecer em nome, SKU, descrição, marca ou categoria. Ignora acentos e maiúsculas (`locao` encontra "Loção"). Até 100 caracteres. `q` é apelido de `busca`; se vierem os dois, vale `busca`. |
 | `categoria`, `marca` | Slug ou id; vários separados por vírgula (`marca=bic,risque`) |
 | `disponibilidade` | `disponivel`, `ultimas_unidades`, `indisponivel` ou `em_estoque` (as duas primeiras) |
 | `ordenar` | `relevancia` (padrão com busca), `nome` (padrão sem busca), `nome_desc`, `recentes`; equipe também `estoque`, `estoque_desc` |
 | `pagina`, `limite` | Padrão 24, máximo 100 |
 | `incluir_inativos=true` | Só equipe |
+
+Só estes parâmetros são lidos; qualquer outro é ignorado (não dá erro). `GET /produtos/filtros` lê os mesmos filtros (`busca`/`q`, `categoria`, `marca`, `disponibilidade`, `incluir_inativos`).
 
 Resposta (visitante):
 ```json
@@ -246,7 +248,7 @@ Cliente logado: mesmo objeto + `"estoque": 25`. Equipe: + `"preco": null, "estoq
 Erros: `400 FILTRO_INVALIDO`, `400 PAGINACAO_INVALIDA`.
 
 ### GET /produtos/sugestoes?busca=gran
-Exige 2 caracteres ou mais (menos que isso devolve listas vazias).
+Aceita só `busca` (ou o apelido `q`; com os dois, vale `busca`); outros parâmetros são ignorados. Exige 2 caracteres ou mais (menos que isso devolve listas vazias).
 ```json
 {
   "produtos": [
