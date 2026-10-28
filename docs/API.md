@@ -682,6 +682,7 @@ Todas: **equipe**. "Estoque baixo" = produto ativo com estoque menor ou igual ao
 | GET | `/cms/blocos` | público | Blocos ativos (equipe vê todos) |
 | GET | `/cms/blocos/:chave` | público | Um bloco (inativo só para a equipe) |
 | PUT | `/cms/blocos/:chave` | equipe | Cria ou substitui |
+| PATCH | `/cms/blocos/:chave` | equipe | Liga ou desliga (`{ "ativo": false }`) |
 | DELETE | `/cms/blocos/:chave` | equipe | Exclui |
 
 `PUT /cms/blocos/politica-de-entrega`:
@@ -689,6 +690,8 @@ Todas: **equipe**. "Estoque baixo" = produto ativo com estoque menor ou igual ao
 { "titulo": "Política de entrega", "conteudo": "Entregamos em até 2 dias úteis.", "ativo": true }
 ```
 `200`: `{ "mensagem": "Bloco de conteúdo salvo.", "bloco": { "id_bloco": 1, "chave": "politica-de-entrega", "titulo": "...", "conteudo": "...", "ativo": true, "atualizado_em": "..." } }`. A chave usa só letras minúsculas, números e hífens.
+
+`PATCH /cms/blocos/politica-de-entrega` com `{ "ativo": false }` liga ou desliga o bloco sem reenviar título e conteúdo (o botão de ativar da tela). Só aceita `ativo`, booleano; para mudar o conteúdo, use o `PUT`. `200`: `{ "mensagem": "Bloco desativado.", "bloco": { ... } }` (ou `"Bloco ativado."`). Erros: `422 VALIDACAO` (outro campo ou `ativo` que não seja `true`/`false`), `404` (chave inexistente).
 
 ---
 

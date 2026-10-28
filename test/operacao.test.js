@@ -325,6 +325,31 @@ describe('CMS: blocos de conteúdo', () => {
         await request(app).delete('/api/v1/cms/blocos/politica-de-entrega').set('Authorization', equipe.auth).expect(200);
         await request(app).delete('/api/v1/cms/blocos/politica-de-entrega').set('Authorization', equipe.auth).expect(404);
     });
+
+    test('PATCH { ativo } liga e desliga o bloco sem mexer no conteúdo', async () => {
+        const url = '/api/v1/cms/blocos/horario-de-entrega';
+        await request(app).put(url).set('Authorization', equipe.auth)
+            .send({ titulo: 'Horário', conteudo: 'Das 8h às 18h.' }).expect(200);
+
+        const desligado = await request(app).patch(url).set('Authorization', equipe.auth).send({ ativo: false }).expect(200);
+        assert.equal(desligado.body.mensagem, 'Bloco desativado.');
+        assert.deepEqual([desligado.body.bloco.ativo, desligado.body.bloco.titulo, desligado.body.bloco.conteudo], [false, 'Horário', 'Das 8h às 18h.']);
+        await request(app).get(url).expect(404);
+
+        const ligado = await request(app).patch(url).set('Authorization', equipe.auth).send({ ativo: true }).expect(200);
+        assert.equal(ligado.body.bloco.ativo, true);
+        assert.equal((await request(app).get(url).expect(200)).body.bloco.conteudo, 'Das 8h às 18h.');
+
+        // Só "ativo", e booleano; conteúdo continua sendo pelo PUT.
+        await request(app).patch(url).set('Authorization', equipe.auth).send({ ativo: 'false' }).expect(422);
+        await request(app).patch(url).set('Authorization', equipe.auth).send({}).expect(422);
+        const comConteudo = await request(app).patch(url).set('Authorization', equipe.auth).send({ ativo: true, conteudo: 'x' }).expect(422);
+        assert.equal(comConteudo.body.detalhes[0].campo, 'conteudo');
+        await request(app).patch('/api/v1/cms/blocos/nao-existe').set('Authorization', equipe.auth).send({ ativo: true }).expect(404);
+        await request(app).patch(url).set('Authorization', cliente.auth).send({ ativo: false }).expect(403);
+        await request(app).patch(url).send({ ativo: false }).expect(401);
+        await request(app).delete(url).set('Authorization', equipe.auth).expect(200);
+    });
 });
 
 describe('configurações', () => {

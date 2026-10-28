@@ -239,6 +239,24 @@ async function salvarBloco(req, res) {
 }
 
 // DELETE /cms/blocos/:chave (equipe)
+// PATCH /cms/blocos/:chave { ativo } (equipe): liga ou desliga o bloco sem reenviar o conteúdo.
+async function alterarAtivoBloco(req, res) {
+    const corpo = req.body || {};
+    const extras = Object.keys(corpo).filter((campo) => campo !== 'ativo');
+    if (extras.length > 0 || typeof corpo.ativo !== 'boolean') {
+        const erros = extras.length > 0
+            ? extras.map((campo) => ({ campo, mensagem: `Campo não permitido: ${campo}. Para alterar o conteúdo, use PUT.` }))
+            : [{ campo: 'ativo', mensagem: 'O campo ativo deve ser true ou false.' }];
+        throw new ErroApi(422, 'VALIDACAO', erros[0].mensagem, erros);
+    }
+    const bloco = await BlocoCms.findOne({ where: { chave: req.params.chave } });
+    if (!bloco) {
+        throw new ErroApi(404, 'NAO_ENCONTRADO', 'Bloco de conteúdo não encontrado.');
+    }
+    await bloco.update({ ativo: corpo.ativo });
+    return res.status(200).json({ mensagem: corpo.ativo ? 'Bloco ativado.' : 'Bloco desativado.', bloco });
+}
+
 async function excluirBloco(req, res) {
     const excluidos = await BlocoCms.destroy({ where: { chave: req.params.chave } });
     if (!excluidos) {
@@ -257,5 +275,6 @@ module.exports = {
     listarBlocos,
     obterBloco,
     salvarBloco,
+    alterarAtivoBloco,
     excluirBloco
 };

@@ -19,6 +19,7 @@ router.post('/', ...equipe, ...comImagem, cmsControlador.salvarBanner);
 router.get('/blocos', autenticacaoOpcional, cmsControlador.listarBlocos);
 router.get('/blocos/:chave', autenticacaoOpcional, cmsControlador.obterBloco);
 router.put('/blocos/:chave', ...equipe, cmsControlador.salvarBloco);
+router.patch('/blocos/:chave', ...equipe, cmsControlador.alterarAtivoBloco);
 router.delete('/blocos/:chave', ...equipe, cmsControlador.excluirBloco);
 
 router.patch('/:id', ...equipe, ...comImagem, cmsControlador.atualizarBanner);

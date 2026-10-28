@@ -168,6 +168,7 @@ Cada pedido nas respostas traz `pode_cancelar` (para quem fez a requisição) e,
 **Blocos de conteúdo** (textos editáveis do site, identificados por chave, ex.: `sobre`, `politica-de-entrega`):
 * `GET /api/v1/cms/blocos` e `GET /api/v1/cms/blocos/:chave` - Públicos (só ativos; a equipe vê também os inativos).
 * `PUT /api/v1/cms/blocos/:chave` - Equipe: `{ titulo?, conteudo, ativo? }` cria ou substitui. A chave usa letras minúsculas, números e hífens.
+* `PATCH /api/v1/cms/blocos/:chave` - Equipe: `{ ativo }` liga ou desliga o bloco sem reenviar o conteúdo.
 * `DELETE /api/v1/cms/blocos/:chave` - Equipe.
 
 ### Campanhas (`/api/v1/campanhas`)
