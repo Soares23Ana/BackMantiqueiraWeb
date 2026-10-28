@@ -31,7 +31,15 @@ const metricasRoutes = require('./routes/metricas');
 const autenticarToken = require('./middlewares/authMiddleware');
 const { exigirEquipe } = require('./middlewares/roleMiddleware');
 
-const ORIGENS_PADRAO = ['http://localhost:5173', 'http://localhost:3000', 'http://localhost:3001'];
+// Front em desenvolvimento: Vite (5173, também por 127.0.0.1), vite preview (4173) e outras portas locais.
+// Outras origens (ex.: o domínio do front em produção) vêm de CORS_ORIGINS.
+const ORIGENS_PADRAO = [
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
+    'http://localhost:4173',
+    'http://localhost:3000',
+    'http://localhost:3001'
+];
 
 function criarApp() {
     const app = express();

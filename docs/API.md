@@ -27,6 +27,7 @@ Para ter banners, campanha, contatos e pedidos em todos os status no ambiente lo
 ### URL base
 - API: `http://localhost:3000/api/v1` (em produção, o domínio da EC2/Nginx + `/api/v1`).
 - Exceções fora de `/api/v1`: `GET /saude`, `GET /saude/detalhado` e os arquivos enviados em `GET /arquivos/uploads/...`.
+- CORS: liberadas por padrão `http://localhost:5173`, `http://127.0.0.1:5173`, `http://localhost:4173`, `http://localhost:3000` e `http://localhost:3001`, com credenciais; outras origens entram por `CORS_ORIGINS` no servidor (ver [README](../README.md#cors-cors_origins)). Cabeçalhos aceitos: `Authorization`, `Content-Type`, `X-Request-Id`, `Idempotency-Key`.
 - Imagens: `imagem_url` começando com `/img/` é do **front** (pasta pública do React); começando com `/arquivos/` é da **API** (prefixe com o endereço da API).
 
 ### Autenticação

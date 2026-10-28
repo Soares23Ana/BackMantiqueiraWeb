@@ -32,7 +32,20 @@ node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"
 
 Na nuvem, configure `NODE_ENV=production`, `DB_HOST` com o endpoint do AWS RDS e `CORS_ORIGINS` com o endereço do front-end (múltiplas origens separadas por vírgula). Defina `TRUST_PROXY=1` quando a API estiver atrás de um proxy, como Nginx.
 
-O CORS permite por padrão `http://localhost:5173`, `http://localhost:3000` e `http://localhost:3001`, com credenciais.
+#### CORS (`CORS_ORIGINS`)
+O navegador só deixa o front chamar a API se a origem dele (protocolo + endereço + porta) estiver liberada. Por padrão, com credenciais, ficam liberadas as origens locais de desenvolvimento:
+
+* `http://localhost:5173` e `http://127.0.0.1:5173` (Vite em `npm run dev`)
+* `http://localhost:4173` (Vite em `npm run preview`)
+* `http://localhost:3000` e `http://localhost:3001`
+
+Para liberar outras (por exemplo, o endereço do front publicado), use `CORS_ORIGINS` no `.env`, separadas por vírgula, sem barra no final e sem caminho:
+
+```bash
+CORS_ORIGINS=https://mantiqueira.exemplo.com.br,http://192.168.0.10:5173
+```
+
+Elas são **somadas** às origens padrão. A API não sobe se alguma origem for inválida (ex.: `mantiqueira.com.br` sem `http(s)://`, ou com caminho). Requisições sem cabeçalho `Origin` (Postman, `curl`, outro servidor) não passam pelo CORS. Cabeçalhos liberados: `Authorization`, `Content-Type`, `X-Request-Id` e `Idempotency-Key`; o front consegue ler o `X-Request-Id` da resposta.
 
 ## 3. Banco de Dados (migrations)
 A estrutura do banco é versionada em `migrations/` (`001_*.sql`, `002_*.js`, ...). A API **não altera mais o banco sozinha** (o `sequelize.sync()` foi removido).

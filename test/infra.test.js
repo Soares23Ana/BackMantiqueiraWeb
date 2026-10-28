@@ -197,6 +197,27 @@ describe('HTTP', () => {
         assert.notEqual(invalido.headers['x-request-id'], 'x y<script>');
     });
 
+    test('CORS libera as origens locais padrão e as de CORS_ORIGINS, e só elas', async () => {
+        const preflight = (aplicacao, origem) => request(aplicacao).options('/api/v1/produtos')
+            .set('Origin', origem).set('Access-Control-Request-Method', 'GET');
+        for (const origem of ['http://localhost:5173', 'http://127.0.0.1:5173', 'http://localhost:4173', 'http://localhost:3000']) {
+            const resposta = await preflight(app, origem);
+            assert.equal(resposta.headers['access-control-allow-origin'], origem);
+            assert.equal(resposta.headers['access-control-allow-credentials'], 'true');
+        }
+        const estranha = await preflight(app, 'https://site-qualquer.exemplo.com');
+        assert.equal(estranha.headers['access-control-allow-origin'], undefined);
+
+        const { criarApp } = require('../app');
+        config.origensCors.push('https://front.exemplo.com');
+        try {
+            const resposta = await preflight(criarApp(), 'https://front.exemplo.com');
+            assert.equal(resposta.headers['access-control-allow-origin'], 'https://front.exemplo.com');
+        } finally {
+            config.origensCors.pop();
+        }
+    });
+
     test('helmet ativo e imagens liberadas para o front em outra origem', async () => {
         const resposta = await request(app).get('/saude');
         assert.equal(resposta.headers['x-content-type-options'], 'nosniff');
