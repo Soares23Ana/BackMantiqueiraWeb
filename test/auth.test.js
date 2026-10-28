@@ -431,6 +431,24 @@ describe('sessão: duração do token e troca de senha', () => {
         await me(`Bearer ${novo.body.token}`).expect(200);
     });
 
+    test('senha redefinida pelo gestor (PATCH /admin/usuarios/:id) invalida os tokens anteriores; outras edições não', async () => {
+        const { usuario: membro } = await criarUsuario('equipe', { email: 'redefinir@mantiqueira.com', senha: await bcrypt.hash(SENHA, 4) });
+        const url = `/api/v1/admin/usuarios/${membro.id_usuario}`;
+        const antigo = tokenAntigo(membro);
+
+        // Mudar só o cargo não encerra a sessão.
+        await request(app).patch(url).set('Authorization', admin.auth).send({ cargo: 'Conferente' }).expect(200);
+        await me(antigo).expect(200);
+
+        await request(app).patch(url).set('Authorization', admin.auth).send({ senha: 'Redefinida@1' }).expect(200);
+        const recusado = await me(antigo).expect(401);
+        assert.equal(recusado.body.codigo, 'NAO_AUTENTICADO');
+        // O gestor que redefiniu continua logado; o membro entra com a senha nova.
+        await me(admin.auth).expect(200);
+        const novo = await login('redefinir@mantiqueira.com', 'Redefinida@1').expect(200);
+        await me(`Bearer ${novo.body.token}`).expect(200);
+    });
+
     test('a data da troca não aparece nas respostas', async () => {
         const resposta = await request(app).get('/api/v1/auth/users').set('Authorization', admin.auth).expect(200);
         assert.ok(resposta.body.usuarios.every((u) => !('senha_alterada_em' in u)));

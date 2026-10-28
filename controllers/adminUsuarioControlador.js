@@ -6,6 +6,7 @@ const { ErroApi } = require('../lib/erros');
 const { lerPaginacao, montarPaginacao } = require('../lib/paginacao');
 const { validarUsuarioEquipe } = require('../helpers/validacaoUsuario');
 const { CUSTO_BCRYPT } = require('./usuarioControlador');
+const { agoraParaTrocaDeSenha } = require('../models/Usuario');
 const { cnpjParaResposta } = require('../lib/apresentacao');
 
 const ATRIBUTOS = [
@@ -80,6 +81,8 @@ async function atualizar(req, res) {
     const dados = validarUsuarioEquipe(req.body, { parcial: true });
     if (dados.senha) {
         dados.senha = await bcrypt.hash(dados.senha, CUSTO_BCRYPT);
+        // Senha redefinida pelo gestor: as sessões abertas dessa pessoa deixam de valer.
+        dados.senha_alterada_em = agoraParaTrocaDeSenha();
     }
 
     const idUsuario = await sequelize.transaction(async (transacao) => {

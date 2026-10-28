@@ -35,7 +35,7 @@ Envie o token do login em todas as rotas protegidas:
 ```
 Authorization: Bearer <token>
 ```
-O token vale **8 horas** (configurável no servidor por `JWT_EXPIRES_IN`). A cada requisição a API confere se o usuário existe e está ativo; usuário desativado perde o acesso na hora (`401`). Trocar a senha (em `PATCH /minha-conta/senha` ou pela senha temporária de `PUT /clientes/:id/senha`) invalida todos os tokens emitidos antes da troca (`401 NAO_AUTENTICADO`).
+O token vale **8 horas** (configurável no servidor por `JWT_EXPIRES_IN`). A cada requisição a API confere se o usuário existe e está ativo; usuário desativado perde o acesso na hora (`401`). Trocar a senha (em `PATCH /minha-conta/senha`, pela senha temporária de `PUT /clientes/:id/senha` ou pelo gestor em `PATCH /admin/usuarios/:id`) invalida todos os tokens emitidos antes da troca (`401 NAO_AUTENTICADO`).
 
 ### Perfis
 | Perfil (`usuario.tipo`) | Entra com | Acesso |
@@ -628,7 +628,7 @@ Todas exigem **gestor da equipe** (`pode_gerenciar_equipe: true`); os demais rec
 `tipo` e `cnpj` não são aceitos (`422`). `409 EMAIL_JA_CADASTRADO`.
 
 ### PATCH /admin/usuarios/:id
-Campos: `nome`, `email`, `senha`, `cargo`, `telefone`, `pode_gerenciar_equipe`, `ativo`. Para clientes, só `ativo`. Regras (`409 OPERACAO_NAO_PERMITIDA`): ninguém desativa a si mesmo; a marca não sai do último usuário ativo que a tem.
+Campos: `nome`, `email`, `senha`, `cargo`, `telefone`, `pode_gerenciar_equipe`, `ativo`. Para clientes, só `ativo`. Regras (`409 OPERACAO_NAO_PERMITIDA`): ninguém desativa a si mesmo; a marca não sai do último usuário ativo que a tem. Com `senha`, as sessões abertas da pessoa são encerradas (tokens anteriores recebem `401`); editar os outros campos não encerra.
 
 ---
 
