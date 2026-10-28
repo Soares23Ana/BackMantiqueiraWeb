@@ -8,6 +8,7 @@ const logger = require('../lib/logger');
 const bcrypt = require('bcrypt');
 const { ErroApi } = require('../lib/erros');
 const { CUSTO_BCRYPT } = require('./usuarioControlador');
+const { agoraParaTrocaDeSenha } = require('../models/Usuario');
 
 const CAMPOS_ENDERECO = [
     'cep',
@@ -370,7 +371,7 @@ async function definirSenhaTemporaria(req, res) {
     if (!cliente) {
         throw new ErroApi(404, 'NAO_ENCONTRADO', 'Cliente não encontrado.');
     }
-    await cliente.update({ senha: await bcrypt.hash(corpo.senha, CUSTO_BCRYPT) });
+    await cliente.update({ senha: await bcrypt.hash(corpo.senha, CUSTO_BCRYPT), senha_alterada_em: agoraParaTrocaDeSenha() });
     logger.info('Senha temporária definida para cliente.', { id_cliente: idCliente, por: req.usuario.id });
     return res.status(200).json({
         mensagem: 'Senha temporária definida. Informe-a ao cliente e oriente a troca em "Minha conta".'

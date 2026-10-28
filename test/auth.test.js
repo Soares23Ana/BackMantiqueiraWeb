@@ -355,6 +355,88 @@ describe('minha conta (cliente)', () => {
     });
 });
 
+describe('sessão: duração do token e troca de senha', () => {
+    const jwt = require('jsonwebtoken');
+    const bcrypt = require('bcrypt');
+    const CNPJ_SESSAO = '06990590000123';
+    const CNPJ_TEMPORARIA = '00000000000191';
+    let cliente;
+    let clienteTemporaria;
+
+    // Token com "iat" no passado: simula uma sessão aberta antes da troca de senha.
+    const tokenAntigo = (usuario) => `Bearer ${jwt.sign(
+        { id: usuario.id_usuario, tipo: usuario.tipo, iat: Math.floor(Date.now() / 1000) - 60 },
+        config.jwtSecret, { expiresIn: '1h' }
+    )}`;
+    const me = (auth) => request(app).get('/api/v1/auth/me').set('Authorization', auth);
+    const duracao = (token) => { const { iat, exp } = jwt.decode(token); return exp - iat; };
+
+    before(async () => {
+        ({ usuario: cliente } = await criarUsuario('cliente', { cnpj: CNPJ_SESSAO, senha: await bcrypt.hash(SENHA, 4) }));
+        ({ usuario: clienteTemporaria } = await criarUsuario('cliente', { cnpj: CNPJ_TEMPORARIA, senha: await bcrypt.hash(SENHA, 4) }));
+    });
+
+    test('JWT_EXPIRES_IN: padrão 8h, aceita outro valor e recusa formato inválido', () => {
+        const base = { JWT_SECRET: 'x'.repeat(40) };
+        const { validarAmbiente } = require('../config/ambiente');
+        assert.equal(validarAmbiente(base).config.jwtExpiraEm, '8h');
+        assert.equal(validarAmbiente({ ...base, JWT_EXPIRES_IN: '30m' }).config.jwtExpiraEm, '30m');
+        for (const invalido of ['120', '8 horas', '0h', '2w']) {
+            assert.deepEqual(validarAmbiente({ ...base, JWT_EXPIRES_IN: invalido }).erros,
+                ['JWT_EXPIRES_IN deve ser um número seguido de s, m, h ou d (ex.: 8h).']);
+        }
+    });
+
+    test('o token do login dura o configurado (padrão 8h)', async () => {
+        const padrao = await login(CNPJ_SESSAO).expect(200);
+        assert.equal(duracao(padrao.body.token), 8 * 3600);
+
+        const original = config.jwtExpiraEm;
+        config.jwtExpiraEm = '30m';
+        try {
+            const curto = await login(CNPJ_SESSAO).expect(200);
+            assert.equal(duracao(curto.body.token), 30 * 60);
+        } finally {
+            config.jwtExpiraEm = original;
+        }
+    });
+
+    test('trocar a senha em /minha-conta/senha invalida os tokens emitidos antes', async () => {
+        const antigo = tokenAntigo(cliente);
+        await me(antigo).expect(200);
+        await request(app).patch('/api/v1/minha-conta/senha').set('Authorization', antigo)
+            .send({ senha_atual: SENHA, nova_senha: 'TrocaSessao@1' }).expect(200);
+
+        const recusado = await me(antigo).expect(401);
+        assert.equal(recusado.body.codigo, 'NAO_AUTENTICADO');
+        const [[{ senha_alterada_em: alteradaEm }]] = await sequelize.query(
+            'SELECT senha_alterada_em FROM usuarios WHERE id_usuario = ?', { replacements: [cliente.id_usuario] });
+        assert.ok(alteradaEm);
+
+        // O login feito depois da troca vale normalmente.
+        const novo = await login(CNPJ_SESSAO, 'TrocaSessao@1').expect(200);
+        await me(`Bearer ${novo.body.token}`).expect(200);
+    });
+
+    test('senha temporária definida pela equipe (PUT /clientes/:id/senha) invalida os tokens anteriores do cliente', async () => {
+        const antigo = tokenAntigo(clienteTemporaria);
+        await me(antigo).expect(200);
+        await request(app).put(`/api/v1/clientes/${clienteTemporaria.id_usuario}/senha`).set('Authorization', admin.auth)
+            .send({ senha: 'Temporaria@9' }).expect(200);
+
+        await me(antigo).expect(401);
+        // O token da equipe que fez a troca continua valendo.
+        await me(admin.auth).expect(200);
+        const novo = await login(CNPJ_TEMPORARIA, 'Temporaria@9').expect(200);
+        await me(`Bearer ${novo.body.token}`).expect(200);
+    });
+
+    test('a data da troca não aparece nas respostas', async () => {
+        const resposta = await request(app).get('/api/v1/auth/users').set('Authorization', admin.auth).expect(200);
+        assert.ok(resposta.body.usuarios.every((u) => !('senha_alterada_em' in u)));
+    });
+});
+
 describe('migration 004 com dados antigos', () => {
     test('CNPJs inválidos, duplicados e de equipe vão para cnpj_original sem apagar nada', async () => {
         const nome = 'mantiqueira_cnpj_test';

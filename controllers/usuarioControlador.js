@@ -20,7 +20,7 @@ function gerarToken(usuario) {
         nome: usuario.nome,
         email: usuario.email,
         tipo: usuario.tipo
-    }, config.jwtSecret, { expiresIn: '2h' });
+    }, config.jwtSecret, { expiresIn: config.jwtExpiraEm });
 }
 
 // Conflitos de cadastro: avisa qual campo já existe para o cliente poder corrigir.
@@ -131,7 +131,7 @@ function obterSessao(req, res) {
 
 async function listarTodos(req, res) {
     const usuarios = await Usuario.findAll({
-        attributes: { exclude: ['senha'] }
+        attributes: { exclude: ['senha', 'senha_alterada_em'] }
     });
     return res.status(200).json({ usuarios });
 }

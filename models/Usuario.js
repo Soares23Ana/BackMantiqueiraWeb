@@ -60,6 +60,11 @@ const Usuario = sequelize.define('Usuario', {
         type: DataTypes.STRING(50),
         allowNull: true
     },
+    // Última troca de senha: tokens emitidos antes disso deixam de valer.
+    senha_alterada_em: {
+        type: DataTypes.DATE,
+        allowNull: true
+    },
     criado_em: {
         type: DataTypes.DATE,
         allowNull: false,
@@ -70,4 +75,11 @@ const Usuario = sequelize.define('Usuario', {
     timestamps: false
 });
 
+// Guardado sem os milissegundos: o "iat" do token é em segundos, então um token emitido no mesmo
+// segundo da troca (o login logo em seguida) continua valendo.
+function agoraParaTrocaDeSenha() {
+    return new Date(Math.floor(Date.now() / 1000) * 1000);
+}
+
 module.exports = Usuario;
+module.exports.agoraParaTrocaDeSenha = agoraParaTrocaDeSenha;

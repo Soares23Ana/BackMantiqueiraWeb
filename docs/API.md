@@ -33,7 +33,7 @@ Envie o token do login em todas as rotas protegidas:
 ```
 Authorization: Bearer <token>
 ```
-O token vale **2 horas**. A cada requisição a API confere se o usuário existe e está ativo; usuário desativado perde o acesso na hora (`401`).
+O token vale **8 horas** (configurável no servidor por `JWT_EXPIRES_IN`). A cada requisição a API confere se o usuário existe e está ativo; usuário desativado perde o acesso na hora (`401`). Trocar a senha (em `PATCH /minha-conta/senha` ou pela senha temporária de `PUT /clientes/:id/senha`) invalida todos os tokens emitidos antes da troca (`401 NAO_AUTENTICADO`).
 
 ### Perfis
 | Perfil (`usuario.tipo`) | Entra com | Acesso |
@@ -177,6 +177,7 @@ Corpo com um ou mais de `nome`, `email`, `telefone`. CNPJ e razão social só pe
 { "senha_atual": "Senha@Forte1", "nova_senha": "NovaSenha@2" }
 ```
 `200`: `{ "mensagem": "Senha alterada." }`. Senha atual errada: `422 VALIDACAO` no campo `senha_atual`.
+Depois da troca, **todos os tokens emitidos antes dela deixam de valer, inclusive o da sessão atual**: as próximas requisições com ele recebem `401 NAO_AUTENTICADO`. Mande o usuário para o login (agora com a senha nova).
 
 ### Endereços (cliente)
 - `POST /minha-conta/enderecos`: mesmos campos do endereço do cadastro, mais `principal` (boolean). O primeiro endereço é sempre o principal; marcar `principal: true` desmarca os outros. Máximo 20 (`409 LIMITE_ENDERECOS`). `201`: `{ "mensagem": "Endereço adicionado.", "endereco": { ... } }`.
@@ -588,7 +589,7 @@ Para o cliente que esqueceu a senha (não há recuperação por e-mail). A equip
 ```json
 { "senha": "Temporaria@2026" }
 ```
-`200`: `{ "mensagem": "Senha temporária definida. Informe-a ao cliente e oriente a troca em \"Minha conta\"." }`. Só o hash é gravado. Erros: `422 VALIDACAO` (8 a 72 caracteres; nenhum outro campo), `404` (não é cliente).
+`200`: `{ "mensagem": "Senha temporária definida. Informe-a ao cliente e oriente a troca em \"Minha conta\"." }`. Só o hash é gravado. Erros: `422 VALIDACAO` (8 a 72 caracteres; nenhum outro campo), `404` (não é cliente). As sessões abertas do cliente são encerradas (tokens anteriores recebem `401`).
 
 ---
 
@@ -749,7 +750,7 @@ Erros: `422 VALIDACAO`, `404` (chave desconhecida).
 
 **Autenticação**
 10. Não há recuperação de senha por e-mail. Cliente que esqueceu a senha: a equipe define uma temporária em `PUT /clientes/:id/senha` e o cliente troca em "Minha conta" (a troca não é obrigatória; a API não força). Usuário da equipe: o gestor redefine em `PATCH /admin/usuarios/:id`.
-11. Não há refresh token: depois de 2 horas o usuário precisa entrar de novo. "Sair" é só descartar o token no front (ele continua válido até expirar, a menos que o usuário seja desativado).
+11. Não há refresh token: depois de 8 horas (ou o valor de `JWT_EXPIRES_IN`) o usuário precisa entrar de novo. "Sair" é só descartar o token no front (ele continua válido até expirar, a menos que o usuário seja desativado).
 12. Os limites de requisições ficam na memória de cada instância: com várias instâncias, o limite efetivo é multiplicado; reiniciar a API zera as contagens.
 
 **Métricas**

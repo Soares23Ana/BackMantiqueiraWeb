@@ -2,6 +2,7 @@ const bcrypt = require('bcrypt');
 const { Op, UniqueConstraintError } = require('sequelize');
 const sequelize = require('../db/conn');
 const { Usuario, Endereco } = require('../models');
+const { agoraParaTrocaDeSenha } = require('../models/Usuario');
 const { ErroApi } = require('../lib/erros');
 const { cnpjParaResposta } = require('../lib/apresentacao');
 const {
@@ -52,7 +53,7 @@ async function trocarSenha(req, res) {
     if (!(await bcrypt.compare(senhaAtual, usuario.senha))) {
         throw new ErroApi(422, 'VALIDACAO', 'A senha atual não confere.', [{ campo: 'senha_atual', mensagem: 'A senha atual não confere.' }]);
     }
-    await usuario.update({ senha: await bcrypt.hash(novaSenha, CUSTO_BCRYPT) });
+    await usuario.update({ senha: await bcrypt.hash(novaSenha, CUSTO_BCRYPT), senha_alterada_em: agoraParaTrocaDeSenha() });
     return res.status(200).json({ mensagem: 'Senha alterada.' });
 }
 

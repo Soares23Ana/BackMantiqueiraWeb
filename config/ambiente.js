@@ -82,6 +82,12 @@ function validarAmbiente(env) {
         erros.push('LIMITE_GLOBAL deve ser um inteiro maior que zero.');
     }
 
+    // Duração do token no formato do jsonwebtoken com unidade obrigatória (ex.: 30m, 8h, 1d).
+    const jwtExpiraEm = env.JWT_EXPIRES_IN || '8h';
+    if (!/^[1-9]\d*[smhd]$/.test(jwtExpiraEm)) {
+        erros.push('JWT_EXPIRES_IN deve ser um número seguido de s, m, h ou d (ex.: 8h).');
+    }
+
     if (env.JOBS_ATIVOS && !['true', 'false'].includes(env.JOBS_ATIVOS)) {
         erros.push('JOBS_ATIVOS deve ser true ou false.');
     }
@@ -103,6 +109,7 @@ function validarAmbiente(env) {
                 ? (Number(env.TRUST_PROXY) || env.TRUST_PROXY)
                 : null,
             jwtSecret,
+            jwtExpiraEm,
             origensCors,
             limiteJson: env.JSON_LIMIT || '200kb',
             // Por IP: requisições por minuto em /api/v1, tentativas de login com falha a cada 15 min e cadastros por hora.

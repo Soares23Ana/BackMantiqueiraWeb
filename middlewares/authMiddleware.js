@@ -15,6 +15,7 @@ function extrairToken(req) {
 /**
  * Valida o token e confere no banco se o usuário ainda existe e está ativo.
  * Assim, desativar um usuário ou mudar o perfil vale na hora, sem esperar o token expirar.
+ * Token emitido antes da última troca de senha também é recusado.
  */
 async function carregarUsuario(token) {
     let payload;
@@ -26,9 +27,12 @@ async function carregarUsuario(token) {
     // Carregado aqui para evitar dependência circular com os models na inicialização.
     const { Usuario } = require('../models');
     const usuario = await Usuario.findByPk(payload.id, {
-        attributes: ['id_usuario', 'nome', 'email', 'tipo', 'pode_gerenciar_equipe', 'ativo']
+        attributes: ['id_usuario', 'nome', 'email', 'tipo', 'pode_gerenciar_equipe', 'ativo', 'senha_alterada_em']
     });
     if (!usuario || !usuario.ativo) {
+        return null;
+    }
+    if (usuario.senha_alterada_em && payload.iat * 1000 < usuario.senha_alterada_em.getTime()) {
         return null;
     }
     return {

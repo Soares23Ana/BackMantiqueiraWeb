@@ -10,6 +10,15 @@ USE mantiqueira_db;
 
 SET FOREIGN_KEY_CHECKS = 0;
 
+CREATE TABLE `schema_migrations` (
+  `versao` varchar(20) NOT NULL,
+  `nome` varchar(200) NOT NULL,
+  `checksum` char(64) NOT NULL,
+  `aplicado_em` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `duracao_ms` int NOT NULL DEFAULT '0',
+  PRIMARY KEY (`versao`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
 CREATE TABLE `categorias` (
   `id_categoria` int NOT NULL AUTO_INCREMENT,
   `nome` varchar(100) NOT NULL,
@@ -69,6 +78,26 @@ CREATE TABLE `marcas` (
   UNIQUE KEY `uk_marcas_slug` (`slug`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
+CREATE TABLE `movimentacoes_estoque` (
+  `id_movimentacao` int NOT NULL AUTO_INCREMENT,
+  `id_produto` int NOT NULL,
+  `tipo` enum('ajuste','pedido','cancelamento','importacao') NOT NULL,
+  `quantidade` int NOT NULL,
+  `estoque_anterior` int NOT NULL,
+  `estoque_novo` int NOT NULL,
+  `observacao` varchar(500) DEFAULT NULL,
+  `id_usuario` int DEFAULT NULL,
+  `id_pedido` int DEFAULT NULL,
+  `criado_em` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id_movimentacao`),
+  KEY `idx_movimentacoes_produto` (`id_produto`,`criado_em`),
+  KEY `fk_movimentacoes_usuario` (`id_usuario`),
+  KEY `fk_movimentacoes_pedido` (`id_pedido`),
+  CONSTRAINT `fk_movimentacoes_pedido` FOREIGN KEY (`id_pedido`) REFERENCES `pedidos` (`id_pedido`) ON DELETE SET NULL,
+  CONSTRAINT `fk_movimentacoes_produto` FOREIGN KEY (`id_produto`) REFERENCES `produtos` (`id_produto`),
+  CONSTRAINT `fk_movimentacoes_usuario` FOREIGN KEY (`id_usuario`) REFERENCES `usuarios` (`id_usuario`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
 CREATE TABLE `produtos` (
   `id_produto` int NOT NULL AUTO_INCREMENT,
   `sku` varchar(40) NOT NULL,
@@ -100,50 +129,6 @@ CREATE TABLE `produtos` (
   CONSTRAINT `ck_produtos_multiplo` CHECK ((`multiplo_venda` >= 1))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
-CREATE TABLE `schema_migrations` (
-  `versao` varchar(20) NOT NULL,
-  `nome` varchar(200) NOT NULL,
-  `checksum` char(64) NOT NULL,
-  `aplicado_em` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  `duracao_ms` int NOT NULL DEFAULT '0',
-  PRIMARY KEY (`versao`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
-
-CREATE TABLE `movimentacoes_estoque` (
-  `id_movimentacao` int NOT NULL AUTO_INCREMENT,
-  `id_produto` int NOT NULL,
-  `tipo` enum('ajuste','pedido','cancelamento','importacao') NOT NULL,
-  `quantidade` int NOT NULL,
-  `estoque_anterior` int NOT NULL,
-  `estoque_novo` int NOT NULL,
-  `observacao` varchar(500) DEFAULT NULL,
-  `id_usuario` int DEFAULT NULL,
-  `id_pedido` int DEFAULT NULL,
-  `criado_em` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id_movimentacao`),
-  KEY `idx_movimentacoes_produto` (`id_produto`,`criado_em`),
-  KEY `fk_movimentacoes_usuario` (`id_usuario`),
-  KEY `fk_movimentacoes_pedido` (`id_pedido`),
-  CONSTRAINT `fk_movimentacoes_pedido` FOREIGN KEY (`id_pedido`) REFERENCES `pedidos` (`id_pedido`) ON DELETE SET NULL,
-  CONSTRAINT `fk_movimentacoes_produto` FOREIGN KEY (`id_produto`) REFERENCES `produtos` (`id_produto`),
-  CONSTRAINT `fk_movimentacoes_usuario` FOREIGN KEY (`id_usuario`) REFERENCES `usuarios` (`id_usuario`) ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
-
-CREATE TABLE `pedido_historico` (
-  `id_historico` int NOT NULL AUTO_INCREMENT,
-  `id_pedido` int NOT NULL,
-  `status_anterior` enum('Aguardando Separação','Em Separação','Saiu para Entrega','Entregue','Cancelado') DEFAULT NULL,
-  `status_novo` enum('Aguardando Separação','Em Separação','Saiu para Entrega','Entregue','Cancelado') NOT NULL,
-  `id_usuario` int DEFAULT NULL,
-  `observacao` varchar(500) DEFAULT NULL,
-  `criado_em` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id_historico`),
-  KEY `idx_historico_pedido` (`id_pedido`,`criado_em`),
-  KEY `fk_historico_usuario` (`id_usuario`),
-  CONSTRAINT `fk_historico_pedido` FOREIGN KEY (`id_pedido`) REFERENCES `pedidos` (`id_pedido`) ON DELETE CASCADE,
-  CONSTRAINT `fk_historico_usuario` FOREIGN KEY (`id_usuario`) REFERENCES `usuarios` (`id_usuario`) ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
-
 CREATE TABLE `blocos_cms` (
   `id_bloco` int NOT NULL AUTO_INCREMENT,
   `chave` varchar(60) NOT NULL,
@@ -171,15 +156,6 @@ CREATE TABLE `campanhas` (
   CONSTRAINT `ck_campanhas_periodo` CHECK ((`fim_em` > `inicio_em`))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
-CREATE TABLE `campanhas_produtos` (
-  `id_campanha` int NOT NULL,
-  `id_produto` int NOT NULL,
-  PRIMARY KEY (`id_campanha`,`id_produto`),
-  KEY `idx_campanhas_produtos_produto` (`id_produto`),
-  CONSTRAINT `fk_campanhas_produtos_campanha` FOREIGN KEY (`id_campanha`) REFERENCES `campanhas` (`id_campanha`) ON DELETE CASCADE,
-  CONSTRAINT `fk_campanhas_produtos_produto` FOREIGN KEY (`id_produto`) REFERENCES `produtos` (`id_produto`) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
-
 CREATE TABLE `configuracoes` (
   `chave` varchar(60) NOT NULL,
   `valor` text,
@@ -205,6 +181,55 @@ CREATE TABLE `conteudo_cms` (
   PRIMARY KEY (`id_banner`),
   KEY `idx_banners_exibicao` (`ativo`,`ordem`),
   CONSTRAINT `ck_banners_janela` CHECK (((`inicio_em` is null) or (`fim_em` is null) or (`fim_em` > `inicio_em`)))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE `pedido_historico` (
+  `id_historico` int NOT NULL AUTO_INCREMENT,
+  `id_pedido` int NOT NULL,
+  `status_anterior` enum('Aguardando Separação','Em Separação','Saiu para Entrega','Entregue','Cancelado') DEFAULT NULL,
+  `status_novo` enum('Aguardando Separação','Em Separação','Saiu para Entrega','Entregue','Cancelado') NOT NULL,
+  `id_usuario` int DEFAULT NULL,
+  `observacao` varchar(500) DEFAULT NULL,
+  `criado_em` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id_historico`),
+  KEY `idx_historico_pedido` (`id_pedido`,`criado_em`),
+  KEY `fk_historico_usuario` (`id_usuario`),
+  CONSTRAINT `fk_historico_pedido` FOREIGN KEY (`id_pedido`) REFERENCES `pedidos` (`id_pedido`) ON DELETE CASCADE,
+  CONSTRAINT `fk_historico_usuario` FOREIGN KEY (`id_usuario`) REFERENCES `usuarios` (`id_usuario`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE `sincronizacoes_log` (
+  `id_sincronizacao` int NOT NULL AUTO_INCREMENT,
+  `tipo` enum('importacao_manual','carga_completa','estoque') NOT NULL,
+  `origem` varchar(255) NOT NULL,
+  `simulado` tinyint(1) NOT NULL DEFAULT '0',
+  `status` enum('em_andamento','sucesso','parcial','falha') NOT NULL DEFAULT 'em_andamento',
+  `linhas` int NOT NULL DEFAULT '0',
+  `criados` int NOT NULL DEFAULT '0',
+  `atualizados` int NOT NULL DEFAULT '0',
+  `inalterados` int NOT NULL DEFAULT '0',
+  `desativados` int NOT NULL DEFAULT '0',
+  `com_erro` int NOT NULL DEFAULT '0',
+  `movimentacoes_estoque` int NOT NULL DEFAULT '0',
+  `relatorio` json DEFAULT NULL,
+  `mensagem` varchar(500) DEFAULT NULL,
+  `id_usuario` int DEFAULT NULL,
+  `iniciado_em` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `finalizado_em` datetime DEFAULT NULL,
+  `duracao_ms` int DEFAULT NULL,
+  PRIMARY KEY (`id_sincronizacao`),
+  KEY `idx_sincronizacoes_tipo_data` (`tipo`,`iniciado_em`),
+  KEY `fk_sincronizacoes_usuario` (`id_usuario`),
+  CONSTRAINT `fk_sincronizacoes_usuario` FOREIGN KEY (`id_usuario`) REFERENCES `usuarios` (`id_usuario`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE `campanhas_produtos` (
+  `id_campanha` int NOT NULL,
+  `id_produto` int NOT NULL,
+  PRIMARY KEY (`id_campanha`,`id_produto`),
+  KEY `idx_campanhas_produtos_produto` (`id_produto`),
+  CONSTRAINT `fk_campanhas_produtos_campanha` FOREIGN KEY (`id_campanha`) REFERENCES `campanhas` (`id_campanha`) ON DELETE CASCADE,
+  CONSTRAINT `fk_campanhas_produtos_produto` FOREIGN KEY (`id_produto`) REFERENCES `produtos` (`id_produto`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 CREATE TABLE `eventos` (
@@ -250,37 +275,13 @@ CREATE TABLE `pedidos` (
   CONSTRAINT `fk_pedidos_funcionario` FOREIGN KEY (`id_funcionario`) REFERENCES `usuarios` (`id_usuario`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
-CREATE TABLE `sincronizacoes_log` (
-  `id_sincronizacao` int NOT NULL AUTO_INCREMENT,
-  `tipo` enum('importacao_manual','carga_completa','estoque') NOT NULL,
-  `origem` varchar(255) NOT NULL,
-  `simulado` tinyint(1) NOT NULL DEFAULT '0',
-  `status` enum('em_andamento','sucesso','parcial','falha') NOT NULL DEFAULT 'em_andamento',
-  `linhas` int NOT NULL DEFAULT '0',
-  `criados` int NOT NULL DEFAULT '0',
-  `atualizados` int NOT NULL DEFAULT '0',
-  `inalterados` int NOT NULL DEFAULT '0',
-  `desativados` int NOT NULL DEFAULT '0',
-  `com_erro` int NOT NULL DEFAULT '0',
-  `movimentacoes_estoque` int NOT NULL DEFAULT '0',
-  `relatorio` json DEFAULT NULL,
-  `mensagem` varchar(500) DEFAULT NULL,
-  `id_usuario` int DEFAULT NULL,
-  `iniciado_em` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  `finalizado_em` datetime DEFAULT NULL,
-  `duracao_ms` int DEFAULT NULL,
-  PRIMARY KEY (`id_sincronizacao`),
-  KEY `idx_sincronizacoes_tipo_data` (`tipo`,`iniciado_em`),
-  KEY `fk_sincronizacoes_usuario` (`id_usuario`),
-  CONSTRAINT `fk_sincronizacoes_usuario` FOREIGN KEY (`id_usuario`) REFERENCES `usuarios` (`id_usuario`) ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
-
 CREATE TABLE `usuarios` (
   `id_usuario` int NOT NULL AUTO_INCREMENT,
   `nome` varchar(100) NOT NULL,
   `razao_social` varchar(150) DEFAULT NULL,
   `email` varchar(100) NOT NULL,
   `senha` varchar(255) NOT NULL,
+  `senha_alterada_em` datetime DEFAULT NULL,
   `cnpj` varchar(14) DEFAULT NULL,
   `cnpj_original` varchar(18) DEFAULT NULL,
   `telefone` varchar(20) DEFAULT NULL,
@@ -310,4 +311,5 @@ INSERT INTO schema_migrations (versao, nome, checksum) VALUES
 ('008', 'operacao', '6782d706ec5d18105f84e7daf60553c1cef6107bd5e106400cceb58518547daa'),
 ('009', 'campanhas', 'd0cf2e273a5be6c2060402809c19bdaa4e94649b8200f56d11a26129488c5f5b'),
 ('010', 'eventos', 'cd242ad5fd578e83c32f28c87b0790e60ae8f7c3c0c2c623f87936227c3b002c'),
-('011', 'idempotencia_pedidos', '14d036b1423cd701d659bf5829f194403767a23d8494e27c4c14618cf8d11852');
+('011', 'idempotencia_pedidos', '14d036b1423cd701d659bf5829f194403767a23d8494e27c4c14618cf8d11852'),
+('012', 'senha_alterada_em', 'eb3b1c6617b4f579775cbef86417acbecd6c01b44d29b897a94d1a9d04dc9a15');

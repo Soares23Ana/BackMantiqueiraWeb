@@ -221,7 +221,7 @@ Plataforma B2B: **clientes entram com CNPJ** e **a equipe entra com e-mail**.
 * `GET /api/v1/auth/me` - Dados do usuário do token.
 * `GET /api/v1/auth/users` - Lista os usuários sem expor as senhas; mesma permissão de `GET /admin/usuarios`.
 
-O token vale 2 horas. A cada requisição a API confere se o usuário ainda existe e está ativo: desativar alguém ou mudar o perfil vale na hora. Rotas que o perfil não pode usar respondem `403` com a mensagem genérica `Acesso negado.`.
+O token vale 8 horas (configurável por `JWT_EXPIRES_IN`) e deixa de valer quando a senha é trocada. A cada requisição a API confere se o usuário ainda existe e está ativo: desativar alguém ou mudar o perfil vale na hora. Rotas que o perfil não pode usar respondem `403` com a mensagem genérica `Acesso negado.`.
 
 #### Perfis
 Existem dois perfis (`usuario.tipo`): **`cliente`** e **`equipe`**. Todos os usuários da equipe têm as mesmas permissões na área do gestor (produtos, estoque, categorias/marcas, pedidos, clientes, painel e CMS). O `cargo` (ex.: "Estoquista") é texto livre e não muda permissões. A única exceção é a gestão de usuários da equipe, que exige `pode_gerenciar_equipe = true` (devolvido no login e em `/auth/me` para o front decidir se mostra o menu).
