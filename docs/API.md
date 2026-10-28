@@ -1,7 +1,7 @@
 # API Mantiqueira — contrato para o front-end
 
 Versão da API: **v1**. Os exemplos abaixo foram capturados da API rodando com o catálogo do seed.
-Para ter banners, campanha, contatos e pedidos em todos os status no ambiente local, rode `npm run seed:catalogo`, `npm run seed:dev` e `npm run seed:demo` (detalhes no [README](../README.md#dados-iniciais-seeds)).
+Para ter banners, campanha, contatos e pedidos em todos os status no ambiente local, rode `npm run seed:catalogo`, `npm run seed:dev` e `npm run seed:demo` (detalhes no [guia técnico](GUIA_TECNICO.md#3-dados-de-teste-seeds)).
 
 ## Sumário
 1. [Convenções](#1-convenções)
@@ -27,7 +27,7 @@ Para ter banners, campanha, contatos e pedidos em todos os status no ambiente lo
 ### URL base
 - API: `http://localhost:3000/api/v1` (em produção, o domínio da EC2/Nginx + `/api/v1`).
 - Exceções fora de `/api/v1`: `GET /saude`, `GET /saude/detalhado` e os arquivos enviados em `GET /arquivos/uploads/...`.
-- CORS: liberadas por padrão `http://localhost:5173`, `http://127.0.0.1:5173`, `http://localhost:4173`, `http://localhost:3000` e `http://localhost:3001`, com credenciais; outras origens entram por `CORS_ORIGINS` no servidor (ver [README](../README.md#cors-cors_origins)). Cabeçalhos aceitos: `Authorization`, `Content-Type`, `X-Request-Id`, `Idempotency-Key`.
+- CORS: liberadas por padrão `http://localhost:5173`, `http://127.0.0.1:5173`, `http://localhost:4173`, `http://localhost:3000` e `http://localhost:3001`, com credenciais; outras origens entram por `CORS_ORIGINS` no servidor (ver [guia técnico](GUIA_TECNICO.md#6-cors)). Cabeçalhos aceitos: `Authorization`, `Content-Type`, `X-Request-Id`, `Idempotency-Key`.
 - Imagens: `imagem_url` começando com `/img/` é do **front** (pasta pública do React); começando com `/arquivos/` é da **API** (prefixe com o endereço da API).
 
 ### Autenticação
@@ -43,6 +43,8 @@ O token vale **8 horas** (configurável no servidor por `JWT_EXPIRES_IN`). A cad
 | `cliente` | CNPJ + senha | Vitrine, checkout, os próprios pedidos e a própria conta |
 | `equipe` | e-mail + senha | Toda a área do gestor. `cargo` é texto livre e não muda permissões |
 | `equipe` com `pode_gerenciar_equipe: true` | e-mail + senha | Tudo da equipe + gestão de usuários (`/admin`) |
+
+Todos os usuários da equipe têm as mesmas permissões na área do gestor (produtos, estoque, categorias e marcas, pedidos, clientes, painel e CMS); a única exceção é a gestão de usuários, que exige `pode_gerenciar_equipe` (devolvido no login e em `/auth/me` para o front decidir se mostra o menu). Desativar alguém ou mudar o perfil vale na próxima requisição, sem esperar o token expirar.
 
 Na coluna **Perfil** das tabelas: **público** (sem token), **logado** (qualquer perfil), **cliente**, **equipe**, **gestor da equipe** (equipe com `pode_gerenciar_equipe`).
 
@@ -112,7 +114,7 @@ Parâmetros `pagina` (padrão 1) e `limite` (padrão e máximo variam por rota).
 | DELETE | `/minha-conta/enderecos/:id_endereco` | cliente | Remove endereço |
 
 ### POST /auth/register
-Sempre cria um **cliente**. Todos os campos são obrigatórios, exceto `complemento` e `referencia` do endereço. O CNPJ pode vir com ou sem pontuação e precisa ter dígitos verificadores válidos. O endereço vira o principal. Limite: 10 cadastros por hora por IP.
+Sempre cria um **cliente**. Todos os campos são obrigatórios, exceto `complemento` e `referencia` do endereço. O CNPJ pode vir com ou sem pontuação, precisa ter dígitos verificadores válidos e é gravado só com dígitos. A senha tem de 8 a 72 caracteres. O endereço vira o principal; outros são adicionados em `/minha-conta/enderecos`. Limite: 10 cadastros por hora por IP.
 ```json
 {
   "cnpj": "11.222.333/0001-81",
@@ -144,7 +146,7 @@ Erros: `422 VALIDACAO` (campos com prefixo `endereco.` para o endereço, ex.: `e
   "usuario": { "id": 2, "nome": "Maria Souza", "email": "compras@mercadinho.com", "tipo": "cliente", "pode_gerenciar_equipe": false }
 }
 ```
-- **Qualquer falha** (formato, usuário inexistente, perfil errado, senha errada, inativo) devolve o mesmo `401`:
+- **Qualquer falha** (formato, usuário inexistente, perfil errado, senha errada, inativo) devolve o mesmo `401`, no mesmo tempo de resposta (não revela quais CNPJs ou e-mails existem):
 ```json
 { "sucesso": false, "mensagem": "Credenciais inválidas.", "codigo": "CREDENCIAIS_INVALIDAS" }
 ```
@@ -284,7 +286,7 @@ Aceita os mesmos filtros da listagem. Cada contagem considera os **outros** filt
   "estoque_minimo": 10, "multiplo_venda": 6, "ativo": true, "quantidade_estoque": 60
 }
 ```
-Só `sku` e `nome` são obrigatórios. `quantidade_estoque` é o estoque inicial (gera movimentação). `201`: `{ "mensagem": "Produto cadastrado com sucesso.", "id_produto": 39, "produto": { ... } }`.
+Só `sku` e `nome` são obrigatórios. Padrões: `estoque_minimo` 10, `multiplo_venda` 1. `quantidade_estoque` é o estoque inicial (gera movimentação). `201`: `{ "mensagem": "Produto cadastrado com sucesso.", "id_produto": 39, "produto": { ... } }`.
 Erros: `422 VALIDACAO` (todos os campos em `detalhes`), `409 SKU_DUPLICADO`.
 
 ### PUT / PATCH /produtos/:id (equipe)
@@ -366,7 +368,7 @@ Erros: `409 SLUG_DUPLICADO`; exclusão com produtos: `409 EM_USO` (use `PATCH { 
 | GET | `/produtos/importacoes` | equipe | Histórico (uploads e jobs) |
 | GET | `/produtos/importacoes/:id` | equipe | Detalhe com o relatório de erros |
 
-O formato do CSV, as colunas e os jobs estão no [README](../README.md#importação-de-catálogo-csv). Exemplos prontos em `importacao/exemplos/`.
+O formato do CSV e as colunas estão no [guia técnico](GUIA_TECNICO.md#7-importação-de-catálogo-csv), e os jobs em [Jobs agendados](GUIA_TECNICO.md#8-jobs-agendados). Exemplos prontos em `importacao/exemplos/`.
 
 **Arquivos na pasta `importacao/entrada/` (jobs):** arquivos modificados nos últimos 60 segundos são ignorados (podem estar sendo copiados) e lidos na execução seguinte; no `ultimo_resultado` do job (em `/saude/detalhado`) aparecem com `"status": "ignorado"`. Recomendado: grave o arquivo como `.tmp` e renomeie para `.csv` ao terminar a cópia; só `.csv` é lido. O upload (`POST /produtos/importar`) não tem essa espera.
 
@@ -467,6 +469,8 @@ Se algum item tiver problema, **nada é gravado** e vem a lista completa:
 `motivo`: `produto_inexistente`, `produto_inativo`, `multiplo_de_venda` ou `estoque_insuficiente`. `disponivel` é a maior quantidade que pode ser pedida agora, respeitando o múltiplo de venda.
 Outros erros: `422 VALIDACAO`, `422 ENDERECO_OBRIGATORIO` (cliente sem endereço).
 
+Pedido, itens, baixa de estoque, movimentações e histórico são gravados na mesma transação, e pedidos simultâneos não usam o mesmo estoque. Todo pedido nas respostas traz `pode_cancelar`, calculado para quem fez a requisição.
+
 ### GET /pedidos/meus (cliente)
 `?status=&pagina=&limite=` (padrão 20, máximo 100). `{ "pedidos": [ ... ], "paginacao": { ... } }`, com o mesmo objeto de pedido do checkout.
 
@@ -540,7 +544,7 @@ Só aceita o próximo passo; pular ou voltar dá:
 { "sucesso": false, "mensagem": "Não é possível mudar de \"Em Separação\" para \"Entregue\".", "codigo": "TRANSICAO_INVALIDA",
   "detalhes": { "status_atual": "Em Separação", "proximo_permitido": "Saiu para Entrega" } }
 ```
-`"status": "Cancelado"` aqui dá `422` (use a rota de cancelamento). Ao entregar, registra `data_entrega`.
+`"status": "Cancelado"` aqui dá `422` (use a rota de cancelamento). Grava quem mudou em `id_funcionario` e no histórico; ao entregar, registra `data_entrega`.
 
 ### POST /pedidos/:id_pedido/cancelar
 ```json
@@ -550,7 +554,7 @@ Só aceita o próximo passo; pular ou voltar dá:
 ```json
 { "mensagem": "Pedido cancelado. O estoque dos itens foi devolvido.", "pedido": { "id_pedido": 1, "status": "Cancelado", "motivo_cancelamento": "Cliente desistiu" } }
 ```
-Erros: `422 VALIDACAO` (motivo com 3 a 500 caracteres), `409 CANCELAMENTO_NAO_PERMITIDO` (`detalhes.status_atual`), `404` para cliente que não é dono.
+O estoque de todos os itens volta na mesma transação, com movimentação do tipo `cancelamento`. Erros: `422 VALIDACAO` (motivo com 3 a 500 caracteres), `409 CANCELAMENTO_NAO_PERMITIDO` (`detalhes.status_atual`), `404` para cliente que não é dono.
 
 ---
 
@@ -590,6 +594,8 @@ Erros: `422 VALIDACAO` (motivo com 3 a 500 caracteres), `409 CANCELAMENTO_NAO_PE
 }
 ```
 `produtos_mais_solicitados` ignora pedidos cancelados.
+
+Clientes guardam só dados operacionais e comerciais (`razao_social`, `cnpj`, `telefone` e endereços de entrega). Nenhum dado bancário, de cartão ou limite de crédito é armazenado.
 
 ### PUT /clientes/:id
 Um ou mais de: `razao_social`, `cnpj` (válido e único; corrigir limpa a pendência de `cnpj_original`), `telefone`, `ativo` (bloqueia/desbloqueia o login) e `enderecos` (lista; com `id_endereco` atualiza, sem ele cria; os omitidos não são removidos). `200`: `{ "mensagem": "Dados operacionais do cliente atualizados.", "cliente": { ... } }`. Erros: `422` (CNPJ inválido), `409 CNPJ_JA_CADASTRADO`, `404`.
@@ -634,7 +640,7 @@ Campos: `nome`, `email`, `senha`, `cargo`, `telefone`, `pode_gerenciar_equipe`, 
 
 ## 9. Painel
 
-Todas: **equipe**. "Estoque baixo" = produto ativo com estoque menor ou igual ao `estoque_minimo` dele.
+Todas: **equipe**. "Estoque baixo" = produto ativo com estoque menor ou igual ao `estoque_minimo` dele (padrão 10, editável no produto). `/painel/contadores` serve para os badges do menu.
 
 | Método | Rota | Resposta |
 |---|---|---|
@@ -669,14 +675,16 @@ Todas: **equipe**. "Estoque baixo" = produto ativo com estoque menor ou igual ao
 | PUT | `/cms/ordem` | equipe | Reordena |
 | DELETE | `/cms/:id` | equipe | Exclui banner e imagem |
 
-- `GET /cms`: `{ "banners": [{ "id_banner": 1, "titulo": "Promo", "link": "/promocoes", "imagem_url": "/arquivos/uploads/<uuid>.png", "ordem": 1 }] }`.
+- `GET /cms`: banners no ar (ativos e dentro da janela `inicio_em`/`fim_em`), na `ordem` definida. `{ "banners": [{ "id_banner": 1, "titulo": "Promo", "link": "/promocoes", "imagem_url": "/arquivos/uploads/<uuid>.png", "ordem": 1 }] }`.
 - `GET /cms/todos`: objetos completos (`ativo`, `inicio_em`, `fim_em`, `criado_em`, `atualizado_em`) + `situacao`: `no_ar`, `agendado`, `expirado` ou `inativo`.
-- `POST /cms` (multipart): `titulo` e `imagem` obrigatórios; opcionais `link` (caminho interno ou URL http/https), `ordem`, `ativo`, `inicio_em`, `fim_em`. Datas sem fuso são horário de Brasília (`2026-11-01T08:00`). `201`: `{ "mensagem": "Banner salvo com sucesso.", "banner": { ... } }`.
-- `PATCH /cms/:id`: os mesmos campos, todos opcionais; com nova `imagem`, a anterior é apagada; `null` em `inicio_em`/`fim_em` remove a janela.
+- `POST /cms` (multipart): `titulo` e `imagem` (JPEG, PNG, WEBP ou GIF; até 5 MB) obrigatórios; sem `ordem`, o banner vai para o fim da fila. Opcionais `link` (caminho interno ou URL http/https), `ordem`, `ativo`, `inicio_em`, `fim_em`. Datas sem fuso são horário de Brasília (`2026-11-01T08:00`). `201`: `{ "mensagem": "Banner salvo com sucesso.", "banner": { ... } }`.
+- `PATCH /cms/:id`: os mesmos campos, todos opcionais; com nova `imagem`, a anterior é apagada; `{ "ativo": false }` desativa; `null` em `inicio_em`/`fim_em` remove a janela.
 - `PUT /cms/ordem`: `{ "ids": [3, 1, 2] }` com **todos** os banners; devolve a lista completa reordenada.
 - Erros: `422 VALIDACAO` (ex.: `fim_em` antes de `inicio_em`), `404`.
 
 ### Blocos de conteúdo
+Textos editáveis do site, identificados por uma chave (ex.: `sobre`, `politica-de-entrega`).
+
 | Método | Rota | Perfil | Descrição |
 |---|---|---|---|
 | GET | `/cms/blocos` | público | Blocos ativos (equipe vê todos) |
