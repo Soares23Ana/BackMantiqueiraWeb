@@ -149,6 +149,118 @@ describe('métricas (equipe)', () => {
     });
 });
 
+describe('métricas de funil, vistos, cliques, pedidos por dia e ciclo (equipe)', () => {
+    // Período de 5 dias há uns 2 meses: longe dos eventos dos outros testes e dentro dos 12 meses guardados.
+    const D = Array.from({ length: 31 }, (_, i) =>
+        new Date(Date.now() - 3 * 3600 * 1000 - (65 - i) * 24 * 3600 * 1000).toISOString().slice(0, 10));
+    const PERIODO = `de=${D[1]}&ate=${D[5]}`;
+    let banner;
+    let campanha;
+
+    const evento = (tipo, criadoEm, campos = {}) => Evento.create({ tipo, criado_em: criadoEm, ...campos });
+
+    before(async () => {
+        const { Banner, Campanha, Pedido } = require('../models');
+        banner = await Banner.create({ titulo: 'Banner do teste', imagem_url: '/img/banner-1.webp', ordem: 1 });
+        campanha = await Campanha.create({ titulo: 'Campanha do teste', inicio_em: `${D[1]} 00:00:00`, fim_em: `${D[30]} 23:59:59` });
+        const u = cliente.usuario.id_usuario;
+        const dia = `${D[2]} 10:00:00`;
+
+        // Funil: 4 sessões viram o produto (uma delas duas vezes), 2 adicionaram, 2 abriram o checkout, 1 concluiu.
+        await evento('produto_visto', dia, { id_produto: produtos['M-1'], sessao: 'visitante-aaaa' });
+        await evento('produto_visto', dia, { id_produto: produtos['M-1'], sessao: 'visitante-aaaa' });
+        await evento('produto_visto', dia, { id_produto: produtos['M-1'], sessao: 'visitante-bbbb' });
+        await evento('produto_visto', dia, { id_produto: produtos['M-2'], sessao: 'visitante-cccc' });
+        await evento('produto_visto', dia, { id_produto: produtos['M-2'], id_usuario: u });
+        // Sem usuário nem sessão: conta como visualização, mas não como sessão.
+        await evento('produto_visto', dia, { id_produto: produtos['M-2'] });
+        await evento('carrinho_adicionar', dia, { id_produto: produtos['M-1'], sessao: 'visitante-aaaa' });
+        await evento('carrinho_adicionar', dia, { id_produto: produtos['M-2'], id_usuario: u });
+        await evento('checkout_iniciado', dia, { sessao: 'visitante-aaaa' });
+        await evento('checkout_iniciado', dia, { id_usuario: u });
+        await evento('pedido_concluido', dia, { id_usuario: u, id_pedido: 1 });
+        // Fora do período: não entra.
+        await evento('produto_visto', `${D[0]} 10:00:00`, { id_produto: produtos['M-1'], sessao: 'visitante-zzzz' });
+
+        await evento('banner_clique', dia, { id_banner: banner.id_banner, sessao: 'visitante-aaaa' });
+        await evento('banner_clique', dia, { id_banner: banner.id_banner, sessao: 'visitante-aaaa' });
+        await evento('banner_clique', dia, { id_banner: banner.id_banner, sessao: 'visitante-bbbb' });
+        await evento('campanha_clique', dia, { id_campanha: campanha.id_campanha, id_usuario: u });
+
+        // Pedidos: dois no dia 2 (um cancelado), um no dia 4 que percorreu o fluxo inteiro.
+        const pedido = (data, status) => Pedido.create({ id_cliente: u, data_pedido: data, status });
+        const completo = await pedido(`${D[4]} 08:00:00`, 'Entregue');
+        const separado = await pedido(`${D[2]} 09:00:00`, 'Em Separação');
+        await pedido(`${D[2]} 11:00:00`, 'Cancelado');
+        const historico = (id, anterior, novo, quando) => sequelize.query(
+            'INSERT INTO pedido_historico (id_pedido, status_anterior, status_novo, criado_em) VALUES (?, ?, ?, ?)',
+            { replacements: [id, anterior, novo, quando] });
+        await historico(completo.id_pedido, null, 'Aguardando Separação', `${D[4]} 08:00:00`);
+        await historico(completo.id_pedido, 'Aguardando Separação', 'Em Separação', `${D[4]} 09:00:00`);
+        await historico(completo.id_pedido, 'Em Separação', 'Saiu para Entrega', `${D[4]} 09:30:00`);
+        await historico(completo.id_pedido, 'Saiu para Entrega', 'Entregue', `${D[4]} 13:30:00`);
+        await historico(separado.id_pedido, null, 'Aguardando Separação', `${D[2]} 09:00:00`);
+        await historico(separado.id_pedido, 'Aguardando Separação', 'Em Separação', `${D[2]} 12:00:00`);
+    });
+
+    test('funil: sessões distintas por etapa e taxa entre etapas', async () => {
+        const { body } = await metrica(`funil?${PERIODO}`).expect(200);
+        assert.deepEqual(body.periodo, { de: D[1], ate: D[5] });
+        assert.deepEqual(body.etapas, [
+            { etapa: 'produto_visto', sessoes: 4, taxa_da_anterior: null },
+            { etapa: 'carrinho_adicionar', sessoes: 2, taxa_da_anterior: 0.5 },
+            { etapa: 'checkout_iniciado', sessoes: 2, taxa_da_anterior: 1 },
+            { etapa: 'pedido_concluido', sessoes: 1, taxa_da_anterior: 0.5 }
+        ]);
+        const vazio = await metrica('funil?de=2030-01-01&ate=2030-01-02').expect(200);
+        assert.ok(vazio.body.etapas.every((e) => e.sessoes === 0 && (e.taxa_da_anterior === null)));
+    });
+
+    test('produtos vistos: visualizações e sessões', async () => {
+        const { body } = await metrica(`produtos-vistos?${PERIODO}`).expect(200);
+        assert.deepEqual(body.produtos.map((p) => [p.sku, p.visualizacoes, p.sessoes]), [['M-1', 3, 2], ['M-2', 3, 2]]);
+        const um = await metrica(`produtos-vistos?${PERIODO}&limite=1`).expect(200);
+        assert.equal(um.body.produtos.length, 1);
+    });
+
+    test('cliques por banner e por campanha', async () => {
+        const { body } = await metrica(`banners-campanhas?${PERIODO}`).expect(200);
+        assert.deepEqual(body.banners, [{ id_banner: banner.id_banner, titulo: 'Banner do teste', cliques: 3, sessoes: 2 }]);
+        assert.deepEqual(body.campanhas, [{ id_campanha: campanha.id_campanha, titulo: 'Campanha do teste', cliques: 1, sessoes: 1 }]);
+    });
+
+    test('pedidos por dia, com os dias sem pedido zerados', async () => {
+        const { body } = await metrica(`pedidos-por-dia?${PERIODO}`).expect(200);
+        assert.deepEqual(body.dias, [
+            { data: D[1], total: 0, cancelados: 0 },
+            { data: D[2], total: 2, cancelados: 1 },
+            { data: D[3], total: 0, cancelados: 0 },
+            { data: D[4], total: 1, cancelados: 0 },
+            { data: D[5], total: 0, cancelados: 0 }
+        ]);
+    });
+
+    test('ciclo do pedido: tempo médio entre etapas pelo histórico', async () => {
+        const { body } = await metrica(`ciclo-pedido?${PERIODO}`).expect(200);
+        assert.deepEqual(body.etapas, [
+            // (60 + 180) / 2 minutos
+            { de: 'Aguardando Separação', para: 'Em Separação', pedidos: 2, media_minutos: 120 },
+            { de: 'Em Separação', para: 'Saiu para Entrega', pedidos: 1, media_minutos: 30 },
+            { de: 'Saiu para Entrega', para: 'Entregue', pedidos: 1, media_minutos: 240 }
+        ]);
+    });
+
+    test('nenhum valor financeiro, validação de período e só equipe', async () => {
+        for (const rota of ['funil', 'produtos-vistos', 'banners-campanhas', 'pedidos-por-dia', 'ciclo-pedido']) {
+            const { body } = await metrica(`${rota}?${PERIODO}`).expect(200);
+            assert.doesNotMatch(JSON.stringify(body), /preco|valor|total_pedido|desconto/);
+            await metrica(`${rota}?de=${D[9]}&ate=${D[1]}`).expect(400);
+            await request(app).get(`/api/v1/metricas/${rota}`).set('Authorization', cliente.auth).expect(403);
+            await request(app).get(`/api/v1/metricas/${rota}`).expect(401);
+        }
+    });
+});
+
 describe('limpeza de eventos antigos', () => {
     test('apaga só eventos com mais de 12 meses', async () => {
         const { limparEventosAntigos } = require('../servicos/eventos');

@@ -154,7 +154,7 @@ Sem desconto: título, selo de texto (até 40 caracteres), período e produtos. 
 
 ### Eventos e métricas
 * `POST /api/v1/eventos` - Público: `produto_visto`, `carrinho_adicionar`, `checkout_iniciado`, `banner_clique`, `campanha_clique`. Sem IP; associa ao usuário se houver token. Busca e pedido concluído são registrados pelo servidor.
-* `GET /api/v1/metricas/resumo`, `/buscas`, `/produtos-mais-pedidos`, `/clientes-inativos?dias=` - Equipe; período com `de`/`ate` (padrão: últimos 30 dias).
+* `GET /api/v1/metricas/resumo`, `/buscas`, `/produtos-mais-pedidos`, `/clientes-inativos?dias=`, `/funil`, `/produtos-vistos`, `/banners-campanhas`, `/pedidos-por-dia`, `/ciclo-pedido` - Equipe, sem valores financeiros; período com `de`/`ate` (padrão: últimos 30 dias).
 
 ### Configurações (`/api/v1/configuracoes`)
 * `GET /api/v1/configuracoes/publicas` - Público: `{ whatsapp, telefone_contato, email_contato, horario_atendimento, aviso_topo }` (`null` quando não preenchido).

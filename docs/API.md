@@ -757,7 +757,7 @@ Só esses dois campos. Versão, uptime, data de início e sincronizações ficam
 12. Os limites de requisições ficam na memória de cada instância: com várias instâncias, o limite efetivo é multiplicado; reiniciar a API zera as contagens.
 
 **Métricas**
-13. As métricas contam eventos, não pessoas: duas visitas da mesma pessoa ao mesmo produto contam 2. `produto_visto`, `carrinho_adicionar`, `checkout_iniciado` e os cliques só existem se o front enviar `POST /eventos`. Eventos com mais de 12 meses são apagados.
+13. As contagens de eventos (`resumo`, `visualizacoes`, `cliques`) contam eventos, não pessoas: duas visitas da mesma pessoa ao mesmo produto contam 2. Já `sessoes` (funil, produtos vistos, banners e campanhas) só identifica quem está logado ou quem o front marcou com `sessao`; a mesma pessoa antes e depois do login conta como duas sessões. `produto_visto`, `carrinho_adicionar`, `checkout_iniciado` e os cliques só existem se o front enviar `POST /eventos`. Eventos com mais de 12 meses são apagados.
 14. Buscas da equipe e trocas de página não entram nas métricas de busca. O termo é guardado em minúsculas; termos com e sem acento são agrupados juntos.
 
 **Pedidos e notificações**
@@ -866,8 +866,15 @@ Todas aceitam `de` e `ate` (`AAAA-MM-DD`, inclusive; padrão: últimos 30 dias a
 | GET | `/metricas/buscas?limite=10` | Termos mais buscados e buscas sem resultado |
 | GET | `/metricas/produtos-mais-pedidos?limite=10` | Ranking em unidades |
 | GET | `/metricas/clientes-inativos?dias=60&pagina=` | Clientes sem comprar há X dias |
+| GET | `/metricas/funil` | Sessões distintas em cada etapa da compra e a taxa entre etapas |
+| GET | `/metricas/produtos-vistos?limite=10` | Produtos mais abertos (visualizações e sessões) |
+| GET | `/metricas/banners-campanhas` | Cliques por banner e por campanha |
+| GET | `/metricas/pedidos-por-dia` | Pedidos criados em cada dia do período |
+| GET | `/metricas/ciclo-pedido` | Tempo médio entre as etapas do pedido |
 
-`limite`: 1 a 50 (padrão 10). Unidades, clientes e produtos mais pedidos **não contam pedidos cancelados**.
+`limite`: 1 a 50 (padrão 10). Unidades, clientes e produtos mais pedidos **não contam pedidos cancelados**. Nenhuma métrica traz valores financeiros.
+
+**Sessão** (em `funil`, `produtos-vistos` e `banners-campanhas`): o usuário logado, quando o evento tem token; senão, o `sessao` enviado pelo front. Eventos sem nenhum dos dois contam como visualização/clique, mas não como sessão. Um visitante que entra no meio do caminho passa a ser contado como o usuário logado.
 
 `GET /metricas/resumo`:
 ```json
@@ -913,5 +920,56 @@ Todas aceitam `de` e `ate` (`AAAA-MM-DD`, inclusive; padrão: últimos 30 dias a
       "ultimo_pedido_em": null, "total_pedidos": 0 }
   ],
   "paginacao": { "total": 1, "pagina": 1, "limite": 20, "total_paginas": 1 }
+}
+```
+
+`GET /metricas/funil`: cada etapa conta as sessões distintas que tiveram aquele evento no período, de forma independente (não exige que a sessão tenha passado pelas etapas anteriores). `pedido_concluido` vem do próprio checkout, então é sempre do usuário logado. `taxa_da_anterior` é a fração (0 a 1, 4 casas) em relação à etapa anterior; `null` na primeira etapa ou quando a anterior tem 0.
+```json
+{
+  "periodo": { "de": "2026-09-27", "ate": "2026-10-26" },
+  "etapas": [
+    { "etapa": "produto_visto", "sessoes": 4, "taxa_da_anterior": null },
+    { "etapa": "carrinho_adicionar", "sessoes": 2, "taxa_da_anterior": 0.5 },
+    { "etapa": "checkout_iniciado", "sessoes": 2, "taxa_da_anterior": 1 },
+    { "etapa": "pedido_concluido", "sessoes": 1, "taxa_da_anterior": 0.5 }
+  ]
+}
+```
+
+`GET /metricas/produtos-vistos` (`limite` de 1 a 50, padrão 10): em ordem de visualizações. `sku` e `nome` vêm `null` se o produto não existir mais.
+```json
+{ "periodo": { "...": "..." }, "produtos": [{ "id_produto": 1, "sku": "M-1", "nome": "Sabonete Lavanda", "visualizacoes": 3, "sessoes": 2 }] }
+```
+
+`GET /metricas/banners-campanhas`: só os itens com clique no período, em ordem de cliques. `titulo` vem `null` se o banner ou a campanha tiver sido excluído.
+```json
+{
+  "periodo": { "...": "..." },
+  "banners": [{ "id_banner": 2, "titulo": "Volta às aulas", "cliques": 3, "sessoes": 2 }],
+  "campanhas": [{ "id_campanha": 1, "titulo": "Semana da higiene", "cliques": 1, "sessoes": 1 }]
+}
+```
+
+`GET /metricas/pedidos-por-dia`: um item por dia do período (horário de Brasília), inclusive os dias sem pedido. `total` conta todos os pedidos criados no dia; `cancelados`, quantos deles estão cancelados hoje.
+```json
+{
+  "periodo": { "de": "2026-10-01", "ate": "2026-10-03" },
+  "dias": [
+    { "data": "2026-10-01", "total": 0, "cancelados": 0 },
+    { "data": "2026-10-02", "total": 2, "cancelados": 1 },
+    { "data": "2026-10-03", "total": 1, "cancelados": 0 }
+  ]
+}
+```
+
+`GET /metricas/ciclo-pedido`: para os pedidos **feitos** no período, o tempo médio (em minutos, 1 casa) entre a entrada em cada status, pelo histórico do pedido. Cada etapa considera só os pedidos que já passaram pelos dois status (`pedidos`); sem nenhum, `media_minutos` vem `null`. Cancelamentos não entram.
+```json
+{
+  "periodo": { "...": "..." },
+  "etapas": [
+    { "de": "Aguardando Separação", "para": "Em Separação", "pedidos": 2, "media_minutos": 120 },
+    { "de": "Em Separação", "para": "Saiu para Entrega", "pedidos": 1, "media_minutos": 30 },
+    { "de": "Saiu para Entrega", "para": "Entregue", "pedidos": 1, "media_minutos": 240 }
+  ]
 }
 ```
