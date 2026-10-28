@@ -55,6 +55,7 @@ npm run seed:catalogo                         # importa seeds/catalogo_inicial.c
 npm run seed:catalogo -- --simular            # mostra o que mudaria, sem gravar
 npm run seed:catalogo -- --desativar-ausentes # também desativa produtos que não estão no CSV
 npm run seed:dev                              # usuários de teste (recusa produção e RDS)
+npm run seed:demo                             # dados de demonstração (recusa produção e RDS)
 ```
 
 O `seed:catalogo` pode rodar quantas vezes quiser: só altera o que mudou e registra mudanças de estoque em `movimentacoes_estoque`. As imagens ficam no front; o CSV guarda só o caminho (`/img/...`).
@@ -67,6 +68,15 @@ O `seed:dev` cria os usuários abaixo, com a senha `Mantiqueira@2026` (troque co
 | equipe | `gerente@mantiqueira.com` | cargo "Gerente" |
 | equipe | `funcionario@mantiqueira.com` | cargo "Estoquista" |
 | cliente | CNPJ `11.222.333/0001-81` (e-mail `compras@mercadinho-exemplo.com.br`) |
+
+O `seed:demo` prepara o site para uma demonstração. Rode-o depois do `seed:catalogo` e do `seed:dev`; ele pode rodar quantas vezes quiser:
+
+* **Configurações**: WhatsApp, telefone, e-mail, horário de atendimento e aviso do topo (regravados a cada execução).
+* **3 banners** com imagens da pasta `/img/` do front (criados uma vez, pelo título).
+* **1 campanha ativa** ("Semana Granado", com selo e 5 produtos Granado). A cada execução o período volta a cobrir hoje.
+* **5 pedidos do cliente de teste**, um em cada status: Aguardando Separação, Em Separação, Saiu para Entrega, Entregue e Cancelado. São criados pelo fluxo real (baixa de estoque, histórico, devolução no cancelamento), com uma `Idempotency-Key` fixa: uma nova execução não cria outros pedidos nem mexe no estoque.
+
+Assim como o `seed:dev`, recusa `NODE_ENV=production` e `DB_HOST` do RDS (a menos que `SEED_DEV_PERMITIR_REMOTO=1`).
 
 ## 4. Execução do Servidor
 

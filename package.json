@@ -14,6 +14,7 @@
     "schema:gerar": "node scripts/gerar-schema.js",
     "seed:catalogo": "node scripts/seed-catalogo.js",
     "seed:dev": "node scripts/seed-dev.js",
+    "seed:demo": "node scripts/seed-demo.js",
     "test": "node --test --test-concurrency=1 \"test/**/*.test.js\""
   },
   "keywords": [],

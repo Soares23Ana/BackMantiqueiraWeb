@@ -1,6 +1,7 @@
 # API Mantiqueira — contrato para o front-end
 
 Versão da API: **v1**. Os exemplos abaixo foram capturados da API rodando com o catálogo do seed.
+Para ter banners, campanha, contatos e pedidos em todos os status no ambiente local, rode `npm run seed:catalogo`, `npm run seed:dev` e `npm run seed:demo` (detalhes no [README](../README.md#dados-iniciais-seeds)).
 
 ## Sumário
 1. [Convenções](#1-convenções)
