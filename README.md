@@ -43,6 +43,8 @@ npm test                # testes (usam o banco mantiqueira_test, apagado e recri
 
 Os seeds podem rodar várias vezes. O `seed:dev` e o `seed:demo` se recusam a rodar em produção ou contra o RDS.
 
+Em produção (ex.: AWS), não use os seeds de teste: crie o primeiro administrador com `npm run criar-admin`, como descrito em [Primeiro acesso em produção](docs/GUIA_TECNICO.md#10-primeiro-acesso-em-produção).
+
 ## Usuários de teste
 Criados pelo `seed:dev`, todos com a senha `Mantiqueira@2026`.
 

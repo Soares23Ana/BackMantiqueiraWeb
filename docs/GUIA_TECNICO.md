@@ -12,6 +12,7 @@ Detalhes de configuração e operação da API. O passo a passo para rodar o pro
 7. [Importação de catálogo (CSV)](#7-importação-de-catálogo-csv)
 8. [Jobs agendados](#8-jobs-agendados)
 9. [Saúde](#9-saúde)
+10. [Primeiro acesso em produção](#10-primeiro-acesso-em-produção)
 
 ---
 
@@ -211,3 +212,33 @@ Fuso `America/Sao_Paulo`. A API lê arquivos colocados em `importacao/entrada/` 
 - **`GET /saude/detalhado`** (equipe): versão da API, banco (latência e migrations pendentes), processo (data de início, uptime, memória, versão do Node), jobs (última e próxima execução, último resultado ou erro) e data da última sincronização de cada tipo.
 
 Os exemplos de resposta estão em [API.md](API.md#12-saúde).
+
+---
+
+## 10. Primeiro acesso em produção
+
+Num ambiente novo (ex.: EC2 com banco no RDS), com o `.env` de produção já preenchido ([variáveis](#1-variáveis-de-ambiente)):
+
+```bash
+npm run migrar          # cria as tabelas
+npm run seed:catalogo   # opcional: só se quiser o catálogo inicial de 38 produtos
+npm run criar-admin     # cria o primeiro administrador
+```
+
+> **Não rode `npm run seed:dev` nem `npm run seed:demo` em produção.** Eles criam usuários com senha conhecida e dados de demonstração (pedidos, banners, campanha, contatos fictícios). Os dois já se recusam a rodar com `NODE_ENV=production` ou contra o RDS; não defina `SEED_DEV_PERMITIR_REMOTO` em produção.
+
+O `criar-admin`:
+1. Mostra o banco de destino (nome, host e `NODE_ENV`).
+2. Pergunta nome e e-mail (ou use `npm run criar-admin -- --nome "Maria Silva" --email maria@empresa.com.br`).
+3. Pede a senha duas vezes, **sem mostrar o que é digitado**. A senha nunca vem por argumento nem por variável de ambiente e não é escrita na tela nem no log. Regras do cadastro: e-mail válido e senha de 8 a 72 caracteres.
+4. Pede para digitar `sim` antes de criar. Qualquer outra resposta cancela sem gravar nada.
+5. Cria um usuário `equipe`, ativo, com `pode_gerenciar_equipe = true` e sem CNPJ. Só o hash bcrypt da senha é gravado.
+6. Mostra o e-mail criado. Entre por `POST /api/v1/auth/login` com esse e-mail e a senha.
+
+Ele recusa (sem criar nada) se:
+- já existir algum usuário **ativo** que pode gerenciar a equipe: o comando é só para o primeiro acesso. As outras contas da equipe são criadas por esse administrador em `POST /api/v1/admin/usuarios`;
+- o e-mail já estiver em uso;
+- a senha vier por `--senha`;
+- não houver um terminal interativo para digitar a senha (ex.: entrada por pipe). No Git Bash do Windows, rode `winpty npm.cmd run criar-admin`; no PowerShell, cmd ou ssh funciona direto.
+
+Se o administrador for desativado e ninguém mais puder gerenciar a equipe, o `criar-admin` volta a funcionar para recuperar o acesso.
