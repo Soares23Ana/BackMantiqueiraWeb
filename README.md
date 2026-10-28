@@ -195,6 +195,8 @@ A API lê arquivos colocados em `importacao/entrada/` (pasta configurável em `I
 
 Arquivos de exemplo para demonstração ficam em `importacao/exemplos/` (fora das pastas lidas pelos jobs): `catalogo_exemplo.csv` (o catálogo completo com 1 produto novo e 4 alterações, seguro para a carga completa) e `estoque_exemplo.csv` (4 atualizações e 1 SKU inexistente, para mostrar o relatório de erros). Para testar um job, copie o arquivo para `importacao/entrada/`.
 
+**Arquivos sendo copiados:** os jobs ignoram arquivos modificados nos últimos 60 segundos (podem estar no meio da cópia); eles ficam na entrada e são lidos na execução seguinte. Mesmo assim, o recomendado é **gravar com a extensão `.tmp` e renomear para `.csv` ao terminar** (ex.: copiar `estoque_20261026_1430.tmp` e depois renomear para `estoque_20261026_1430.csv`): só arquivos `.csv` são lidos, e renomear dentro da mesma pasta é instantâneo, então o job nunca pega um arquivo pela metade.
+
 Os arquivos são processados em ordem alfabética (use data/hora no nome, ex.: `estoque_20261026_1430.csv`) e depois movidos para `processados/` ou `rejeitados/`, com um `.relatorio.json` ao lado. Cada execução fica em `sincronizacoes_log`. Uma trava do MySQL (`GET_LOCK`) garante que, com várias instâncias da API, só uma rode cada job, e que job e upload não importem ao mesmo tempo. `JOBS_ATIVOS=false` desliga os jobs.
 
 ### Saúde

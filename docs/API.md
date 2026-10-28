@@ -366,6 +366,8 @@ Erros: `409 SLUG_DUPLICADO`; exclusão com produtos: `409 EM_USO` (use `PATCH { 
 
 O formato do CSV, as colunas e os jobs estão no [README](../README.md#importação-de-catálogo-csv). Exemplos prontos em `importacao/exemplos/`.
 
+**Arquivos na pasta `importacao/entrada/` (jobs):** arquivos modificados nos últimos 60 segundos são ignorados (podem estar sendo copiados) e lidos na execução seguinte; no `ultimo_resultado` do job (em `/saude/detalhado`) aparecem com `"status": "ignorado"`. Recomendado: grave o arquivo como `.tmp` e renomeie para `.csv` ao terminar a cópia; só `.csv` é lido. O upload (`POST /produtos/importar`) não tem essa espera.
+
 ### POST /produtos/importar
 `multipart/form-data`: `arquivo` (.csv, até 5 MB). Query: `simular=true` (não grava), `carga_completa=true` (desativa produtos ausentes, só se o arquivo não tiver erros).
 ```json

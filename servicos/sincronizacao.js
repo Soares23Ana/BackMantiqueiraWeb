@@ -14,6 +14,8 @@ const TRAVA_IMPORTACAO = 'mantiqueira:importacao';
 
 // Arquivos lidos pelos jobs em importacao/entrada/, pelo prefixo do nome.
 const PREFIXOS = { carga_completa: 'catalogo', estoque: 'estoque' };
+// Arquivo modificado há menos tempo que isso pode ainda estar sendo copiado: fica para a próxima execução.
+const IDADE_MINIMA_MS = 60 * 1000;
 
 // O Excel costuma salvar CSV em Windows-1252; se não for UTF-8 válido, lê como Latin-1.
 function decodificarArquivo(buffer) {
@@ -97,6 +99,7 @@ async function mover(origem, pastaDestino, relatorio) {
  * Processa os arquivos de importacao/entrada/ do tipo informado (catalogo*.csv para a carga completa,
  * estoque*.csv para o estoque), em ordem alfabética. Cada arquivo vai para processados/ (com ou sem
  * linhas rejeitadas) ou rejeitados/ (arquivo ilegível ou todas as linhas com erro), junto com o relatório.
+ * Arquivos modificados nos últimos 60 segundos ficam na entrada e voltam a ser vistos na próxima execução.
  */
 async function processarPasta(tipo, pastaBase = config.importacao.pasta) {
     const entrada = path.join(pastaBase, 'entrada');
@@ -109,6 +112,13 @@ async function processarPasta(tipo, pastaBase = config.importacao.pasta) {
     const resultados = [];
     for (const nome of arquivos) {
         const caminho = path.join(entrada, nome);
+        const { mtimeMs } = await fs.stat(caminho);
+        if (Date.now() - mtimeMs < IDADE_MINIMA_MS) {
+            const resumo = { arquivo: nome, status: 'ignorado', motivo: 'modificado há menos de 60 segundos' };
+            logger.info('Arquivo de importação ignorado por enquanto.', { tipo, ...resumo });
+            resultados.push(resumo);
+            continue;
+        }
         let resumo;
         try {
             const { log, relatorio } = await executarImportacao({

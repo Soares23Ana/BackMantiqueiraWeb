@@ -122,7 +122,15 @@ describe('trava do MySQL', () => {
 describe('importação por pasta (jobs)', () => {
     let base;
     const entrada = () => path.join(base, 'entrada');
-    const escrever = (nome, conteudo) => fs.writeFileSync(path.join(entrada(), nome), conteudo);
+    // Arquivos com data de 2 minutos atrás: os recém-modificados são ignorados pelos jobs.
+    const envelhecer = (caminho) => {
+        const passado = new Date(Date.now() - 2 * 60 * 1000);
+        fs.utimesSync(caminho, passado, passado);
+    };
+    const escrever = (nome, conteudo) => {
+        fs.writeFileSync(path.join(entrada(), nome), conteudo);
+        envelhecer(path.join(entrada(), nome));
+    };
     const arquivosEm = (pasta) => (fs.existsSync(path.join(base, pasta)) ? fs.readdirSync(path.join(base, pasta)) : []);
 
     before(() => {
@@ -155,6 +163,29 @@ describe('importação por pasta (jobs)', () => {
         const [[log]] = await sequelize.query('SELECT tipo, origem FROM sincronizacoes_log WHERE id_sincronizacao = ?',
             { replacements: [resultado.id_sincronizacao] });
         assert.deepEqual(log, { tipo: 'estoque', origem: 'arquivo: estoque_0800.csv' });
+    });
+
+    test('ignora arquivos modificados nos últimos 60 segundos e os processa depois', async () => {
+        const { processarPasta } = require('../servicos/sincronizacao');
+        const caminho = path.join(entrada(), 'estoque_0815.csv');
+        fs.writeFileSync(caminho, 'sku;estoque\nSKU-102;55\n');
+        // .tmp (cópia ainda em andamento) nunca é lido.
+        fs.writeFileSync(path.join(entrada(), 'estoque_0816.tmp'), 'sku;estoque\nSKU-102;1\n');
+        envelhecer(path.join(entrada(), 'estoque_0816.tmp'));
+
+        const [recente, ...resto] = await processarPasta('estoque', base);
+        assert.equal(resto.length, 0);
+        assert.deepEqual(recente, { arquivo: 'estoque_0815.csv', status: 'ignorado', motivo: 'modificado há menos de 60 segundos' });
+        assert.equal(await estoqueDe('SKU-102'), 77);
+        assert.ok(fs.existsSync(caminho));
+
+        envelhecer(caminho);
+        const [depois] = await processarPasta('estoque', base);
+        assert.equal(depois.status, 'sucesso');
+        assert.equal(await estoqueDe('SKU-102'), 55);
+        assert.deepEqual(fs.readdirSync(entrada()).sort(), ['estoque_0816.tmp', 'outro.csv']);
+        fs.rmSync(path.join(entrada(), 'estoque_0816.tmp'));
+        await Produto.update({ quantidade_estoque: 77 }, { where: { sku: 'SKU-102' } });
     });
 
     test('arquivos ilegíveis ou com todas as linhas erradas vão para rejeitados', async () => {
@@ -191,6 +222,7 @@ describe('importação por pasta (jobs)', () => {
         assert.equal(catalogo.criados, 1);
 
         fs.copyFileSync(path.join(exemplos, 'estoque_exemplo.csv'), path.join(entrada(), 'estoque_exemplo.csv'));
+        envelhecer(path.join(entrada(), 'estoque_exemplo.csv'));
         const [resultado] = await processarPasta('estoque', base);
         assert.equal(resultado.status, 'parcial');
         assert.equal(await estoqueDe('SKU-109'), 20);
