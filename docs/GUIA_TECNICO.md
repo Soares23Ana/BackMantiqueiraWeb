@@ -1,6 +1,6 @@
 # Guia técnico
 
-Detalhes de configuração e operação da API. O passo a passo para rodar o projeto está no [README](../README.md); o contrato dos endpoints, em [`API.md`](API.md).
+Detalhes de configuração e operação da API. 
 
 ## Sumário
 1. [Variáveis de ambiente](#1-variáveis-de-ambiente)
