@@ -88,6 +88,10 @@ function validarAmbiente(env) {
         erros.push('JWT_EXPIRES_IN deve ser um número seguido de s, m, h ou d (ex.: 8h).');
     }
 
+    if (env.VALIDAR_CNPJ_RECEITA && !['true', 'false'].includes(env.VALIDAR_CNPJ_RECEITA)) {
+        erros.push('VALIDAR_CNPJ_RECEITA deve ser true ou false.');
+    }
+
     if (env.JOBS_ATIVOS && !['true', 'false'].includes(env.JOBS_ATIVOS)) {
         erros.push('JOBS_ATIVOS deve ser true ou false.');
     }
@@ -110,6 +114,8 @@ function validarAmbiente(env) {
                 : null,
             jwtSecret,
             jwtExpiraEm,
+            // Cadastro consulta o CNPJ na Receita (existe e está ATIVO). Padrão: ligado só em produção.
+            validarCnpjReceita: env.VALIDAR_CNPJ_RECEITA ? env.VALIDAR_CNPJ_RECEITA === 'true' : producao,
             origensCors,
             limiteJson: env.JSON_LIMIT || '200kb',
             // Por IP: requisições por minuto em /api/v1, tentativas de login com falha a cada 15 min e cadastros por hora.

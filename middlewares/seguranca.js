@@ -58,6 +58,15 @@ const limitadorCep = rateLimit({
     message: respostaLimite
 });
 
+// Consulta de CNPJ na Receita (GET /cnpj/:cnpj): por IP.
+const limitadorCnpj = rateLimit({
+    windowMs: 60 * 1000,
+    limit: 20,
+    standardHeaders: 'draft-8',
+    legacyHeaders: false,
+    message: respostaLimite
+});
+
 // Enquanto a primeira conexão com o banco não acontece, a API responde 503 em vez de erros genéricos.
 function exigirBanco(req, res, next) {
     if (estado.conectado) {
@@ -111,6 +120,6 @@ function tratarErros(erro, req, res, next) {
 }
 
 module.exports = {
-    limitadorGlobal, limitadorLogin, limitadorCadastro, limitadorEventos, limitadorCep,
+    limitadorGlobal, limitadorLogin, limitadorCadastro, limitadorEventos, limitadorCep, limitadorCnpj,
     exigirBanco, rotaNaoEncontrada, tratarErros
 };

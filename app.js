@@ -29,6 +29,7 @@ const campanhasRoutes = require('./routes/campanhas');
 const eventosRoutes = require('./routes/eventos');
 const metricasRoutes = require('./routes/metricas');
 const cepRoutes = require('./routes/cep');
+const cnpjRoutes = require('./routes/cnpj');
 const autenticarToken = require('./middlewares/authMiddleware');
 const { exigirEquipe } = require('./middlewares/roleMiddleware');
 
@@ -77,6 +78,7 @@ function criarApp() {
     const api = express.Router();
     // Consultas a serviços externos que não usam o banco: funcionam mesmo com o banco fora do ar.
     api.use('/cep', cepRoutes);
+    api.use('/cnpj', cnpjRoutes);
     api.use(exigirBanco);
     api.use('/auth', authRoutes);
     api.use('/produtos', produtosRoutes);

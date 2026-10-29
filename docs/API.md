@@ -19,7 +19,7 @@ Para ter banners, campanha, contatos e pedidos em todos os status no ambiente lo
 13. [Limitações conhecidas](#13-limitações-conhecidas)
 14. [Campanhas](#14-campanhas)
 15. [Eventos e métricas](#15-eventos-e-métricas)
-16. [Consultas externas (CEP)](#16-consultas-externas)
+16. [Consultas externas (CEP e CNPJ)](#16-consultas-externas)
 
 ---
 
@@ -73,13 +73,13 @@ Erros de validação de formulário (`422 VALIDACAO`) trazem **todos** os campos
 | 400 | `REQUISICAO_INVALIDA`, `JSON_INVALIDO`, `FILTRO_INVALIDO`, `PAGINACAO_INVALIDA` |
 | 401 | `NAO_AUTENTICADO` (token ausente, expirado ou usuário inativo), `CREDENCIAIS_INVALIDAS` (login) |
 | 403 | `ACESSO_NEGADO` (mensagem sempre "Acesso negado.") |
-| 404 | `NAO_ENCONTRADO`, `ROTA_NAO_ENCONTRADA`, `PRODUTO_NAO_ENCONTRADO`, `PEDIDO_NAO_ENCONTRADO`, `ENDERECO_NAO_ENCONTRADO`, `USUARIO_NAO_ENCONTRADO`, `CEP_NAO_ENCONTRADO` |
+| 404 | `NAO_ENCONTRADO`, `ROTA_NAO_ENCONTRADA`, `PRODUTO_NAO_ENCONTRADO`, `PEDIDO_NAO_ENCONTRADO`, `ENDERECO_NAO_ENCONTRADO`, `USUARIO_NAO_ENCONTRADO`, `CEP_NAO_ENCONTRADO`, `CNPJ_NAO_ENCONTRADO` |
 | 409 | `CONFLITO` e os específicos de cada rota (ex.: `ITENS_INDISPONIVEIS`, `TRANSICAO_INVALIDA`) |
 | 413 | `CORPO_MUITO_GRANDE` |
-| 422 | `VALIDACAO`, `CSV_INVALIDO`, `ENDERECO_OBRIGATORIO` |
+| 422 | `VALIDACAO`, `CSV_INVALIDO`, `ENDERECO_OBRIGATORIO`, `CNPJ_NAO_ENCONTRADO` e `CNPJ_INATIVO` (cadastro com consulta à Receita) |
 | 429 | `LIMITE_REQUISICOES`, `MUITAS_TENTATIVAS` (login/cadastro) |
 | 500 | `ERRO_INTERNO` (a mensagem nunca expõe detalhes internos) |
-| 503 | `BANCO_INDISPONIVEL`, `SERVICO_INDISPONIVEL` (serviço externo de CEP fora do ar) |
+| 503 | `BANCO_INDISPONIVEL`, `SERVICO_INDISPONIVEL` (serviço externo de CEP ou CNPJ fora do ar) |
 
 ### Listas paginadas
 Parâmetros `pagina` (padrão 1) e `limite` (padrão e máximo variam por rota). Resposta:
@@ -135,6 +135,14 @@ Sempre cria um **cliente**. Todos os campos são obrigatórios, exceto `compleme
 { "mensagem": "Cadastro realizado com sucesso. Entre com o CNPJ e a senha.", "id_usuario": 2 }
 ```
 Erros: `422 VALIDACAO` (campos com prefixo `endereco.` para o endereço, ex.: `endereco.cep`), `409 CNPJ_JA_CADASTRADO`, `409 EMAIL_JA_CADASTRADO`, `429 MUITAS_TENTATIVAS`. Campos fora da lista (ex.: `tipo`, `razao_social`) são recusados com `422`.
+
+**Consulta à Receita Federal** (ligada em produção pela variável `VALIDAR_CNPJ_RECEITA`; desligada em desenvolvimento e testes). Depois de validar o formato, a API consulta o CNPJ e:
+- grava a `razao_social` vinda da Receita (o cliente não envia razão social);
+- `422 CNPJ_NAO_ENCONTRADO` "CNPJ não encontrado na Receita Federal." (campo `cnpj`);
+- `422 CNPJ_INATIVO` quando a situação não é `ATIVA`, informando a situação na mensagem (ex.: `"BAIXADA"`, `"SUSPENSA"`, `"INAPTA"`);
+- `503 SERVICO_INDISPONIVEL` "Não foi possível validar o CNPJ agora. Tente novamente em instantes." quando os serviços de consulta estão fora do ar. Nada é gravado.
+
+Para mostrar o nome da empresa antes de enviar o cadastro, use `GET /cnpj/:cnpj` ([consultas externas](#16-consultas-externas)). Não há aprovação manual: com o CNPJ ativo, a conta já entra.
 
 ### POST /auth/login
 ```json
@@ -767,7 +775,7 @@ Só esses dois campos. Versão, uptime, data de início e sincronizações ficam
 5. Uma linha com vários problemas pode aparecer mais de uma vez em `erros` (uma por campo).
 
 **Contrato e formatos**
-6. A razão social não faz parte do cadastro; clientes novos têm `razao_social: null` até a equipe preencher em `PUT /clientes/:id`. Use `nome_exibicao` para exibir.
+6. A razão social não é enviada pelo cliente: com `VALIDAR_CNPJ_RECEITA` ligado (produção), ela vem da Receita no cadastro; desligado (desenvolvimento, demonstração), clientes novos têm `razao_social: null` até a equipe preencher em `PUT /clientes/:id`. Use `nome_exibicao` para exibir.
 7. Os objetos de pedido em `historico_pedidos` (detalhes do cliente) vêm no formato do banco, mais simples que o de `GET /pedidos` (sem `pode_cancelar`, `total_itens` nem `sku` nos itens).
 8. Datas e horas vêm em UTC; converta para o fuso de Brasília na exibição.
 9. Imagens do catálogo (`/img/...`) são servidas pelo front; imagens enviadas pela API (`/arquivos/uploads/...`) ficam no disco do servidor e são perdidas se a instância for recriada (não há S3).
@@ -1004,6 +1012,7 @@ Rotas públicas que consultam serviços de fora para ajudar o preenchimento do c
 | Método | Rota | Perfil | Descrição |
 |---|---|---|---|
 | GET | `/cep/:cep` | público | Endereço de um CEP (limite: 30 por minuto por IP) |
+| GET | `/cnpj/:cnpj` | público | Dados da empresa na Receita (limite: 20 por minuto por IP) |
 
 ### GET /cep/:cep
 `:cep` com 8 dígitos, com ou sem hífen (`13870000` ou `13870-000`).
@@ -1015,3 +1024,17 @@ Rotas públicas que consultam serviços de fora para ajudar o preenchimento do c
 - `404 CEP_NAO_ENCONTRADO`: o CEP não existe.
 - `503 SERVICO_INDISPONIVEL`: os serviços de CEP estão fora do ar; peça para o usuário preencher à mão.
 - `429 LIMITE_REQUISICOES`: mais de 30 consultas por minuto do mesmo IP.
+
+### GET /cnpj/:cnpj
+Para o front mostrar o nome da empresa antes de enviar o cadastro. Envie o CNPJ sem pontuação (`11222333000181`, `12ABC34501DE35`); com pontuação, codifique a barra (`encodeURIComponent`). Aceita CNPJ numérico e alfanumérico, em maiúsculas ou minúsculas.
+```json
+{ "cnpj": "11.222.333/0001-81", "razao_social": "MERCADINHO DA ESQUINA LTDA", "nome_fantasia": "MERCADINHO DA ESQUINA",
+  "situacao": "ATIVA", "cidade": "SAO JOAO DA BOA VISTA", "estado": "SP" }
+```
+- `situacao` vem da Receita em maiúsculas (`ATIVA`, `BAIXADA`, `SUSPENSA`, `INAPTA`, `NULA`). Só `ATIVA` pode se cadastrar quando a consulta está ligada.
+- O que a Receita não informar vem como texto vazio (ex.: `nome_fantasia`).
+- `422 VALIDACAO`: CNPJ inválido (sem consultar a Receita).
+- `404 CNPJ_NAO_ENCONTRADO`: o CNPJ não existe na Receita.
+- `503 SERVICO_INDISPONIVEL`: os serviços de consulta estão fora do ar.
+- `429 LIMITE_REQUISICOES`: mais de 20 consultas por minuto do mesmo IP.
+- Funciona mesmo com `VALIDAR_CNPJ_RECEITA` desligado (a variável só controla o cadastro).

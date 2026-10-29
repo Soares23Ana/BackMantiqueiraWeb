@@ -51,6 +51,7 @@ node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"
 | `LOG_LEVEL` | `info` (`silent` nos testes) | `debug`, `info`, `warn`, `error` ou `silent` |
 | `LOG_FORMAT` | `texto` em dev, `json` em produção | Formato dos logs |
 | `JSON_LIMIT` | `200kb` | Tamanho máximo do corpo JSON |
+| `VALIDAR_CNPJ_RECEITA` | `true` em produção, `false` em dev e testes | O cadastro consulta o CNPJ na Receita: precisa existir e estar `ATIVA`, e a razão social vem de lá ([serviços externos](#11-serviços-externos-cep-e-cnpj)) |
 | `SEED_SENHA` | `Mantiqueira@2026` | Senha dos usuários criados pelo `seed:dev` |
 | `SEED_DEV_PERMITIR_REMOTO` | — | `1` permite os seeds de teste num `DB_HOST` do RDS que seja um banco de testes |
 
@@ -265,3 +266,20 @@ A API consulta serviços públicos com o `fetch` nativo do Node (sem dependênci
 - Limite de **30 consultas por minuto por IP** (vale também nos testes).
 - Funciona com o banco fora do ar, e o cadastro não depende dela: o endereço digitado à mão continua aceito.
 - Falhas de cada serviço vão para o log como aviso (`warn`), com o nome do serviço.
+
+### CNPJ (`servicos/receita.js`)
+| Ordem | Serviço | Endereço consultado |
+|---|---|---|
+| 1 | BrasilAPI | `https://brasilapi.com.br/api/cnpj/v1/{cnpj}` |
+| 2 | Minha Receita | `https://minhareceita.org/{cnpj}` |
+
+- Os dois devolvem os mesmos campos: `razao_social`, `nome_fantasia`, `descricao_situacao_cadastral`, `municipio` e `uf`. CNPJ inexistente: `404`.
+- A Minha Receita é usada quando a BrasilAPI falha (erro de rede, mais de 5 s, 5xx), responde `404` ou recusa o formato (`400`). Um serviço que ainda não aceite CNPJ alfanumérico não impede a consulta no outro.
+- Tempo máximo: **5 segundos por serviço**. Cache: **24 horas** para CNPJ encontrado e 10 minutos para "não encontrado" (empresa recém-aberta pode demorar a aparecer na base). Falha dos dois não fica em cache.
+- Usado em `GET /api/v1/cnpj/:cnpj` (público, **20 consultas por minuto por IP**) e no cadastro (`POST /api/v1/auth/register`) quando `VALIDAR_CNPJ_RECEITA=true`.
+
+**`VALIDAR_CNPJ_RECEITA`** (padrão `true` em produção, `false` em desenvolvimento e testes):
+- `true`: o cadastro só aceita CNPJ que existe e está `ATIVA` na Receita e grava a razão social de lá. Não encontrado ou inativo: `422`. Serviços fora do ar: `503`, e o cliente tenta de novo depois.
+- `false`: o cadastro aceita qualquer CNPJ com dígito verificador válido, sem consulta externa.
+- **Numa demonstração**, se o serviço externo estiver fora do ar, defina `VALIDAR_CNPJ_RECEITA=false` no `.env` e reinicie a API: o cadastro volta a funcionar sem a consulta. Volte para `true` depois.
+- Não há aprovação manual: com o CNPJ ativo, a conta já pode entrar.

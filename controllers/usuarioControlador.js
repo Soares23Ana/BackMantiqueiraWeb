@@ -7,6 +7,7 @@ const config = require('../config/ambiente');
 const { ErroApi } = require('../lib/erros');
 const { cnpjValido, normalizarCnpj } = require('../lib/cnpj');
 const { validarCadastroCliente } = require('../helpers/validacaoUsuario');
+const { validarCnpjParaCadastro } = require('../servicos/receita');
 
 const CUSTO_BCRYPT = 12;
 // Hash de uma senha qualquer, com o mesmo custo dos reais: quando o usuário não existe, a comparação
@@ -44,8 +45,14 @@ async function verificarDuplicados({ cnpj, email }, transacao) {
 }
 
 // POST /auth/register: cadastro público, sempre como cliente, com o endereço principal na mesma transação.
+// Com VALIDAR_CNPJ_RECEITA=true, o CNPJ precisa existir e estar ATIVO na Receita, e a razão social vem de lá.
 async function cadastrar(req, res) {
     const { usuario, endereco } = validarCadastroCliente(req.body);
+    if (config.validarCnpjReceita) {
+        // Fora da transação: a consulta externa pode levar alguns segundos.
+        const { razaoSocial } = await validarCnpjParaCadastro(usuario.cnpj);
+        usuario.razao_social = razaoSocial;
+    }
     const senhaHash = await bcrypt.hash(usuario.senha, CUSTO_BCRYPT);
 
     try {
