@@ -30,8 +30,13 @@ async function obterEstatisticas(req, res) {
     });
 }
 
+// GET /painel/contadores: badges do menu, incluindo os clientes cadastrados nos últimos 7 dias (só informativo).
 async function obterContadores(req, res) {
-    return res.status(200).json(await contarIndicadoresOperacionais());
+    const [indicadores, clientesNovos] = await Promise.all([
+        contarIndicadoresOperacionais(),
+        Usuario.count({ where: { tipo: 'cliente', criado_em: { [Op.gte]: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) } } })
+    ]);
+    return res.status(200).json({ ...indicadores, clientes_novos_7_dias: clientesNovos });
 }
 
 /**

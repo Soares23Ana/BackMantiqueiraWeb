@@ -111,7 +111,41 @@ describe('contrato padronizado', () => {
         assert.deepEqual(Object.keys(painel.body).sort(), ['clientes_ativos', 'estoque_baixo', 'pedidos_pendentes']);
         assert.equal(painel.body.pedidos_pendentes, 1);
         const contadores = await request(app).get('/api/v1/painel/contadores').set('Authorization', equipe.auth).expect(200);
-        assert.deepEqual(Object.keys(contadores.body).sort(), ['estoque_baixo', 'pedidos_pendentes']);
+        assert.deepEqual(Object.keys(contadores.body).sort(), ['clientes_novos_7_dias', 'estoque_baixo', 'pedidos_pendentes']);
+    });
+
+    test('novos cadastros: clientes_novos_7_dias no /painel/contadores e GET /clientes?novos_dias=7, do mais recente', async (t) => {
+        const contar = async () => (await request(app).get('/api/v1/painel/contadores').set('Authorization', equipe.auth).expect(200)).body.clientes_novos_7_dias;
+        const antes = await contar();
+
+        const criar = async (nome, diasAtras, extra = {}) => {
+            const { usuario } = await criarUsuario('cliente', { nome, ...extra });
+            await sequelize.query('UPDATE usuarios SET criado_em = NOW() - INTERVAL ? HOUR WHERE id_usuario = ?',
+                { replacements: [diasAtras * 24, usuario.id_usuario] });
+            return usuario;
+        };
+        const ontem = await criar('Novo de Ontem', 1);
+        const cincoDias = await criar('Novo de Cinco Dias', 5, { ativo: false });
+        const dezDias = await criar('Antigo de Dez Dias', 10);
+        t.after(() => Promise.all([ontem, cincoDias, dezDias].map((u) => u.destroy())));
+
+        // Conta os dos últimos 7 dias, inclusive os inativos; o de 10 dias fica de fora.
+        assert.equal(await contar(), antes + 2);
+
+        const listar = (consulta) => request(app).get(`/api/v1/clientes${consulta}`).set('Authorization', equipe.auth);
+        const novos = (await listar('?novos_dias=7').expect(200)).body.clientes.map((c) => c.nome);
+        assert.ok(!novos.includes('Antigo de Dez Dias'));
+        // Do mais recente para o mais antigo.
+        assert.ok(novos.indexOf('Novo de Ontem') < novos.indexOf('Novo de Cinco Dias'));
+        assert.equal(novos[novos.length - 1], 'Novo de Cinco Dias');
+        assert.ok((await listar('?novos_dias=30').expect(200)).body.clientes.some((c) => c.nome === 'Antigo de Dez Dias'));
+        // Combina com a busca e com outra ordenação, se pedida.
+        assert.deepEqual((await listar('?novos_dias=7&busca=Novo de').expect(200)).body.clientes.map((c) => c.nome), ['Novo de Ontem', 'Novo de Cinco Dias']);
+        assert.deepEqual((await listar('?novos_dias=7&busca=Novo de&ordenar=nome').expect(200)).body.clientes.map((c) => c.nome), ['Novo de Cinco Dias', 'Novo de Ontem']);
+
+        for (const valor of ['0', '366', 'sete']) {
+            assert.equal((await listar(`?novos_dias=${valor}`).expect(400)).body.codigo, 'FILTRO_INVALIDO');
+        }
     });
 
     test('/admin/usuarios devolve o CNPJ formatado', async () => {

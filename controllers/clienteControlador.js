@@ -99,12 +99,14 @@ const CIDADE_PRINCIPAL_SQL = `SELECT e.cidade FROM enderecos e WHERE e.id_usuari
 const TOTAL_PEDIDOS_SQL = `SELECT COUNT(*) FROM pedidos p WHERE p.id_cliente = Usuario.id_usuario AND p.status <> 'Cancelado'`;
 const ORDENACOES_CLIENTES = {
     nome: [['nome', 'ASC'], ['id_usuario', 'ASC']],
+    recentes: [['criado_em', 'DESC'], ['id_usuario', 'DESC']],
     mais_pedidos: [[sequelize.literal('total_pedidos'), 'DESC'], ['nome', 'ASC'], ['id_usuario', 'ASC']]
 };
 
 /**
  * GET /clientes (equipe): busca em nome, razão social, e-mail, CNPJ e cidade do endereço principal.
- * ordenar=nome (padrão) ou mais_pedidos (quem tem mais pedidos não cancelados primeiro).
+ * ordenar=nome (padrão), mais_pedidos (quem tem mais pedidos não cancelados primeiro) ou recentes
+ * (padrão com novos_dias, que filtra quem se cadastrou nos últimos N dias).
  */
 async function listarClientes(req, res) {
     const paginacao = lerPaginacao(req.query, { limitePadrao: 20, limiteMaximo: 100 });
@@ -113,11 +115,22 @@ async function listarClientes(req, res) {
     if (busca.length > 100) {
         return res.status(400).json({ mensagem: 'A busca deve ter no máximo 100 caracteres.' });
     }
-    const ordenar = req.query.ordenar || 'nome';
+    // novos_dias=7: clientes cadastrados nos últimos N dias, do mais recente para o mais antigo.
+    let novosDias = null;
+    if (req.query.novos_dias !== undefined) {
+        novosDias = Number(req.query.novos_dias);
+        if (!Number.isSafeInteger(novosDias) || novosDias < 1 || novosDias > 365) {
+            throw new ErroApi(400, 'FILTRO_INVALIDO', 'novos_dias deve ser um inteiro de 1 a 365.');
+        }
+    }
+    const ordenar = req.query.ordenar || (novosDias ? 'recentes' : 'nome');
     if (!ORDENACOES_CLIENTES[ordenar]) {
         throw new ErroApi(400, 'FILTRO_INVALIDO', `ordenar deve ser: ${Object.keys(ORDENACOES_CLIENTES).join(', ')}.`);
     }
     const where = { tipo: 'cliente' };
+    if (novosDias) {
+        where.criado_em = { [Op.gte]: new Date(Date.now() - novosDias * 24 * 60 * 60 * 1000) };
+    }
     if (busca) {
         // O CNPJ é gravado normalizado (maiúsculas, sem pontuação); "11.222.333" também encontra "11222333...".
         const cnpjBusca = normalizarCnpj(busca);

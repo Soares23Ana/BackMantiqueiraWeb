@@ -578,9 +578,10 @@ O estoque de todos os itens volta na mesma transação, com movimentação do ti
 | PUT | `/clientes/:id/senha` | equipe | Define uma senha temporária |
 
 ### GET /clientes
-`?busca=&ordenar=&pagina=&limite=&sem_cnpj=true` (padrão 20, máximo 100).
+`?busca=&ordenar=&novos_dias=&pagina=&limite=&sem_cnpj=true` (padrão 20, máximo 100).
 - `busca` procura em nome, razão social, e-mail, CNPJ (com ou sem pontuação, letras em maiúsculas ou minúsculas) e na **cidade do endereço principal**.
-- `ordenar`: `nome` (padrão) ou `mais_pedidos` (quem tem mais pedidos não cancelados primeiro; empate por nome). Outro valor: `400 FILTRO_INVALIDO`.
+- `ordenar`: `nome` (padrão), `mais_pedidos` (quem tem mais pedidos não cancelados primeiro; empate por nome) ou `recentes` (cadastro mais recente primeiro). Outro valor: `400 FILTRO_INVALIDO`.
+- `novos_dias` (1 a 365): só os clientes cadastrados nos últimos N dias, do mais recente para o mais antigo (a menos que `ordenar` seja enviado). Ex.: `?novos_dias=7` lista os novos cadastros da semana. Fora do intervalo: `400 FILTRO_INVALIDO`.
 - `sem_cnpj=true` lista quem não consegue entrar por falta de CNPJ válido.
 - Cada cliente traz `cidade` (do endereço principal; `null` se não tiver endereço) e `total_pedidos` (pedidos **não cancelados**).
 ```json
@@ -655,10 +656,10 @@ Todas: **equipe**. "Estoque baixo" = produto ativo com estoque menor ou igual ao
 | Método | Rota | Resposta |
 |---|---|---|
 | GET | `/painel` | `{ "pedidos_pendentes": 0, "estoque_baixo": 5, "clientes_ativos": 1 }` |
-| GET | `/painel/contadores` | `{ "pedidos_pendentes": 0, "estoque_baixo": 5 }` |
+| GET | `/painel/contadores` | `{ "pedidos_pendentes": 0, "estoque_baixo": 5, "clientes_novos_7_dias": 2 }` |
 | GET | `/painel/alertas-reposicao` | Ver abaixo |
 
-`pedidos_pendentes` conta `Aguardando Separação` + `Em Separação`; `clientes_ativos` conta clientes não bloqueados.
+`pedidos_pendentes` conta `Aguardando Separação` + `Em Separação`; `clientes_ativos` conta clientes não bloqueados; `clientes_novos_7_dias` conta os clientes cadastrados nos últimos 7 dias (ativos ou não). É só informativo: não há aprovação de cadastro e nada fica bloqueado esperando revisão. Para ver quem são, use `GET /clientes?novos_dias=7`.
 
 ```json
 {

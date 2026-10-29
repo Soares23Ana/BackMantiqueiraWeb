@@ -282,4 +282,4 @@ A API consulta serviços públicos com o `fetch` nativo do Node (sem dependênci
 - `true`: o cadastro só aceita CNPJ que existe e está `ATIVA` na Receita e grava a razão social de lá. Não encontrado ou inativo: `422`. Serviços fora do ar: `503`, e o cliente tenta de novo depois.
 - `false`: o cadastro aceita qualquer CNPJ com dígito verificador válido, sem consulta externa.
 - **Numa demonstração**, se o serviço externo estiver fora do ar, defina `VALIDAR_CNPJ_RECEITA=false` no `.env` e reinicie a API: o cadastro volta a funcionar sem a consulta. Volte para `true` depois.
-- Não há aprovação manual: com o CNPJ ativo, a conta já pode entrar.
+- Não há aprovação manual: com o CNPJ ativo, a conta já pode entrar. Para acompanhar os novos cadastros, a equipe consulta quando quiser o `clientes_novos_7_dias` de `GET /painel/contadores` e a lista em `GET /clientes?novos_dias=7` ([API.md](API.md#9-painel)).
