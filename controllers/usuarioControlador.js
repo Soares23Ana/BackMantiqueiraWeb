@@ -5,7 +5,7 @@ const sequelize = require('../db/conn');
 const { Usuario, Endereco } = require('../models');
 const config = require('../config/ambiente');
 const { ErroApi } = require('../lib/erros');
-const { cnpjValido, somenteDigitos } = require('../lib/cnpj');
+const { cnpjValido, normalizarCnpj } = require('../lib/cnpj');
 const { validarCadastroCliente } = require('../helpers/validacaoUsuario');
 
 const CUSTO_BCRYPT = 12;
@@ -85,7 +85,7 @@ function criterioDeBusca(identificador) {
     if (valor.includes('@')) {
         return { email: valor.toLowerCase(), tipo: 'equipe' };
     }
-    const cnpj = somenteDigitos(valor);
+    const cnpj = normalizarCnpj(valor);
     if (!cnpjValido(cnpj)) return null;
     return { cnpj, tipo: 'cliente' };
 }

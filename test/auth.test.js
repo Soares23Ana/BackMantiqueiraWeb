@@ -65,6 +65,35 @@ describe('cadastro público (cliente)', () => {
         assert.deepEqual(campos, ['endereco.bairro', 'endereco.cep', 'endereco.cidade', 'endereco.estado', 'endereco.logradouro', 'endereco.numero']);
     });
 
+    test('cadastra e faz login com CNPJ alfanumérico, normalizando minúsculas', async () => {
+        const cadastro = await request(app).post('/api/v1/auth/register')
+            .send(cadastroValido({ cnpj: '12.abc.345/01de-35', email: 'alfa@cliente.com' })).expect(201);
+        const [[gravado]] = await sequelize.query('SELECT cnpj FROM usuarios WHERE id_usuario = ?',
+            { replacements: [cadastro.body.id_usuario] });
+        assert.equal(gravado.cnpj, '12ABC34501DE35');
+
+        for (const identificador of ['12.ABC.345/01DE-35', '12abc34501de35']) {
+            const resposta = await login(identificador).expect(200);
+            assert.equal(resposta.body.usuario.tipo, 'cliente');
+        }
+        const conta = await request(app).get('/api/v1/minha-conta')
+            .set('Authorization', `Bearer ${(await login('12ABC34501DE35')).body.token}`).expect(200);
+        assert.equal(conta.body.conta.cnpj, '12.ABC.345/01DE-35');
+
+        const invalido = await request(app).post('/api/v1/auth/register')
+            .send(cadastroValido({ cnpj: '12.ABC.345/01DE-36', email: 'alfa2@cliente.com' })).expect(422);
+        assert.equal(invalido.body.mensagem, 'CNPJ inválido.');
+        await login('12.ABC.345/01DE-36').expect(401);
+
+        // O banco também recusa minúsculas ou letras nos dígitos verificadores (migration 013).
+        for (const cnpj of ['12abc34501de35', '12ABC34501DE3A']) {
+            await assert.rejects(sequelize.query('UPDATE usuarios SET cnpj = ? WHERE id_usuario = ?',
+                { replacements: [cnpj, cadastro.body.id_usuario] }), /ck_usuarios_cnpj/);
+        }
+        await sequelize.query('DELETE FROM enderecos WHERE id_usuario = ?', { replacements: [cadastro.body.id_usuario] });
+        await sequelize.query('DELETE FROM usuarios WHERE id_usuario = ?', { replacements: [cadastro.body.id_usuario] });
+    });
+
     test('recusa CNPJ incompleto ou com dígito verificador errado', async () => {
         const incompleto = await request(app).post('/api/v1/auth/register').send(cadastroValido({ cnpj: '11.222.333/0001' })).expect(422);
         assert.equal(incompleto.body.mensagem, 'CNPJ inválido.');

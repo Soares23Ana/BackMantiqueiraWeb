@@ -77,6 +77,20 @@ describe('contrato padronizado', () => {
         await semEndereco.usuario.destroy();
     });
 
+    test('PUT /clientes/:id aceita CNPJ alfanumérico e as buscas por CNPJ encontram com ou sem pontuação', async (t) => {
+        const alfa = await criarUsuario('cliente', { nome: 'Cliente Alfa' });
+        t.after(() => alfa.usuario.destroy());
+        const url = `/api/v1/clientes/${alfa.usuario.id_usuario}`;
+        const atualizado = await request(app).put(url).set('Authorization', equipe.auth).send({ cnpj: '12.abc.345/01de-35' }).expect(200);
+        assert.equal(atualizado.body.cliente.cnpj, '12.ABC.345/01DE-35');
+        await request(app).put(url).set('Authorization', equipe.auth).send({ cnpj: '12.ABC.345/01DE-36' }).expect(422);
+
+        for (const busca of ['12.ABC.345', 'abc34501', '01DE-35']) {
+            const { body } = await request(app).get(`/api/v1/clientes?busca=${encodeURIComponent(busca)}`).set('Authorization', equipe.auth).expect(200);
+            assert.deepEqual(body.clientes.map((c) => c.id_usuario), [alfa.usuario.id_usuario], busca);
+        }
+    });
+
     test('GET /clientes/:id/detalhes em snake_case', async () => {
         const { body } = await request(app).get(`/api/v1/clientes/${semRazao.usuario.id_usuario}/detalhes`)
             .set('Authorization', equipe.auth).expect(200);

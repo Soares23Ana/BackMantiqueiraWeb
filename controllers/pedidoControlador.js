@@ -3,7 +3,7 @@ const { Usuario, Produto, Pedido, ItemPedido, PedidoHistorico } = require('../mo
 const { STATUS_PEDIDO } = require('../models/Pedido');
 const { ErroApi } = require('../lib/erros');
 const { ehEquipe } = require('../lib/perfis');
-const { somenteDigitos } = require('../lib/cnpj');
+const { somenteDigitos, normalizarCnpj } = require('../lib/cnpj');
 const { apresentarCliente } = require('../lib/apresentacao');
 const { lerPaginacao, montarPaginacao } = require('../lib/paginacao');
 const servicoPedidos = require('../servicos/pedidos');
@@ -147,7 +147,8 @@ async function listarPedidos(req, res) {
         ];
         const digitos = somenteDigitos(busca);
         if (/^#?\d+$/.test(busca)) opcoes.push({ id_pedido: Number(digitos) });
-        if (digitos.length >= 4) opcoes.push({ '$cliente.cnpj$': { [Op.like]: `%${digitos}%` } });
+        const cnpjBusca = normalizarCnpj(busca);
+        if (cnpjBusca.length >= 4) opcoes.push({ '$cliente.cnpj$': { [Op.like]: `%${cnpjBusca}%` } });
         where[Op.or] = opcoes;
     }
 

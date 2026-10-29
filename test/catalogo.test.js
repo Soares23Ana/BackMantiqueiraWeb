@@ -398,6 +398,24 @@ describe('utilitários', () => {
         assert.equal(somenteDigitos('11.222.333/0001-81'), '11222333000181');
     });
 
+    test('CNPJ alfanumérico: validação, normalização e formatação', () => {
+        const { cnpjValido, normalizarCnpj, formatarCnpj } = require('../lib/cnpj');
+        assert.equal(cnpjValido('12.ABC.345/01DE-35'), true);
+        assert.equal(cnpjValido('12.ABC.345/01DE-36'), false);
+        // Os numéricos de antes continuam valendo.
+        assert.equal(cnpjValido('11.222.333/0001-81'), true);
+        assert.equal(cnpjValido('11.444.777/0001-61'), true);
+        // Minúsculas e pontuação são normalizadas.
+        assert.equal(normalizarCnpj('12.abc.345/01de-35'), '12ABC34501DE35');
+        assert.equal(cnpjValido('12.abc.345/01de-35'), true);
+        assert.equal(formatarCnpj('12abc34501de35'), '12.ABC.345/01DE-35');
+        assert.equal(formatarCnpj('11222333000181'), '11.222.333/0001-81');
+        // Os 2 últimos são sempre números; todos iguais é recusado; tamanho errado também.
+        assert.equal(cnpjValido('12ABC34501DE3A'), false);
+        assert.equal(cnpjValido('AAAAAAAAAAAAAA'), false);
+        assert.equal(cnpjValido('12ABC34501DE3'), false);
+    });
+
     test('seed de dev recusa produção e RDS', () => {
         const { verificarAmbienteSeguro, USUARIOS } = require('../scripts/seed-dev');
         const { cnpjValido } = require('../lib/cnpj');

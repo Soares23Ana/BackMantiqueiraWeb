@@ -92,7 +92,8 @@ Parâmetros `pagina` (padrão 1) e `limite` (padrão e máximo variam por rota).
 - Toda resposta tem o cabeçalho `X-Request-Id`; informe-o ao relatar um erro.
 - Limite geral: 600 requisições por minuto por IP em `/api/v1` (configurável por `LIMITE_GLOBAL`). Login tem limite próprio (10 tentativas com falha a cada 15 min) e cadastro também (10 por hora).
 - **Nenhuma resposta tem valores financeiros** (preço, total, desconto). O `preco` do produto só aparece para a equipe.
-- Campos sempre em `snake_case`. CNPJ sempre formatado nas respostas (`11.222.333/0001-81`); nas requisições, aceito com ou sem pontuação.
+- Campos sempre em `snake_case`. CNPJ sempre formatado nas respostas (`11.222.333/0001-81` ou `12.ABC.345/01DE-35`); nas requisições, aceito com ou sem pontuação e em maiúsculas ou minúsculas.
+- **CNPJ alfanumérico**: desde julho de 2026 a Receita emite CNPJs com letras nas 12 primeiras posições; os 2 dígitos verificadores continuam numéricos. A API aceita os dois tipos em cadastro, login, `PUT /clientes/:id` e buscas. Normaliza para maiúsculas sem pontuação (`12.abc.345/01de-35` → `12ABC34501DE35`) e confere o dígito verificador por módulo 11, com cada caractere valendo o código ASCII − 48. No front, o campo de CNPJ precisa aceitar letras.
 - Clientes (em `/clientes` e no `cliente` dos pedidos) trazem `nome_exibicao`: a razão social quando houver, senão o nome do responsável. Use esse campo para exibir o cliente.
 
 ---
@@ -114,7 +115,7 @@ Parâmetros `pagina` (padrão 1) e `limite` (padrão e máximo variam por rota).
 | DELETE | `/minha-conta/enderecos/:id_endereco` | cliente | Remove endereço |
 
 ### POST /auth/register
-Sempre cria um **cliente**. Todos os campos são obrigatórios, exceto `complemento` e `referencia` do endereço. O CNPJ pode vir com ou sem pontuação, precisa ter dígitos verificadores válidos e é gravado só com dígitos. A senha tem de 8 a 72 caracteres. O endereço vira o principal; outros são adicionados em `/minha-conta/enderecos`. Limite: 10 cadastros por hora por IP.
+Sempre cria um **cliente**. Todos os campos são obrigatórios, exceto `complemento` e `referencia` do endereço. O CNPJ (numérico ou alfanumérico) pode vir com ou sem pontuação e em minúsculas, precisa ter dígitos verificadores válidos e é gravado normalizado (14 caracteres, maiúsculas, sem pontuação). A senha tem de 8 a 72 caracteres. O endereço vira o principal; outros são adicionados em `/minha-conta/enderecos`. Limite: 10 cadastros por hora por IP.
 ```json
 {
   "cnpj": "11.222.333/0001-81",
@@ -569,7 +570,7 @@ O estoque de todos os itens volta na mesma transação, com movimentação do ti
 
 ### GET /clientes
 `?busca=&ordenar=&pagina=&limite=&sem_cnpj=true` (padrão 20, máximo 100).
-- `busca` procura em nome, razão social, e-mail, CNPJ (com ou sem pontuação) e na **cidade do endereço principal**.
+- `busca` procura em nome, razão social, e-mail, CNPJ (com ou sem pontuação, letras em maiúsculas ou minúsculas) e na **cidade do endereço principal**.
 - `ordenar`: `nome` (padrão) ou `mais_pedidos` (quem tem mais pedidos não cancelados primeiro; empate por nome). Outro valor: `400 FILTRO_INVALIDO`.
 - `sem_cnpj=true` lista quem não consegue entrar por falta de CNPJ válido.
 - Cada cliente traz `cidade` (do endereço principal; `null` se não tiver endereço) e `total_pedidos` (pedidos **não cancelados**).

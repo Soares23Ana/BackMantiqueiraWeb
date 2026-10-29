@@ -75,6 +75,8 @@ npm run migrar:status   # só lista o que está pendente
 - **Banco existente** (criado pelo `BancoMantiqueira.sql` antigo ou pelo `sync()`): rode `npm run migrar`. A `002_normalizar_estrutura` converte status antigos de pedido, remove índices duplicados criados pelo `sync()` e corrige a FK que apagava pedidos junto com o cliente. Os scripts de `migrations/legado/` não precisam mais ser executados.
 - Ao subir, a API avisa no log se houver migrations pendentes.
 
+A `013_cnpj_alfanumerico` passa a aceitar o CNPJ alfanumérico da Receita: a restrição `ck_usuarios_cnpj` exige 12 caracteres `[0-9A-Z]` (maiúsculos) seguidos de 2 dígitos, em `VARCHAR(14)`. Os CNPJs numéricos já gravados continuam válidos.
+
 Para alterar o banco, **crie uma migration nova** com o próximo número (nunca edite uma já aplicada; o runner detecta pelo checksum) e depois rode `npm run schema:gerar` para atualizar o `BancoMantiqueira.sql`.
 
 ---

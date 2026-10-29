@@ -1,5 +1,5 @@
 const { Op, UniqueConstraintError } = require('sequelize');
-const { cnpjValido, somenteDigitos } = require('../lib/cnpj');
+const { cnpjValido, normalizarCnpj } = require('../lib/cnpj');
 const { lerPaginacao, montarPaginacao } = require('../lib/paginacao');
 const { apresentarCliente } = require('../lib/apresentacao');
 const sequelize = require('../db/conn');
@@ -119,14 +119,14 @@ async function listarClientes(req, res) {
     }
     const where = { tipo: 'cliente' };
     if (busca) {
-        // O CNPJ é gravado só com dígitos; "11.222.333" também encontra "11222333...".
-        const digitos = somenteDigitos(busca);
+        // O CNPJ é gravado normalizado (maiúsculas, sem pontuação); "11.222.333" também encontra "11222333...".
+        const cnpjBusca = normalizarCnpj(busca);
         where[Op.or] = [
             { nome: { [Op.like]: `%${busca}%` } },
             { razao_social: { [Op.like]: `%${busca}%` } },
             { email: { [Op.like]: `%${busca}%` } },
             sequelize.where(sequelize.literal(`(${CIDADE_PRINCIPAL_SQL})`), { [Op.like]: `%${busca}%` }),
-            ...(digitos.length >= 2 ? [{ cnpj: { [Op.like]: `%${digitos}%` } }] : [])
+            ...(cnpjBusca.length >= 2 ? [{ cnpj: { [Op.like]: `%${cnpjBusca}%` } }] : [])
         ];
     }
     // Clientes que não conseguem entrar pelo CNPJ (sem CNPJ ou com CNPJ pendente da migração 004).
@@ -269,9 +269,9 @@ async function atualizarCliente(req, res) {
             dadosCliente[campo] = valor || null;
         }
     }
-    // O CNPJ é a credencial de login do cliente: precisa ser válido e é gravado só com dígitos.
+    // O CNPJ é a credencial de login do cliente: precisa ser válido e é gravado normalizado.
     if (dados.cnpj !== undefined) {
-        const cnpj = somenteDigitos(dados.cnpj);
+        const cnpj = normalizarCnpj(dados.cnpj);
         if (!cnpjValido(cnpj)) {
             return res.status(422).json({
                 mensagem: 'CNPJ inválido.',

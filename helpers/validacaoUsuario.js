@@ -1,5 +1,5 @@
 const { ErroApi } = require('../lib/erros');
-const { cnpjValido, somenteDigitos } = require('../lib/cnpj');
+const { cnpjValido, normalizarCnpj, somenteDigitos } = require('../lib/cnpj');
 
 const UFS = [
     'AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA', 'MT', 'MS', 'MG', 'PA',
@@ -57,11 +57,11 @@ function criarValidador(prefixo = '') {
                 erro(campo, 'O CNPJ é obrigatório.');
                 return undefined;
             }
-            const digitos = somenteDigitos(valor);
-            if (!cnpjValido(digitos)) {
+            const cnpj = normalizarCnpj(valor);
+            if (!cnpjValido(cnpj)) {
                 erro(campo, 'CNPJ inválido.');
             }
-            return digitos;
+            return cnpj;
         },
         camposPermitidos(corpo, permitidos) {
             for (const campo of Object.keys(corpo)) {
