@@ -13,6 +13,7 @@ Detalhes de configuração e operação da API. O passo a passo para rodar o pro
 8. [Jobs agendados](#8-jobs-agendados)
 9. [Saúde](#9-saúde)
 10. [Primeiro acesso em produção](#10-primeiro-acesso-em-produção)
+11. [Serviços externos (CEP e CNPJ)](#11-serviços-externos-cep-e-cnpj)
 
 ---
 
@@ -244,3 +245,23 @@ Ele recusa (sem criar nada) se:
 - não houver um terminal interativo para digitar a senha (ex.: entrada por pipe). No Git Bash do Windows, rode `winpty npm.cmd run criar-admin`; no PowerShell, cmd ou ssh funciona direto.
 
 Se o administrador for desativado e ninguém mais puder gerenciar a equipe, o `criar-admin` volta a funcionar para recuperar o acesso.
+
+---
+
+## 11. Serviços externos (CEP e CNPJ)
+
+A API consulta serviços públicos com o `fetch` nativo do Node (sem dependência nova). Cada consulta tem tempo máximo e as respostas ficam num cache em memória (perdido ao reiniciar a API e separado em cada instância).
+
+### CEP (`GET /api/v1/cep/:cep`)
+| Ordem | Serviço | Endereço consultado |
+|---|---|---|
+| 1 | BrasilAPI | `https://brasilapi.com.br/api/cep/v1/{cep}` (campos `street`, `neighborhood`, `city`, `state`) |
+| 2 | ViaCEP | `https://viacep.com.br/ws/{cep}/json/` (campos `logradouro`, `bairro`, `localidade`, `uf`; CEP inexistente vem com `"erro": true`) |
+
+- O ViaCEP é usado quando a BrasilAPI falha (erro de rede, mais de 4 s, resposta 5xx) **ou** responde 404. O 404 da BrasilAPI só significa que os provedores dela não acharam, então o ViaCEP ainda é consultado.
+- Tempo máximo: **4 segundos por serviço** (até 8 s no pior caso, com os dois lentos).
+- Cache: **24 horas** para CEP encontrado e **5 minutos** para "não encontrado" (um CEP novo pode passar a existir). Falha dos dois serviços não fica em cache. Máximo de 5.000 CEPs na memória; os mais antigos saem primeiro.
+- `404 CEP_NAO_ENCONTRADO` quando algum serviço diz que o CEP não existe e nenhum o encontra; `503 SERVICO_INDISPONIVEL` quando os dois falham.
+- Limite de **30 consultas por minuto por IP** (vale também nos testes).
+- Funciona com o banco fora do ar, e o cadastro não depende dela: o endereço digitado à mão continua aceito.
+- Falhas de cada serviço vão para o log como aviso (`warn`), com o nome do serviço.

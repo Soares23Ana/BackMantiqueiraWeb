@@ -1,6 +1,11 @@
 // Preparação comum dos testes: usa sempre o banco mantiqueira_test, recriado do zero pelas migrations.
 process.env.NODE_ENV = 'test';
 
+// Os testes nunca acessam a internet: cada teste que precisa de um serviço externo simula o fetch.
+globalThis.fetch = async (url) => {
+    throw new Error(`Acesso à internet bloqueado nos testes: ${url}`);
+};
+
 const config = require('../config/ambiente');
 const { aplicarMigracoes, abrirConexao } = require('../db/migracoes');
 

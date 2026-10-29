@@ -49,6 +49,15 @@ const limitadorEventos = rateLimit({
     message: respostaLimite
 });
 
+// Consulta de CEP (GET /cep/:cep): por IP, bem acima do preenchimento de um cadastro.
+const limitadorCep = rateLimit({
+    windowMs: 60 * 1000,
+    limit: 30,
+    standardHeaders: 'draft-8',
+    legacyHeaders: false,
+    message: respostaLimite
+});
+
 // Enquanto a primeira conexão com o banco não acontece, a API responde 503 em vez de erros genéricos.
 function exigirBanco(req, res, next) {
     if (estado.conectado) {
@@ -101,4 +110,7 @@ function tratarErros(erro, req, res, next) {
     return res.status(status).json(corpoErro(status, corpo));
 }
 
-module.exports = { limitadorGlobal, limitadorLogin, limitadorCadastro, limitadorEventos, exigirBanco, rotaNaoEncontrada, tratarErros };
+module.exports = {
+    limitadorGlobal, limitadorLogin, limitadorCadastro, limitadorEventos, limitadorCep,
+    exigirBanco, rotaNaoEncontrada, tratarErros
+};

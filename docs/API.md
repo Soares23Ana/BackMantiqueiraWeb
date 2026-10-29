@@ -19,6 +19,7 @@ Para ter banners, campanha, contatos e pedidos em todos os status no ambiente lo
 13. [Limitações conhecidas](#13-limitações-conhecidas)
 14. [Campanhas](#14-campanhas)
 15. [Eventos e métricas](#15-eventos-e-métricas)
+16. [Consultas externas (CEP)](#16-consultas-externas)
 
 ---
 
@@ -72,13 +73,13 @@ Erros de validação de formulário (`422 VALIDACAO`) trazem **todos** os campos
 | 400 | `REQUISICAO_INVALIDA`, `JSON_INVALIDO`, `FILTRO_INVALIDO`, `PAGINACAO_INVALIDA` |
 | 401 | `NAO_AUTENTICADO` (token ausente, expirado ou usuário inativo), `CREDENCIAIS_INVALIDAS` (login) |
 | 403 | `ACESSO_NEGADO` (mensagem sempre "Acesso negado.") |
-| 404 | `NAO_ENCONTRADO`, `ROTA_NAO_ENCONTRADA`, `PRODUTO_NAO_ENCONTRADO`, `PEDIDO_NAO_ENCONTRADO`, `ENDERECO_NAO_ENCONTRADO`, `USUARIO_NAO_ENCONTRADO` |
+| 404 | `NAO_ENCONTRADO`, `ROTA_NAO_ENCONTRADA`, `PRODUTO_NAO_ENCONTRADO`, `PEDIDO_NAO_ENCONTRADO`, `ENDERECO_NAO_ENCONTRADO`, `USUARIO_NAO_ENCONTRADO`, `CEP_NAO_ENCONTRADO` |
 | 409 | `CONFLITO` e os específicos de cada rota (ex.: `ITENS_INDISPONIVEIS`, `TRANSICAO_INVALIDA`) |
 | 413 | `CORPO_MUITO_GRANDE` |
 | 422 | `VALIDACAO`, `CSV_INVALIDO`, `ENDERECO_OBRIGATORIO` |
 | 429 | `LIMITE_REQUISICOES`, `MUITAS_TENTATIVAS` (login/cadastro) |
 | 500 | `ERRO_INTERNO` (a mensagem nunca expõe detalhes internos) |
-| 503 | `BANCO_INDISPONIVEL` |
+| 503 | `BANCO_INDISPONIVEL`, `SERVICO_INDISPONIVEL` (serviço externo de CEP fora do ar) |
 
 ### Listas paginadas
 Parâmetros `pagina` (padrão 1) e `limite` (padrão e máximo variam por rota). Resposta:
@@ -993,3 +994,24 @@ Todas aceitam `de` e `ate` (`AAAA-MM-DD`, inclusive; padrão: últimos 30 dias a
   ]
 }
 ```
+
+---
+
+## 16. Consultas externas
+
+Rotas públicas que consultam serviços de fora para ajudar o preenchimento do cadastro. Elas não usam o banco (respondem mesmo com `BANCO_INDISPONIVEL`) e o cadastro **não depende delas**: o endereço digitado à mão continua aceito. Detalhes de serviços, cache e tempo máximo no [guia técnico](GUIA_TECNICO.md#11-serviços-externos-cep-e-cnpj).
+
+| Método | Rota | Perfil | Descrição |
+|---|---|---|---|
+| GET | `/cep/:cep` | público | Endereço de um CEP (limite: 30 por minuto por IP) |
+
+### GET /cep/:cep
+`:cep` com 8 dígitos, com ou sem hífen (`13870000` ou `13870-000`).
+```json
+{ "cep": "13870-000", "logradouro": "Rua das Flores", "bairro": "Centro", "cidade": "São João da Boa Vista", "estado": "SP" }
+```
+- O que o serviço não informar vem como texto vazio: cidades com CEP único não trazem `logradouro` nem `bairro`.
+- `422 VALIDACAO`: formato inválido (campo `cep`).
+- `404 CEP_NAO_ENCONTRADO`: o CEP não existe.
+- `503 SERVICO_INDISPONIVEL`: os serviços de CEP estão fora do ar; peça para o usuário preencher à mão.
+- `429 LIMITE_REQUISICOES`: mais de 30 consultas por minuto do mesmo IP.
