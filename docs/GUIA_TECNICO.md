@@ -14,6 +14,7 @@ Detalhes de configuração e operação da API. O passo a passo para rodar o pro
 9. [Saúde](#9-saúde)
 10. [Primeiro acesso em produção](#10-primeiro-acesso-em-produção)
 11. [Serviços externos (CEP e CNPJ)](#11-serviços-externos-cep-e-cnpj)
+12. [Riscos aceitos](#12-riscos-aceitos)
 
 ---
 
@@ -283,3 +284,14 @@ A API consulta serviços públicos com o `fetch` nativo do Node (sem dependênci
 - `false`: o cadastro aceita qualquer CNPJ com dígito verificador válido, sem consulta externa.
 - **Numa demonstração**, se o serviço externo estiver fora do ar, defina `VALIDAR_CNPJ_RECEITA=false` no `.env` e reinicie a API: o cadastro volta a funcionar sem a consulta. Volte para `true` depois.
 - Não há aprovação manual: com o CNPJ ativo, a conta já pode entrar. Para acompanhar os novos cadastros, a equipe consulta quando quiser o `clientes_novos_7_dias` de `GET /painel/contadores` e a lista em `GET /clientes?novos_dias=7` ([API.md](API.md#9-painel)).
+
+---
+
+## 12. Riscos aceitos
+
+### `uuid` dentro do `sequelize` (npm audit, severidade moderada)
+- **Aviso:** `uuid <11.1.1`, falta de verificação de limites no buffer nas funções v3/v5/v6 ([GHSA-w5hq-g745-h8pq](https://github.com/advisories/GHSA-w5hq-g745-h8pq)). Está em `sequelize@6.37.8` → `uuid@8.3.2`.
+- **Por que fica:** o aviso só vale quando se passa um buffer (`buf`) ao `uuid`, e o projeto não faz isso. O Sequelize só gera UUIDs sem buffer.
+- **Por que não se corrige agora:** a correção que o npm sugere (`npm audit fix --force`) instala o `sequelize@3.30.0`, uma versão muito antiga e incompatível com esta API. Não usar `--force`.
+- **Registrado em:** 30/10/2026.
+- **Revisão:** sempre que sair uma nova versão do Sequelize, rodar `npm update sequelize` e `npm audit --omit=dev`; se o `uuid` já estiver corrigido, remover este item.
