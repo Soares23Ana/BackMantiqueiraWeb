@@ -1,145 +1,169 @@
 # Mapa front ↔ API
 
-Como cada tela do front (`mantiqueira-react`) se liga à API e o que o front precisa mudar para isso.
-Hoje o front não chama a API: tudo vem de `src/data/` (dados simulados). O contrato completo de cada rota está em [`API.md`](API.md).
+Situação de cada tela do front (`mantiqueira-react-front/mantiqueira-react`, em 30/10/2026) em relação à API: qual endpoint ela usa hoje, o que já está ligado, o que ainda é fixo no código e o que precisa mudar. O contrato completo de cada rota está em [`API.md`](API.md).
 
 Todas as rotas abaixo ficam sob `/api/v1`, exceto quando indicado.
 
+## Resumo
+
+O front **já está ligado à API** em quase tudo: `src/api/client.ts` envia o token, trata erros no formato da API e um `401` leva ao login. Os dados simulados de `src/data/` foram removidos, exceto `brands.ts` (texto editorial das marcas, que continua no front de propósito). O que falta é recente na API e ainda não chegou ao front:
+
+| Pendência | Onde | Prioridade |
+|---|---|---|
+| `Idempotency-Key` no `POST /pedidos` | Checkout | [1](#prioridades) |
+| CNPJ alfanumérico (máscara, validação, login) | `utils/cnpj.ts`, Login, Cadastro | [2](#prioridades) |
+| Desconectar depois de trocar a senha | Minha conta | [3](#prioridades) |
+| Consulta de CEP e de CNPJ no cadastro | Cadastro | [4](#prioridades) |
+| Novos cadastros (contador, filtro) | Layout do gestor, Clientes, Painel | [5](#prioridades) |
+| Métricas ainda sem tela | Métricas | [6](#prioridades) |
+
 ## Decisões já tomadas
 
-| Assunto | Decisão | Consequência no front |
+| Assunto | Decisão | Situação no front |
 |---|---|---|
-| Valores financeiros | A API **não devolve valores** em pedidos, clientes, painel nem métricas. O `preco` do produto aparece só para a equipe. | Tirar "Faturamento" do painel, preço unitário/subtotal/total do pedido e "Receita"/"Total" das exportações. |
-| Grupo do cliente | Não existe no back (não há tabela de preço). | Tirar o filtro e a coluna "Grupo" de Clientes e o tipo `CustomerGroup`. |
-| Favoritos | Ficam no navegador (`localStorage`); não há rota de favoritos. | Guardar os `id_produto` e buscar cada um em `GET /produtos/:id` (a listagem não filtra por lista de ids). |
-| Exportar CSV | Montado no front, com os dados que ele já carregou. | Com paginação (máx. 100 por página), percorrer as páginas antes de gerar o arquivo. |
-| Comentários no pedido | Não haverá rota de comentários. | Usar a `observacao` da mudança de status (`PUT /pedidos/:id/status`) e o `motivo` do cancelamento; exibir pelo `historico` do pedido. Tirar o "Notificar cliente". |
+| Valores financeiros | A API **não devolve valores** em pedidos, clientes, painel nem métricas. O `preco` do produto aparece só para a equipe. | Feito: painel, pedidos e exportações não têm valores. |
+| Grupo do cliente | Não existe no back (não há tabela de preço). | Feito: sem filtro nem coluna "Grupo". |
+| Favoritos | Ficam no navegador (`localStorage`); não há rota de favoritos. | Feito: ids em `mantiqueira.favoritos`; cada produto vem de `GET /produtos/:id` (`useProductsById`). |
+| Exportar CSV | Montado no front, com os dados que ele já carregou. | Feito: `fetchAllPages` percorre as páginas (100 por vez) em Pedidos, Clientes e Produtos. |
+| Comentários no pedido | Não há rota de comentários. | Feito: `observacao` ao avançar o status, `motivo` no cancelamento, ambos no `historico`. |
+| Carrinho | Fica no navegador; não há rota de carrinho. | Feito: `mantiqueira.carrinho`. |
+| Texto das marcas | A API não guarda conteúdo editorial. | `data/brands.ts` continua no front; os `id` já são os slugs da API. |
 
 ## O que vale para todas as telas
 
-- **Endereço da API**: criar `VITE_API_URL` (ex.: `http://localhost:3000`) e prefixar `/api/v1`. O CORS já libera `http://localhost:5173`, `http://127.0.0.1:5173` e `http://localhost:4173`.
-- **Token**: guardar o `token` do login e enviar `Authorization: Bearer <token>`. Qualquer `401 NAO_AUTENTICADO` (token vencido em 8h, usuário desativado ou senha trocada) deve levar ao login.
-- **Erros**: todos no formato `{ sucesso: false, mensagem, codigo, detalhes? }`. Em `422 VALIDACAO`, `detalhes` traz a lista `{ campo, mensagem }` para marcar cada campo do formulário.
-- **Imagens**: `imagem_url` começando com `/img/` é do próprio front; começando com `/arquivos/` vem da API (prefixar com `VITE_API_URL`).
-- **Ids**: os produtos passam a usar o `id_produto` da API em vez dos ids fixos de `src/data/products.ts`.
-- **CNPJ alfanumérico**: desde julho de 2026 a Receita emite CNPJs com letras nas 12 primeiras posições; os 2 últimos (dígitos verificadores) continuam números. A API aceita os dois tipos. No front (`src/utils/cnpj.ts`, usado no login e no cadastro):
-  - **Máscara alfanumérica** `XX.XXX.XXX/XXXX-XX`: aceitar letras e números nas 12 primeiras posições e só números nas 2 últimas, convertendo para maiúsculas enquanto a pessoa digita. Hoje `formatCnpj` apaga as letras (`replace(/\D/g, '')`).
-  - Campo com `inputMode="text"` (não `numeric`), para o teclado do celular mostrar letras.
-  - **Validação**: `isValidCnpj` precisa usar o valor de cada caractere = código ASCII − 48 (números continuam valendo 0 a 9; `A` vale 17). Ou só conferir o formato e deixar a API validar (ela responde `422` no campo `cnpj`).
-  - **Login**: hoje o `Login.tsx` trata como e-mail qualquer texto com letra (`/[@a-z]/i`), então um CNPJ alfanumérico viraria e-mail. A regra da API é **só o `@`**: com `@` é e-mail da equipe; sem `@` é CNPJ.
-  - Exemplo de máscara (os nomes são só sugestão):
-    ```ts
-    const normalizarCnpj = (v: string) => v.toUpperCase().replace(/[^0-9A-Z]/g, '').slice(0, 14);
-    function formatarCnpj(v: string) {
-      const n = normalizarCnpj(v);
-      const c = n.slice(0, 12) + n.slice(12).replace(/\D/g, ''); // os 2 últimos só aceitam números
-      return c.replace(/^(.{2})(.{1,3})?(.{1,3})?(.{1,4})?(\d{1,2})?$/, (_, a, b, c2, d, e) =>
-        [a, b && `.${b}`, c2 && `.${c2}`, d && `/${d}`, e && `-${e}`].filter(Boolean).join(''));
-    }
-    ```
-- **Status do pedido** (nomes diferentes):
-
-  | Front hoje | API |
-  |---|---|
-  | `Pendente` | `Aguardando Separação` |
-  | `Separando` | `Em Separação` |
-  | `Enviado` | `Saiu para Entrega` |
-  | `Entregue` | `Entregue` |
-  | `Cancelado` | `Cancelado` |
-
-- **Marcas** (`BrandId` do front → `slug` da API): `risque` → `risque`, `kimberly-clark` → `kimberly-clark`, `bic` → `bic`, `baruel` → `baruel`, `granado` → `granado`, `colgate` → `colgate-palmolive`, `outras` → `outras-marcas`. As **categorias** já têm os mesmos nomes.
+- **Endereço da API**: em desenvolvimento o Vite encaminha `/api`, `/arquivos` e `/saude` para `http://localhost:3000` (sem CORS). Em produção, defina `VITE_API_URL` (veja `.env.example`) e libere a origem do front no CORS da API ([Guia técnico, seção 6](GUIA_TECNICO.md#6-cors)).
+- **Token**: guardado em `mantiqueira.token` e enviado como `Authorization: Bearer`. `401 NAO_AUTENTICADO` com token limpa a sessão e leva ao login com "Sua sessão expirou." Já feito.
+- **Erros**: `ApiError` lê `{ sucesso: false, mensagem, codigo, detalhes? }`; `fieldErrors` transforma `detalhes` em `{ campo: mensagem }` (inclusive `endereco.cep`). Já feito.
+- **Imagens**: `imageUrl()` prefixa `/arquivos/...` com a API e deixa `/img/...` no front. Já feito.
+- **Métricas de navegação**: `utils/events.ts` envia `POST /eventos` (`produto_visto`, `carrinho_adicionar`, `checkout_iniciado`, `banner_clique`, `campanha_clique`), com `sessao` aleatória; falha nunca atrapalha a tela. Já feito.
+- **Status do pedido**: o front já usa os nomes da API (`Aguardando Separação`, `Em Separação`, `Saiu para Entrega`, `Entregue`, `Cancelado`).
+- **Marcas**: os `id` de `brands.ts` e os slugs da API coincidem (`risque`, `kimberly-clark`, `bic`, `baruel`, `granado`, `colgate-palmolive`; as demais são `outras-marcas`).
 
 ## Loja
 
-### Header e Footer (`components/Header.tsx`, `components/Footer.tsx`)
-| Usa | Endpoint |
+### Header, Footer e aviso do topo (`components/Header.tsx`, `Footer.tsx`, `context/StoreContext.tsx`)
+| Usa hoje | Endpoint |
 |---|---|
-| Categorias do menu | `GET /categorias` |
 | Telefone, WhatsApp, e-mail, horário, aviso do topo | `GET /configuracoes/publicas` |
+| Categorias do menu | `GET /categorias` |
+| Marcas | `GET /marcas` |
+| Campanhas ativas (selos e vitrine) | `GET /campanhas/ativas` |
+| Busca com sugestões | `GET /produtos/sugestoes?busca=` |
 
-**Mudar no front:** o Footer tem contatos fixos no código; passar a ler de `/configuracoes/publicas`. Mostrar o `aviso_topo` quando houver.
+- **Ligado:** tudo acima. O botão "Gestor" só aparece para a equipe.
+- **Fixo no código:** os contatos padrão do Footer (usados só enquanto a configuração não carrega ou está vazia) e o logotipo.
+- **Mudar:** nada.
 
-### Home (`pages/Home.tsx`, `components/Hero.tsx`, `ProductGrid`)
-| Usa | Endpoint |
+### Home (`pages/Home.tsx`)
+| Usa hoje | Endpoint |
 |---|---|
-| Banners | `GET /cms` (só os no ar, na ordem) |
-| Vitrine, filtro por categoria e busca | `GET /produtos?categoria=&busca=` (ou `q=`), paginado (24 por página) |
+| Banners | `GET /cms` |
+| Campanhas ativas | `GET /campanhas/ativas` (via `StoreContext`) |
+| Destaques | `GET /produtos?disponibilidade=em_estoque&ordenar=recentes&limite=8` |
+| Cliques em banner e campanha | `POST /eventos` |
+
+- **Ligado:** tudo. Sem banners no ar, mostra a abertura padrão (`Hero`).
+- **Fixo no código:** conteúdo de marketing de `Hero`, `ZoomBanner`, `Benefits` e `BrandPanels` (não vêm do CMS).
+- **Mudar:** nada obrigatório. Se a equipe quiser editar esses textos, usar os blocos do CMS (`GET /cms/blocos`), que hoje o público não consome.
+
+### Catálogo (`pages/Catalog.tsx`)
+| Usa hoje | Endpoint |
+|---|---|
+| Lista, busca, categoria, marca, disponibilidade, ordenação e paginação | `GET /produtos` |
 | Contagens dos filtros | `GET /produtos/filtros` |
-| Selo de campanha nos cards | `GET /campanhas/ativas` (cruzar os `id_produto`) |
-| Autocomplete da busca | `GET /produtos/sugestoes?q=` |
 
-**Mudar no front:** trocar `src/data/products.ts` pela API, tratar paginação e `disponibilidade` (`disponivel`, `ultimas_unidades`, `indisponivel`). Se o token for de cliente, o produto vem também com `estoque`.
+- **Ligado:** tudo, com filtros na URL. Se o token for de cliente, o produto vem com `estoque`.
+- **Mudar:** nada.
 
-### Página da marca (`pages/Brand.tsx`)
-| Usa | Endpoint |
+### Marca (`pages/Brand.tsx`)
+| Usa hoje | Endpoint |
 |---|---|
-| Produtos da marca | `GET /produtos?marca=<slug>` |
+| Produtos da marca | `GET /produtos?marca=<slug>&limite=100` |
 
-**Mudar no front:** os textos e painéis de `src/data/brands.ts` continuam no front (a API não guarda conteúdo de marca); só os produtos vêm da API, usando o slug da tabela acima.
+- **Ligado:** produtos. **Fixo no código (decisão):** textos e cores de `data/brands.ts`.
+- **Mudar:** nada.
 
 ### Detalhe do produto (`pages/ProductDetail.tsx`)
-| Usa | Endpoint |
+| Usa hoje | Endpoint |
 |---|---|
-| Produto | `GET /produtos/:id` (aceita id ou SKU) |
-| Registro de visita | `POST /eventos` `{ tipo: "produto_visto", id_produto, sessao? }` |
+| Produto | `GET /produtos/:id` |
+| Relacionados | `GET /produtos?marca=<slug>&limite=9` |
+| Visita | `POST /eventos` `produto_visto` |
 
-**Mudar no front:** usar `destaques`, `descricao`, `multiplo_venda` e `disponibilidade` da API. A quantidade escolhida precisa respeitar o `multiplo_venda`.
+- **Ligado:** tudo, com múltiplo de venda e disponibilidade.
+- **Mudar:** nada.
 
 ### Favoritos (`pages/Favorites.tsx`)
-| Usa | Endpoint |
+- **Usa hoje:** `GET /produtos/:id` para cada id salvo; produto que volta `404` é ignorado.
+- **Ligado:** tudo. **Mudar:** nada.
+
+### Carrinho (`pages/Cart.tsx`)
+- **Usa hoje:** `GET /produtos/:id` para conferir estoque, múltiplo e se o produto saiu de linha; `POST /eventos` `carrinho_adicionar`.
+- **Ligado:** tudo. Pede login de cliente; a equipe vê um aviso em vez do botão.
+- **Mudar:** nada.
+
+### Checkout (`pages/Checkout.tsx`)
+| Usa hoje | Endpoint |
 |---|---|
-| Dados de cada favorito | `GET /produtos/:id` para cada id salvo |
+| Endereços do cliente | `GET /minha-conta/enderecos` |
+| Enviar o pedido | `POST /pedidos` `{ itens, id_endereco?, observacao?, data_entrega_desejada? }` |
+| Abertura do checkout | `POST /eventos` `checkout_iniciado` |
 
-**Mudar no front:** salvar os ids em `localStorage` (hoje ficam só na memória e somem ao recarregar). Ignorar ids que voltarem `404`.
+- **Ligado:** tudo, inclusive `409 ITENS_INDISPONIVEIS` (lista os itens e oferece "Ajustar para N"/"Remover").
+- **Mudar:** **enviar o cabeçalho `Idempotency-Key`**. Hoje `api.post` não aceita cabeçalhos e o pedido vai sem a chave; se a rede falhar depois de o servidor gravar o pedido, o cliente reenvia e o pedido duplica. Gerar `crypto.randomUUID()` ao abrir o checkout, reenviar o mesmo valor nas novas tentativas e trocar só depois de um sucesso. Com a chave repetida, a API devolve o pedido já criado (`200`).
 
-### Carrinho e checkout (`pages/Cart.tsx`)
-| Usa | Endpoint |
+### Login (`pages/Login.tsx`, `context/AuthContext.tsx`)
+| Usa hoje | Endpoint |
 |---|---|
-| Adicionar ao carrinho (métrica) | `POST /eventos` `{ tipo: "carrinho_adicionar", id_produto, quantidade }` |
-| Abrir o checkout (métrica) | `POST /eventos` `{ tipo: "checkout_iniciado" }` |
-| Endereço de entrega | `GET /minha-conta/enderecos` |
-| Finalizar | `POST /pedidos` com `Idempotency-Key` |
-| Repetir pedido anterior | `GET /pedidos/:id/repetir` → `itens_para_checkout` |
+| Entrar | `POST /auth/login` `{ identificador, senha }` |
+| Sessão salva | `GET /auth/me` |
 
-**Mudar no front:**
-- Exigir login de cliente para finalizar.
-- Gerar um `Idempotency-Key` (ex.: `crypto.randomUUID()`) ao abrir o checkout e reenviar o mesmo valor em caso de falha de rede.
-- Tratar `409 ITENS_INDISPONIVEIS`: `detalhes` traz todos os itens com problema e a quantidade `disponivel` para ajustar o carrinho.
-- Opcionais do pedido: `id_endereco`, `observacao`, `data_entrega_desejada` (de amanhã até 90 dias).
-- O carrinho continua no front (não há rota de carrinho).
+- **Ligado:** tela única; a equipe vai para `/gestor`, o cliente para `/minha-conta` (ou para onde estava). `429 MUITAS_TENTATIVAS` tem mensagem própria. "Esqueci a senha" orienta a falar com a equipe.
+- **Mudar:** a regra de e-mail ou CNPJ. Hoje `Login.tsx` trata como e-mail qualquer texto com letra (`/[@a-z]/i`), então um **CNPJ alfanumérico** seria tratado como e-mail e perderia a máscara. A regra da API é só o `@`: com `@` é e-mail da equipe; sem `@` é CNPJ. Ver [CNPJ alfanumérico](#cnpj-alfanumérico).
 
-### Login e cadastro (`pages/Login.tsx`)
-| Usa | Endpoint |
+### Cadastro (`pages/Register.tsx`, `components/AddressFields.tsx`)
+| Usa hoje | Endpoint |
 |---|---|
-| Login de cliente | `POST /auth/login` `{ identificador: "<CNPJ>", senha }` |
-| Login da equipe | `POST /auth/login` `{ identificador: "<e-mail>", senha }` |
-| Cadastro | `POST /auth/register` |
-| Preencher o endereço pelo CEP | `GET /cep/:cep` |
-| Mostrar o nome da empresa antes de enviar | `GET /cnpj/:cnpj` |
-| Sessão atual | `GET /auth/me` |
+| Criar conta | `POST /auth/register` `{ cnpj, nome, email, telefone, senha, endereco }` |
 
-**Mudar no front:**
-- O cadastro hoje pede só o CNPJ; a API exige `cnpj`, `nome`, `email`, `telefone`, `senha` e `endereco` (`cep`, `logradouro`, `numero`, `bairro`, `cidade`, `estado`; `complemento` e `referencia` opcionais).
-- O botão "Gestor" abre a área do gestor sem login: passar a exigir o login da equipe por e-mail e decidir o destino pelo `tipo` (`cliente` ou `equipe`).
-- "Recuperar senha" não existe na API: mostrar o WhatsApp de `/configuracoes/publicas` e orientar a pedir uma senha temporária à equipe.
-- Tratar `429 MUITAS_TENTATIVAS` (10 falhas de login em 15 min por IP).
+- **Ligado:** o formulário já tem todos os campos que a API exige, marca o campo de cada erro `422` e leva ao login com a mensagem de sucesso. Um `503` aparece como mensagem do formulário, sem apagar o que foi digitado.
+- **Mudar:** (1) CNPJ alfanumérico; (2) preencher o endereço pelo CEP; (3) mostrar o nome da empresa pelo CNPJ. Detalhes abaixo.
 
-#### CEP, CNPJ e Receita no cadastro (`pages/Register.tsx`, `components/AddressFields.tsx`)
+#### CNPJ alfanumérico
+Desde julho de 2026 a Receita emite CNPJs com letras nas 12 primeiras posições; os 2 últimos (dígitos verificadores) continuam números. A API aceita os dois tipos. Em `src/utils/cnpj.ts` (usado no Login e no Cadastro):
 
-**Endereço pelo CEP** (`GET /cep/:cep`, público, 30 consultas por minuto por IP):
-- Quando o CEP tiver 8 dígitos (com ou sem hífen), consultar uma vez (não a cada tecla) e preencher `logradouro`, `bairro`, `cidade` e `estado`. A pessoa continua podendo editar tudo e completa `numero` e `complemento`.
+- **Máscara**: `formatCnpj` apaga as letras (`replace(/\D/g, '')`). Precisa aceitar letras e números nas 12 primeiras posições e só números nas 2 últimas, convertendo para maiúsculas enquanto a pessoa digita.
+- **Teclado**: o campo do Cadastro usa `inputMode="numeric"`; trocar para `text`, para o celular mostrar letras.
+- **Validação**: `isValidCnpj` usa `Number(d[i])` e `\D`. Precisa usar o valor de cada caractere = código ASCII − 48 (números continuam valendo 0 a 9; `A` vale 17). Ou só conferir o formato e deixar a API validar (ela responde `422` no campo `cnpj`).
+- **Login**: ver acima (só o `@` decide).
+- Exemplo de máscara (os nomes são só sugestão):
+  ```ts
+  const normalizarCnpj = (v: string) => v.toUpperCase().replace(/[^0-9A-Z]/g, '').slice(0, 14);
+  function formatarCnpj(v: string) {
+    const n = normalizarCnpj(v);
+    const c = n.slice(0, 12) + n.slice(12).replace(/\D/g, ''); // os 2 últimos só aceitam números
+    return c.replace(/^(.{2})(.{1,3})?(.{1,3})?(.{1,4})?(\d{1,2})?$/, (_, a, b, c2, d, e) =>
+      [a, b && `.${b}`, c2 && `.${c2}`, d && `/${d}`, e && `-${e}`].filter(Boolean).join(''));
+  }
+  ```
+
+#### Endereço pelo CEP
+`GET /cep/:cep` (público, 30 consultas por minuto por IP). Hoje `AddressFields` só formata o CEP; nada é consultado.
+- Quando o CEP tiver 8 dígitos (com ou sem hífen), consultar uma vez (não a cada tecla) e preencher `logradouro`, `bairro`, `cidade` e `estado`. A pessoa continua podendo editar tudo e completa `numero` e `complemento`. Como o componente também é usado em "Meus endereços", o ganho vale nos dois lugares.
 - Campos que vierem vazios (cidade com CEP único não tem rua nem bairro) ficam para a pessoa digitar.
 - `404 CEP_NAO_ENCONTRADO` ou `503 SERVICO_INDISPONIVEL`: **a pessoa digita o endereço à mão**. O cadastro não depende dessa consulta e aceita o endereço digitado. Texto sugerido:
   - 404: "Não encontramos esse CEP. Confira o número ou preencha o endereço à mão."
   - 503: "Não conseguimos buscar o endereço agora. Preencha os campos à mão."
 - `422`: CEP com formato errado (marcar o campo CEP).
 
-**Nome da empresa pelo CNPJ** (`GET /cnpj/:cnpj`, público, 20 consultas por minuto por IP):
+#### Nome da empresa pelo CNPJ
+`GET /cnpj/:cnpj` (público, 20 consultas por minuto por IP). Hoje não é usado.
 - Quando o CNPJ estiver completo e válido, consultar uma vez e mostrar a `razao_social` (e o `nome_fantasia`, se houver) antes de enviar o cadastro, para a pessoa conferir. Resposta: `{ cnpj, razao_social, nome_fantasia, situacao, cidade, estado }`.
 - **Envie o CNPJ sem pontuação** (`/cnpj/12ABC34501DE35`): com a pontuação, a `/` do CNPJ quebraria o caminho da rota. Use a mesma `normalizarCnpj` da máscara.
 - A consulta é só informativa e não deve impedir o envio: quem valida é o `POST /auth/register`. Se `situacao` não for `ATIVA`, já avisar que o cadastro será recusado. Em `404`, avisar "CNPJ não encontrado na Receita Federal"; em `503`, não mostrar nada e deixar a pessoa seguir.
 
-**Novos erros do cadastro** (em produção, a API consulta o CNPJ na Receita antes de criar a conta; a razão social passa a vir de lá):
+#### Novos erros do cadastro
+Em produção, a API consulta o CNPJ na Receita antes de criar a conta; a razão social passa a vir de lá.
 
 | Erro | Quando | Texto sugerido |
 |---|---|---|
@@ -147,92 +171,130 @@ Todas as rotas abaixo ficam sob `/api/v1`, exceto quando indicado.
 | `422 CNPJ_INATIVO` (campo `cnpj`) | A situação na Receita não é `ATIVA` (ex.: `BAIXADA`, `SUSPENSA`, `INAPTA`) | Mostrar a `mensagem` da API, que já traz a situação, ou: "Este CNPJ está com situação {situação} na Receita Federal. Só empresas com CNPJ ativo podem se cadastrar." |
 | `503 SERVICO_INDISPONIVEL` | O serviço de consulta da Receita está fora do ar | "Não foi possível validar o CNPJ agora. Tente novamente em instantes." Manter o que foi digitado no formulário, para a pessoa só reenviar. |
 
-Os dois `422` vêm com `detalhes: [{ campo: "cnpj", mensagem }]`, então podem ser mostrados no próprio campo de CNPJ, como os outros erros de validação. Não há aprovação manual: com o CNPJ ativo, a conta já pode entrar.
+Os dois `422` vêm com `detalhes: [{ campo: "cnpj", mensagem }]`. **O front já mostra isso no campo de CNPJ**, porque `fieldErrors` trata todo `422` do mesmo jeito, e o `503` aparece como mensagem do formulário com o texto da API. Só falta, se quiserem, trocar pelos textos sugeridos. Não há aprovação manual: com o CNPJ ativo, a conta já pode entrar.
 
-### Minha conta (não existe no front)
-A API já tem `GET`/`PATCH /minha-conta`, `PATCH /minha-conta/senha`, `GET /pedidos/meus` e os endereços em `/minha-conta/enderecos`. Se o front criar essa tela: depois de `PATCH /minha-conta/senha` o token atual deixa de valer e o usuário precisa entrar de novo.
-
-## Área do gestor (`pages/Manager.tsx`)
-
-Todas as rotas exigem token da **equipe**.
-
-### Painel (`components/manager/OverviewSection.tsx`)
-| Card / bloco | Endpoint |
+### Minha conta (`pages/account/*`)
+| Tela | Endpoint |
 |---|---|
-| Pedidos pendentes / em separação | `GET /painel` (`pedidos_pendentes`) e `GET /metricas/resumo` (`pedidos.por_status`) |
-| Clientes ativos | `GET /painel` (`clientes_ativos`) |
-| Atenção no estoque | `GET /painel` (`estoque_baixo`) e `GET /painel/alertas-reposicao` |
-| Novos cadastros da semana | `GET /painel/contadores` (`clientes_novos_7_dias`) |
+| Meus pedidos | `GET /pedidos/meus?status=&pagina=&limite=` |
+| Detalhe do pedido | `GET /pedidos/:id`, `POST /pedidos/:id/cancelar` `{ motivo }` |
+| Repetir pedido | `GET /pedidos/:id/repetir` → `itens_para_checkout` (vai para o carrinho) |
+| Dados | `GET`/`PATCH /minha-conta` |
+| Endereços | `GET`/`POST /minha-conta/enderecos`, `PATCH`/`DELETE /minha-conta/enderecos/:id` (inclui tornar principal) |
+| Senha | `PATCH /minha-conta/senha` `{ senha_atual, nova_senha }` |
 
-**Mudar no front:** tirar o card "Faturamento". O limite de estoque baixo é o `estoque_minimo` de cada produto (não um número fixo no front).
+- **Ligado:** tudo.
+- **Mudar:** a troca de senha. Depois do `200`, **o token atual deixa de valer** (todos os emitidos antes da troca). Hoje `Password.tsx` mostra "Senha alterada." e continua na tela; a próxima requisição recebe `401` e a pessoa cai no login com "Sua sessão expirou", sem entender por quê. Melhor: depois do sucesso, chamar `logout()` e levar a `/entrar` com a mensagem "Senha alterada. Entre novamente com a senha nova."
 
-### Pedidos (`OrdersSection.tsx`, `OrderDetailModal.tsx`)
+## Área do gestor
+
+Todas as rotas exigem token da **equipe** (`RequireRole` no front). A tela Equipe só aparece para `pode_gerenciar_equipe`.
+
+### Barra lateral (`pages/manager/ManagerLayout.tsx`)
+- **Usa hoje:** `GET /painel/contadores` a cada troca de rota, para os selos de Pedidos (`pedidos_pendentes`) e Produtos (`estoque_baixo`).
+- **Mudar:** ler também `clientes_novos_7_dias` e mostrá-lo como selo de "Clientes" (a interface `Contadores` só declara os dois campos antigos).
+
+### Painel (`pages/manager/Overview.tsx`)
+| Bloco | Endpoint |
+|---|---|
+| Pedidos pendentes, estoque baixo, clientes ativos | `GET /painel` |
+| Pedidos para separar | `GET /pedidos?status=Aguardando Separação,Em Separação&limite=6` |
+| Alertas de reposição (com sugestão de compra) | `GET /painel/alertas-reposicao` |
+
+- **Ligado:** tudo, sem valores financeiros.
+- **Mudar:** incluir um card "Novos cadastros (7 dias)" com `clientes_novos_7_dias` de `GET /painel/contadores`, levando a `/gestor/clientes` com o filtro de novos.
+
+### Pedidos (`pages/manager/Orders.tsx`)
 | Ação | Endpoint |
 |---|---|
-| Lista, busca e filtro de status | `GET /pedidos?status=&busca=&pagina=` |
+| Lista, busca, status e paginação | `GET /pedidos?status=&busca=&pagina=&limite=` |
 | Detalhe com linha do tempo | `GET /pedidos/:id` (`historico`, `proximo_status`, `pode_cancelar`) |
-| Avançar status | `PUT /pedidos/:id/status` `{ status, observacao? }` |
-| Cancelar | `POST /pedidos/:id/cancelar` `{ motivo }` |
+| Avançar status (com observação opcional) | `PATCH /pedidos/:id/status` `{ status, observacao? }` |
+| Cancelar (motivo obrigatório) | `POST /pedidos/:id/cancelar` `{ motivo }` |
+| Exportar CSV | `GET /pedidos` em todas as páginas |
 
-**Mudar no front:**
-- Tirar preço unitário, subtotal e total do modal e a coluna "Total" da exportação.
-- Trocar a área de comentários por um campo de observação enviado junto com "Marcar como...", e por um motivo obrigatório no cancelamento. As observações aparecem no `historico`.
-- Tirar o "Notificar cliente".
-- O próximo passo vem pronto em `proximo_status`.
+- **Ligado:** tudo. A API aceita `PUT` e `PATCH` no status; o front usa `PATCH`.
+- **Mudar:** nada.
 
-### Produtos (`ProductsSection.tsx`)
+### Produtos (`pages/manager/Products.tsx`, `Taxonomies.tsx`)
 | Ação | Endpoint |
 |---|---|
-| Lista (inclusive inativos), busca e categoria | `GET /produtos?incluir_inativos=true&busca=&categoria=` |
-| Só estoque baixo ou zerado | `GET /painel/alertas-reposicao` (produtos ativos com estoque ≤ `estoque_minimo`) |
-| +/− no estoque | `PATCH /produtos/:id/estoque` `{ ajuste: 1 \| -1, observacao }` |
+| Lista (inclusive inativos), busca, filtros e paginação | `GET /produtos?incluir_inativos=true&...` |
+| Categorias e marcas (listar, criar, renomear, ativar, excluir) | `/categorias` e `/marcas` (`GET`, `POST`, `PATCH`, `DELETE`, com `incluir_inativos=true`) |
+| Criar e editar produto | `POST /produtos`, `PATCH /produtos/:id` |
+| Foto do produto | `POST /produtos/:id/imagem` (multipart) |
 | Ativar/desativar | `PATCH /produtos/:id` `{ ativo }` |
-| Importar CSV | `POST /produtos/importar` (multipart, campo `arquivo`) |
+| Ajustar estoque (observação obrigatória) | `PATCH /produtos/:id/estoque` |
+| Histórico de estoque | `GET /produtos/:id/movimentacoes?limite=30` |
+| Exportar CSV | `GET /produtos` em todas as páginas |
 
-**Mudar no front:**
-- O ajuste de estoque exige `observacao` (3 a 500 caracteres): enviar um texto padrão (ex.: "Ajuste pela tela de produtos") ou pedir o motivo.
-- Para a equipe, `preco` pode vir `null`.
-- A exportação pode manter o preço (só a equipe vê).
+- **Ligado:** tudo. O ajuste exige observação de 3 a 500 caracteres, como a API pede.
+- **Mudar:** nada.
 
-### Clientes (`CustomersSection.tsx`)
+### Importação (`pages/manager/Imports.tsx`)
 | Ação | Endpoint |
 |---|---|
-| Lista dos que mais compram | `GET /clientes?ordenar=mais_pedidos` |
-| Novos cadastros (últimos 7 dias) | `GET /clientes?novos_dias=7`, do mais recente para o mais antigo |
-| Busca por nome, e-mail, CNPJ ou cidade | `GET /clientes?busca=` |
-| Cidade e nº de pedidos na linha | campos `cidade` e `total_pedidos` de `GET /clientes` |
+| Enviar CSV (simulação ou carga completa) | `POST /produtos/importar?simular=&carga_completa=` (multipart) |
+| Histórico | `GET /produtos/importacoes?tipo=&pagina=&limite=` |
+| Detalhe de uma importação | `GET /produtos/importacoes/:id` |
+
+- **Ligado:** tudo. **Mudar:** nada.
+
+### Clientes (`pages/manager/Customers.tsx`)
+| Ação | Endpoint |
+|---|---|
+| Lista, busca e "só CNPJ pendente" | `GET /clientes?busca=&sem_cnpj=true&pagina=&limite=` |
 | Ativar/desativar | `PUT /clientes/:id` `{ ativo }` |
-| Detalhes | `GET /clientes/:id/detalhes` |
+| Detalhes e edição | `GET /clientes/:id/detalhes`, `PUT /clientes/:id` |
 | Senha temporária | `PUT /clientes/:id/senha` `{ senha }` |
+| Exportar CSV (sem "Grupo" nem "Receita") | `GET /clientes` em todas as páginas |
 
-**Mudar no front:**
-- Tirar o filtro e a coluna "Grupo" e a "Receita" da exportação.
-- Exibir `nome_exibicao` (razão social ou nome).
-- `total_pedidos` não conta cancelados.
-- **Novos cadastros**: mostrar o `clientes_novos_7_dias` de `GET /painel/contadores` (por exemplo, como badge do menu "Clientes", junto dos badges de pedidos e produtos que o `ManagerLayout.tsx` já busca nessa rota) e oferecer um filtro "Novos (7 dias)" que chama `GET /clientes?novos_dias=7`. O contador inclui clientes inativos. É só para a equipe consultar quando quiser: **não existe aprovação de cadastro** e nada fica bloqueado esperando revisão. `novos_dias` aceita de 1 a 365 e combina com `busca`.
-- A busca por CNPJ aceita letras (CNPJ alfanumérico), com ou sem pontuação.
+- **Ligado:** tudo, com `nome_exibicao`. A busca por CNPJ aceita letras, com ou sem pontuação.
+- **Mudar:** **novos cadastros**. Oferecer o filtro "Novos (7 dias)", que chama `GET /clientes?novos_dias=7` (do mais recente para o mais antigo; aceita de 1 a 365 e combina com `busca`), e o selo do menu e o card do painel descritos acima. O contador inclui clientes inativos. É só para a equipe consultar quando quiser: **não existe aprovação de cadastro** e nada fica bloqueado esperando revisão.
 
-### Conteúdo (`ContentSection.tsx`, `BannerEditor.tsx`, `BannerFormModal.tsx`)
+### Conteúdo (`pages/manager/Cms.tsx`)
 | Ação | Endpoint |
 |---|---|
-| Lista de banners (todos) | `GET /cms/todos` |
-| Criar banner | `POST /cms` (multipart: `titulo`, `imagem`, `link?`) |
-| Editar banner | `PATCH /cms/:id` |
-| Reordenar (setas) | `PUT /cms/ordem` `{ ids: [...] }` com todos os banners |
+| Banners (todos) | `GET /cms/todos` |
+| Criar e editar banner (com imagem) | `POST /cms`, `PATCH /cms/:id` (multipart) |
+| Ativar/desativar banner | `PATCH /cms/:id` `{ ativo }` |
+| Reordenar | `PUT /cms/ordem` `{ ids }` |
 | Excluir banner | `DELETE /cms/:id` |
-| Lista de blocos | `GET /cms/blocos` (a equipe vê também os inativos) |
-| Ligar/desligar bloco | `PATCH /cms/blocos/:chave` `{ ativo }` |
+| Blocos de conteúdo | `GET /cms/blocos`, `PUT /cms/blocos/:chave`, `DELETE /cms/blocos/:chave` |
+| Configurações (contatos, aviso do topo, meta de reposição) | `GET /configuracoes`, `PUT /configuracoes/:chave` |
 
-**Mudar no front:**
-- O banner exige uma imagem enviada (arquivo), não um blob local.
-- Os blocos da API têm `chave`, `titulo`, `conteudo` e `ativo`; o `type` do front (`Slider`, `Texto`...) não existe na API.
-- O `link` do banner aceita caminho interno (`/...`) ou URL http/https; o formulário hoje só aceita URL completa.
+- **Ligado:** tudo. **Mudar:** nada. Os blocos são editados aqui, mas a loja ainda não os mostra (ver Home).
 
-## Dados para testar a integração
-```bash
-npm run migrar
-npm run seed:catalogo
-npm run seed:dev
-npm run seed:demo
-```
-Cliente: CNPJ `11.222.333/0001-81`; equipe: `admin@mantiqueira.com`; senha `Mantiqueira@2026`. O `seed:demo` cria contatos, aviso do topo, 3 banners, 1 campanha ativa e 5 pedidos do cliente, um em cada status.
+### Campanhas (`pages/manager/Campaigns.tsx`)
+- **Usa hoje:** `GET /campanhas?situacao=`, `POST /campanhas`, `PATCH /campanhas/:id` (editar e encerrar, com `fim_em`), `DELETE /campanhas/:id`, e `GET /produtos?busca=` para escolher os produtos.
+- **Ligado:** tudo. **Mudar:** nada.
+
+### Métricas (`pages/manager/Metrics.tsx`)
+| Bloco | Endpoint |
+|---|---|
+| Indicadores e navegação | `GET /metricas/resumo?de=&ate=` |
+| Termos buscados e sem resultado | `GET /metricas/buscas` |
+| Produtos mais pedidos | `GET /metricas/produtos-mais-pedidos` |
+| Clientes sem comprar | `GET /metricas/clientes-inativos?dias=` |
+
+- **Ligado:** os quatro acima.
+- **Mudar (opcional):** a API tem outras cinco métricas que nenhuma tela usa: `/metricas/funil`, `/metricas/produtos-vistos`, `/metricas/banners-campanhas`, `/metricas/pedidos-por-dia` e `/metricas/ciclo-pedido`. Decidir quais valem uma tela.
+
+### Equipe (`pages/manager/Team.tsx`)
+- **Usa hoje:** `GET /admin/usuarios?tipo=equipe`, `POST /admin/usuarios`, `PATCH /admin/usuarios/:id`. Exige `pode_gerenciar_equipe`.
+- **Ligado:** tudo. **Mudar:** nada. (A rota antiga `GET /auth/users` foi removida; o front nunca a usou.)
+
+### Saúde do sistema (`pages/manager/SystemHealth.tsx`)
+- **Usa hoje:** `GET /saude/detalhado` (fora de `/api/v1`).
+- **Ligado:** tudo. **Mudar:** nada.
+
+## Prioridades
+
+Do que mais bloqueia ao que menos bloqueia:
+
+1. **`Idempotency-Key` no checkout.** Único risco de dados incorretos: um reenvio por falha de rede cria pedido duplicado e baixa o estoque duas vezes. É pequeno: `api.post` precisa aceitar cabeçalhos e o Checkout gera a chave.
+2. **CNPJ alfanumérico (máscara, validação e regra do login).** Quando a Receita emitir os primeiros CNPJs com letras, essas empresas **não conseguem se cadastrar nem entrar**: a máscara apaga as letras e o login as trata como e-mail. Ainda não bloqueia ninguém, porque a emissão está só começando, mas é o que mais bloqueia quando acontecer.
+3. **Logout depois de trocar a senha.** Hoje a pessoa troca a senha e, na próxima ação, é derrubada sem explicação. Não bloqueia, mas parece defeito.
+4. **Consulta de CEP e de CNPJ no cadastro.** Não bloqueia (o cadastro aceita o endereço digitado à mão), mas reduz erros de digitação, deixa a pessoa conferir a empresa antes de enviar e evita um `422` à toa. Os textos sugeridos para os erros novos podem entrar junto.
+5. **Novos cadastros no gestor** (selo do menu, card do painel e filtro em Clientes). A equipe consegue trabalhar sem, mas hoje não vê quem acabou de se cadastrar.
+6. **Telas para as outras métricas** e **blocos do CMS na loja**. A API já entrega; falta decidir se a equipe quer ver ou editar isso.
