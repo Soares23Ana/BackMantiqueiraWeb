@@ -106,7 +106,6 @@ Parâmetros `pagina` (padrão 1) e `limite` (padrão e máximo variam por rota).
 | POST | `/auth/register` | público | Cadastro de cliente |
 | POST | `/auth/login` | público | Login de cliente (CNPJ) ou equipe (e-mail) |
 | GET | `/auth/me` | logado | Dados do usuário do token |
-| GET | `/auth/users` | gestor da equipe | Lista antiga de usuários (prefira `GET /admin/usuarios`) |
 | GET | `/minha-conta` | logado | Perfil e endereços |
 | PATCH | `/minha-conta` | logado | Altera nome, e-mail e telefone |
 | PATCH | `/minha-conta/senha` | logado | Troca a senha |

@@ -240,8 +240,7 @@ describe('permissões', () => {
             ['post', '/api/v1/produtos'],
             ['patch', '/api/v1/produtos/1/estoque'],
             ['post', '/api/v1/categorias'],
-            ['post', '/api/v1/cms'],
-            ['get', '/api/v1/auth/users']
+            ['post', '/api/v1/cms']
         ];
         for (const [metodo, rota] of rotas) {
             const resposta = await request(app)[metodo](rota).set('Authorization', cliente.auth).send({});
@@ -252,7 +251,6 @@ describe('permissões', () => {
 
     test('/admin exige pode_gerenciar_equipe; visitante recebe 401', async () => {
         await request(app).get('/api/v1/admin/usuarios').set('Authorization', funcionario.auth).expect(403);
-        await request(app).get('/api/v1/auth/users').set('Authorization', funcionario.auth).expect(403);
         const gerente = await criarUsuario('equipe', { cargo: 'Gerente' });
         await request(app).post('/api/v1/admin/usuarios').set('Authorization', gerente.auth).send({}).expect(403);
         await request(app).get('/api/v1/admin/usuarios').expect(401);
@@ -479,7 +477,7 @@ describe('sessão: duração do token e troca de senha', () => {
     });
 
     test('a data da troca não aparece nas respostas', async () => {
-        const resposta = await request(app).get('/api/v1/auth/users').set('Authorization', admin.auth).expect(200);
+        const resposta = await request(app).get('/api/v1/admin/usuarios').set('Authorization', admin.auth).expect(200);
         assert.ok(resposta.body.usuarios.every((u) => !('senha_alterada_em' in u)));
     });
 });

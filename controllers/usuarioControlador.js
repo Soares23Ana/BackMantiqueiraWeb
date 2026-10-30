@@ -136,11 +136,4 @@ function obterSessao(req, res) {
     return res.status(200).json({ id, nome, email, tipo, pode_gerenciar_equipe: podeGerenciarEquipe });
 }
 
-async function listarTodos(req, res) {
-    const usuarios = await Usuario.findAll({
-        attributes: { exclude: ['senha', 'senha_alterada_em'] }
-    });
-    return res.status(200).json({ usuarios });
-}
-
-module.exports = { cadastrar, autenticar, obterSessao, listarTodos, CUSTO_BCRYPT };
+module.exports = { cadastrar, autenticar, obterSessao, CUSTO_BCRYPT };
