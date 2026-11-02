@@ -140,6 +140,7 @@ Erros: `422 VALIDACAO` (campos com prefixo `endereco.` para o endereço, ex.: `e
 - `422 CNPJ_NAO_ENCONTRADO` "CNPJ não encontrado na Receita Federal." (campo `cnpj`);
 - `422 CNPJ_INATIVO` quando a situação não é `ATIVA`, informando a situação na mensagem (ex.: `"BAIXADA"`, `"SUSPENSA"`, `"INAPTA"`);
 - `503 SERVICO_INDISPONIVEL` "Não foi possível validar o CNPJ agora. Tente novamente em instantes." quando os serviços de consulta estão fora do ar. Nada é gravado.
+- **CNPJ alfanumérico (com letras)**: se a Receita não o encontrar ou os serviços recusarem o formato (HTTP 400), o cadastro **não é bloqueado**, pois os serviços podem ainda não indexar esse formato. O cliente é gravado normalmente, sem `razao_social`, e a equipe pode revisá-lo em `GET /clientes?novos_dias=N`. Se a Receita encontrar o CNPJ alfanumérico, vale a regra normal: inativo é recusado (`422 CNPJ_INATIVO`) e ativo grava a razão social dela. CNPJ só com números segue as regras acima, sem exceção.
 
 Para mostrar o nome da empresa antes de enviar o cadastro, use `GET /cnpj/:cnpj` ([consultas externas](#16-consultas-externas)). Não há aprovação manual: com o CNPJ ativo, a conta já entra.
 

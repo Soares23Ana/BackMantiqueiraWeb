@@ -1,3 +1,4 @@
+process.env.CADASTRO_LIMITE = '100';
 const { test, before, after, beforeEach, describe, mock } = require('node:test');
 const assert = require('node:assert/strict');
 const request = require('supertest');
@@ -156,6 +157,59 @@ describe('cadastro com VALIDAR_CNPJ_RECEITA', () => {
         for (const email of ['nao@cliente.com', 'baixada@cliente.com', 'fora@cliente.com']) {
             assert.equal(await usuarioPorEmail(email), undefined);
         }
+    });
+
+    describe('CNPJ alfanumérico (exceção enquanto os serviços não o indexam)', () => {
+        const ALFA = '12.ABC.345/01DE-35';
+        const ALFA_400 = 'AB.12C.D34/EF56-02';
+        const ALFA_ATIVA = 'GH.78I.J90/KL12-36';
+        const ALFA_BAIXADA = 'MN.34O.P56/QR78-69';
+        const avisos = (t) => {
+            const logger = require('../lib/logger');
+            const aviso = t.mock.method(logger, 'warn', () => {});
+            return () => aviso.mock.calls.map((c) => c.arguments[0]);
+        };
+
+        test('não encontrado: aceita sem razão social e registra aviso', async (t) => {
+            ligar(t);
+            const mensagens = avisos(t);
+            simularServicos({ 'brasilapi.com.br': naoEncontrado, 'minhareceita.org': naoEncontrado });
+            await cadastro(ALFA, 'alfa-nao@cliente.com').expect(201);
+            assert.deepEqual(await usuarioPorEmail('alfa-nao@cliente.com'), { cnpj: '12ABC34501DE35', razao_social: null });
+            assert.ok(mensagens().some((m) => /não encontrado na Receita/.test(m)));
+        });
+
+        test('formato recusado (400): aceita sem razão social e registra aviso', async (t) => {
+            ligar(t);
+            const mensagens = avisos(t);
+            const recusa = json(400, { message: 'CNPJ inválido.' });
+            simularServicos({ 'brasilapi.com.br': recusa, 'minhareceita.org': recusa });
+            await cadastro(ALFA_400, 'alfa-400@cliente.com').expect(201);
+            assert.deepEqual(await usuarioPorEmail('alfa-400@cliente.com'), { cnpj: 'AB12CD34EF5602', razao_social: null });
+            assert.ok(mensagens().some((m) => /formato recusado/.test(m)));
+        });
+
+        test('encontrado e INATIVO: recusa', async (t) => {
+            ligar(t);
+            simularServicos({ 'brasilapi.com.br': empresa({ descricao_situacao_cadastral: 'BAIXADA' }) });
+            const resposta = await cadastro(ALFA_BAIXADA, 'alfa-baixada@cliente.com').expect(422);
+            assert.equal(resposta.body.codigo, 'CNPJ_INATIVO');
+            assert.equal(await usuarioPorEmail('alfa-baixada@cliente.com'), undefined);
+        });
+
+        test('encontrado e ATIVO: grava a razão social da Receita', async (t) => {
+            ligar(t);
+            simularServicos({ 'brasilapi.com.br': empresa({ cnpj: 'GH78IJ90KL1236', razao_social: 'EMPRESA ALFA LTDA' }) });
+            await cadastro(ALFA_ATIVA, 'alfa-ativa@cliente.com').expect(201);
+            assert.deepEqual(await usuarioPorEmail('alfa-ativa@cliente.com'), { cnpj: 'GH78IJ90KL1236', razao_social: 'EMPRESA ALFA LTDA' });
+        });
+
+        test('numérico não encontrado continua recusado (422)', async (t) => {
+            ligar(t);
+            simularServicos({ 'brasilapi.com.br': naoEncontrado, 'minhareceita.org': naoEncontrado });
+            const resposta = await cadastro('45.723.174/0001-10', 'num-nao@cliente.com').expect(422);
+            assert.equal(resposta.body.codigo, 'CNPJ_NAO_ENCONTRADO');
+        });
     });
 
     test('a razão social enviada pelo cliente continua recusada (só a da Receita é gravada)', async (t) => {

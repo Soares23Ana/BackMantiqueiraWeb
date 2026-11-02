@@ -11,6 +11,9 @@ const VALIDADE_ENCONTRADO_MS = 24 * 60 * 60 * 1000;
 const VALIDADE_NAO_ENCONTRADO_MS = 10 * 60 * 1000;
 const NAO_ENCONTRADO = Symbol('nao-encontrado');
 
+// Nenhum serviço devolveu dados e pelo menos um recusou o formato do CNPJ (HTTP 400).
+class FormatoRecusado extends ServicoIndisponivel {}
+
 const cache = criarCache();
 
 const texto = (valor) => (typeof valor === 'string' ? valor.trim() : '');
@@ -22,6 +25,7 @@ function interpretar(nome) {
         if (status === 404) return NAO_ENCONTRADO;
         // 400 com um CNPJ que a API considera válido (ex.: alfanumérico ainda não aceito pelo serviço):
         // não dá para afirmar que não existe; tenta o próximo.
+        if (status === 400) throw new FormatoRecusado(`${nome}: HTTP ${status}`);
         if (status !== 200 || !corpo || !corpo.razao_social) throw new ServicoIndisponivel(`${nome}: HTTP ${status}`);
         return corpo;
     };
@@ -41,6 +45,7 @@ async function buscarNaReceita(valor) {
     let resultado = cache.obter(cnpj);
     if (resultado === undefined) {
         let algumDisseNaoEncontrado = false;
+        let algumRecusouFormato = false;
         for (const servico of SERVICOS) {
             try {
                 const dados = servico.interpretar(await buscarJson(servico.url(cnpj), { tempoMaximoMs: TEMPO_MAXIMO_MS }));
@@ -59,6 +64,7 @@ async function buscarNaReceita(valor) {
                 break;
             } catch (erro) {
                 if (!(erro instanceof ServicoIndisponivel)) throw erro;
+                if (erro instanceof FormatoRecusado) algumRecusouFormato = true;
                 logger.warn('Serviço de CNPJ falhou; tentando o próximo.', { servico: servico.nome, erro: erro.message });
             }
         }
@@ -67,6 +73,8 @@ async function buscarNaReceita(valor) {
         } else if (algumDisseNaoEncontrado) {
             resultado = NAO_ENCONTRADO;
             cache.guardar(cnpj, resultado, VALIDADE_NAO_ENCONTRADO_MS);
+        } else if (algumRecusouFormato) {
+            throw new FormatoRecusado('Nenhum serviço de CNPJ aceitou o formato.');
         } else {
             throw new ServicoIndisponivel('Nenhum serviço de CNPJ respondeu.');
         }
@@ -92,19 +100,35 @@ async function consultarCnpj(valor) {
     return dados;
 }
 
+const temLetras = (cnpj) => /[A-Z]/.test(normalizarCnpj(cnpj));
+
 /**
  * Cadastro com VALIDAR_CNPJ_RECEITA=true: exige CNPJ existente e ATIVO e devolve a razão social da Receita.
  * Erros: 422 CNPJ_NAO_ENCONTRADO, 422 CNPJ_INATIVO, 503 SERVICO_INDISPONIVEL.
+ * Exceção temporária: CNPJ alfanumérico não encontrado ou com formato recusado (HTTP 400) não bloqueia,
+ * porque os serviços podem ainda não indexá-lo; devolve { razaoSocial: null } e registra aviso no log.
+ * Se a Receita encontrar o CNPJ alfanumérico, vale a regra normal (inativo bloqueia).
  */
 async function validarCnpjParaCadastro(cnpj) {
+    const alfanumerico = temLetras(cnpj);
     let dados;
     try {
         dados = await buscarNaReceita(cnpj);
     } catch (erro) {
+        if (alfanumerico && erro instanceof FormatoRecusado) {
+            logger.warn('CNPJ alfanumérico: formato recusado pelos serviços de consulta; cadastro aceito sem validação da Receita.',
+                { cnpj: normalizarCnpj(cnpj), motivo: erro.message });
+            return { razaoSocial: null };
+        }
         if (!(erro instanceof ServicoIndisponivel)) throw erro;
         throw new ErroApi(503, 'SERVICO_INDISPONIVEL', 'Não foi possível validar o CNPJ agora. Tente novamente em instantes.');
     }
     if (!dados) {
+        if (alfanumerico) {
+            logger.warn('CNPJ alfanumérico não encontrado na Receita; cadastro aceito para revisão da equipe.',
+                { cnpj: normalizarCnpj(cnpj), motivo: 'não encontrado' });
+            return { razaoSocial: null };
+        }
         const mensagem = 'CNPJ não encontrado na Receita Federal.';
         throw new ErroApi(422, 'CNPJ_NAO_ENCONTRADO', mensagem, [{ campo: 'cnpj', mensagem }]);
     }
