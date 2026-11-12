@@ -46,7 +46,7 @@ async function semearConfiguracoes(log) {
 async function semearBanners(log) {
     const { Banner } = require('../models');
     for (const dados of BANNERS) {
-        const [, criado] = await Banner.findOrCreate({ where: { titulo: dados.titulo }, defaults: { ...dados, ativo: true } });
+        const [, criado] = await Banner.findOrCreate({ where: { titulo: dados.titulo }, defaults: { ...dados, tipo_destino: dados.link ? 'link' : 'nenhum', ativo: true } });
         log(`${criado ? 'criado   ' : 'existente'} banner   ${dados.titulo}`);
     }
 }
@@ -58,7 +58,7 @@ async function semearCampanha(log) {
     const fim = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
     const [campanha, criada] = await Campanha.findOrCreate({
         where: { titulo: CAMPANHA.titulo },
-        defaults: { selo: CAMPANHA.selo, inicio_em: inicio, fim_em: fim }
+        defaults: { slug: require('../lib/texto').gerarSlug(CAMPANHA.titulo), selo: CAMPANHA.selo, inicio_em: inicio, fim_em: fim }
     });
     if (!criada) {
         await campanha.update({ selo: CAMPANHA.selo, inicio_em: inicio, fim_em: fim });

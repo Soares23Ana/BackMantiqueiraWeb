@@ -310,3 +310,5 @@ A API consulta serviços públicos com o `fetch` nativo do Node (sem dependênci
 ### Pop-up e destinos
 - O pop-up é o bloco `popup` de `blocos_cms`; a coluna JSON `dados` guarda imagem, destino e janela de exibição (migration 014). A chave é reservada: o público só lê pelo `GET /cms/popup`.
 - `servicos/destinos.js` é o mecanismo de destino (`tipo_destino`, `id_destino`, `link`) compartilhado por banners e pop-up: valida se o alvo existe e resolve o link interno no formato das rotas do site.
+- Banners guardam `tipo_destino` e `id_destino` (migration 015); `servicos/destinos.js` resolve o link em lote para a lista inteira. O alvo não tem chave estrangeira (um destino excluído só deixa o `link` resolvido `null`).
+- Campanhas têm `slug` único (migration 015), gerado do título na criação. `GET /produtos?campanha={slug}` usa uma subconsulta com o período da campanha, então só campanhas ativas listam produtos.

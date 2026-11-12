@@ -64,6 +64,15 @@ function listaDoParametro(valor) {
     return valor.split(',').map((item) => item.trim()).filter(Boolean).slice(0, 20);
 }
 
+// ?campanha={slug}: um único slug.
+function lerCampanha(valor) {
+    if (valor === undefined || valor === '') return null;
+    if (typeof valor !== 'string' || valor.length > 140) {
+        throw new ErroApi(400, 'FILTRO_INVALIDO', 'campanha deve ser o slug de uma campanha.');
+    }
+    return valor.trim();
+}
+
 // "q" é apelido de "busca"; se vierem os dois, vale "busca".
 function lerBusca(query) {
     const valor = query.busca !== undefined ? query.busca : query.q;
@@ -91,6 +100,7 @@ function lerFiltros(query, usuario) {
         termos,
         categorias: listaDoParametro(query.categoria),
         marcas: listaDoParametro(query.marca),
+        campanha: lerCampanha(query.campanha),
         disponibilidade: disponibilidadeFiltro,
         ordenar,
         incluirInativos
@@ -138,6 +148,13 @@ function montarWhere(filtros, ignorar = null) {
     }
     if (filtros.marcas.length && ignorar !== 'marca') {
         condicoes.push(condicaoTaxonomia(filtros.marcas, 'id_marca', 'marca'));
+    }
+    if (filtros.campanha && ignorar !== 'campanha') {
+        // Só campanhas ativas (dentro do período); slug desconhecido ou encerrado não lista nada.
+        const agora = sequelize.escape(new Date());
+        condicoes.push(sequelize.literal(`${COL('id_produto')} IN (
+            SELECT cp.id_produto FROM campanhas_produtos cp JOIN campanhas c ON c.id_campanha = cp.id_campanha
+            WHERE c.slug = ${sequelize.escape(filtros.campanha)} AND c.inicio_em <= ${agora} AND c.fim_em > ${agora})`));
     }
     if (filtros.disponibilidade && ignorar !== 'disponibilidade') {
         condicoes.push(sequelize.literal(CONDICOES_DISPONIBILIDADE[filtros.disponibilidade]));
@@ -209,7 +226,7 @@ async function sugestoes(req, res) {
         return res.status(200).json({ produtos: [], categorias: [], marcas: [] });
     }
     const padrao = `%${escaparLike(busca)}%`;
-    const filtros = { termos, categorias: [], marcas: [], disponibilidade: null, incluirInativos: false };
+    const filtros = { termos, categorias: [], marcas: [], campanha: null, disponibilidade: null, incluirInativos: false };
 
     const [produtos, categorias, marcas] = await Promise.all([
         Produto.findAll({

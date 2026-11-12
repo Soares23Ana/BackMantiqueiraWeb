@@ -11,6 +11,12 @@ const Campanha = sequelize.define('Campanha', {
         type: DataTypes.STRING(120),
         allowNull: false
     },
+    // Identificador na URL do site (/produtos?campanha={slug}); gerado do título na criação e único.
+    slug: {
+        type: DataTypes.STRING(140),
+        allowNull: false,
+        unique: true
+    },
     // Rótulo exibido nos produtos (ex.: "Leve 8 pague 6"). Não aplica desconto.
     selo: {
         type: DataTypes.STRING(40),

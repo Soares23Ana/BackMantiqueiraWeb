@@ -3,6 +3,7 @@ const sequelize = require('../db/conn');
 const { Campanha, CampanhaProduto, Produto, Categoria, Marca } = require('../models');
 const { ErroApi } = require('../lib/erros');
 const { lerDataHora } = require('../lib/datas');
+const { gerarSlug } = require('../lib/texto');
 const { apresentarProduto } = require('./produtoControlador');
 const { lerLimiteFaixa } = require('../servicos/estoque');
 
@@ -22,11 +23,21 @@ function condicaoSituacao(valor, agora = new Date()) {
     return { inicio_em: { [Op.lte]: agora }, fim_em: { [Op.gt]: agora } };
 }
 
+// Slug único gerado do título ("Semana da Higiene" => "semana-da-higiene"; repetido vira "-2", "-3"...).
+async function gerarSlugUnico(titulo, transacao) {
+    const base = gerarSlug(titulo).slice(0, 130) || 'campanha';
+    for (let n = 1; ; n += 1) {
+        const slug = n === 1 ? base : `${base}-${n}`;
+        if (!(await Campanha.findOne({ where: { slug }, attributes: ['id_campanha'], transaction: transacao }))) return slug;
+    }
+}
+
 function apresentarParaEquipe(campanha) {
     const dados = campanha.toJSON();
     return {
         id_campanha: dados.id_campanha,
         titulo: dados.titulo,
+        slug: dados.slug,
         selo: dados.selo,
         inicio_em: dados.inicio_em,
         fim_em: dados.fim_em,
@@ -128,6 +139,7 @@ async function listarAtivas(req, res) {
         campanhas: campanhas.map((campanha) => ({
             id_campanha: campanha.id_campanha,
             titulo: campanha.titulo,
+            slug: campanha.slug,
             selo: campanha.selo,
             inicio_em: campanha.inicio_em,
             fim_em: campanha.fim_em,
@@ -167,7 +179,7 @@ async function criar(req, res) {
     }
     const id = await sequelize.transaction(async (transacao) => {
         await conferirProdutos(idsProdutos, transacao);
-        const campanha = await Campanha.create({ ...dados, id_usuario: req.usuario.id }, { transaction: transacao });
+        const campanha = await Campanha.create({ ...dados, slug: await gerarSlugUnico(dados.titulo, transacao), id_usuario: req.usuario.id }, { transaction: transacao });
         await CampanhaProduto.bulkCreate(
             idsProdutos.map((idProduto) => ({ id_campanha: campanha.id_campanha, id_produto: idProduto })),
             { transaction: transacao }

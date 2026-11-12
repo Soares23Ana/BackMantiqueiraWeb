@@ -1,5 +1,5 @@
 const { Op } = require('sequelize');
-const { Produto, Categoria, Marca } = require('../models');
+const { Produto, Categoria, Marca, Campanha } = require('../models');
 const { ehCaminhoOuUrlSegura } = require('../lib/texto');
 
 /**
@@ -7,12 +7,13 @@ const { ehCaminhoOuUrlSegura } = require('../lib/texto');
  * Gravado como tipo_destino + id_destino (+ link, só no tipo "link") e devolvido como
  * { tipo, id, link }, com o link interno já no formato das rotas do site.
  */
-const TIPOS_DESTINO = ['nenhum', 'produto', 'categoria', 'marca', 'link'];
+const TIPOS_DESTINO = ['nenhum', 'produto', 'categoria', 'marca', 'campanha', 'link'];
 
 // Para cada tipo com id: como achar o registro e como montar o link a partir dele.
 const REFERENCIAS = {
     produto: { buscar: (ids) => Produto.findAll({ where: { id_produto: { [Op.in]: ids } }, attributes: ['id_produto'] }), chave: 'id_produto', rotulo: 'Produto', link: (r) => `/produto/${r.id_produto}` },
     categoria: { buscar: (ids) => Categoria.findAll({ where: { id_categoria: { [Op.in]: ids } }, attributes: ['id_categoria', 'slug'] }), chave: 'id_categoria', rotulo: 'Categoria', link: (r) => `/categoria/${r.slug}` },
+    campanha: { buscar: (ids) => Campanha.findAll({ where: { id_campanha: { [Op.in]: ids } }, attributes: ['id_campanha', 'slug'] }), chave: 'id_campanha', rotulo: 'Campanha', link: (r) => `/produtos?campanha=${r.slug}` },
     marca: { buscar: (ids) => Marca.findAll({ where: { id_marca: { [Op.in]: ids } }, attributes: ['id_marca', 'slug'] }), chave: 'id_marca', rotulo: 'Marca', link: (r) => `/marca/${r.slug}` }
 };
 

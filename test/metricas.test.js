@@ -162,7 +162,7 @@ describe('métricas de funil, vistos, cliques, pedidos por dia e ciclo (equipe)'
     before(async () => {
         const { Banner, Campanha, Pedido } = require('../models');
         banner = await Banner.create({ titulo: 'Banner do teste', imagem_url: '/img/banner-1.webp', ordem: 1 });
-        campanha = await Campanha.create({ titulo: 'Campanha do teste', inicio_em: `${D[1]} 00:00:00`, fim_em: `${D[30]} 23:59:59` });
+        campanha = await Campanha.create({ titulo: 'Campanha do teste', slug: 'campanha-do-teste', inicio_em: `${D[1]} 00:00:00`, fim_em: `${D[30]} 23:59:59` });
         const u = cliente.usuario.id_usuario;
         const dia = `${D[2]} 10:00:00`;
 

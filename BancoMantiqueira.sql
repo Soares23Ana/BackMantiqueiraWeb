@@ -25,6 +25,7 @@ CREATE TABLE `blocos_cms` (
 CREATE TABLE `campanhas` (
   `id_campanha` int NOT NULL AUTO_INCREMENT,
   `titulo` varchar(120) NOT NULL,
+  `slug` varchar(140) NOT NULL,
   `selo` varchar(40) DEFAULT NULL,
   `inicio_em` datetime NOT NULL,
   `fim_em` datetime NOT NULL,
@@ -32,6 +33,7 @@ CREATE TABLE `campanhas` (
   `criado_em` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `atualizado_em` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id_campanha`),
+  UNIQUE KEY `uk_campanhas_slug` (`slug`),
   KEY `idx_campanhas_periodo` (`inicio_em`,`fim_em`),
   KEY `fk_campanhas_usuario` (`id_usuario`),
   CONSTRAINT `fk_campanhas_usuario` FOREIGN KEY (`id_usuario`) REFERENCES `usuarios` (`id_usuario`) ON DELETE SET NULL,
@@ -74,6 +76,8 @@ CREATE TABLE `conteudo_cms` (
   `id_banner` int NOT NULL AUTO_INCREMENT,
   `titulo` varchar(150) NOT NULL,
   `link` varchar(2048) DEFAULT NULL,
+  `tipo_destino` enum('nenhum','produto','categoria','marca','campanha','link') NOT NULL DEFAULT 'nenhum',
+  `id_destino` int DEFAULT NULL,
   `imagem_url` varchar(2048) NOT NULL,
   `ordem` int NOT NULL DEFAULT '0',
   `ativo` tinyint(1) NOT NULL DEFAULT '1',
@@ -315,4 +319,5 @@ INSERT INTO schema_migrations (versao, nome, checksum) VALUES
 ('011', 'idempotencia_pedidos', '14d036b1423cd701d659bf5829f194403767a23d8494e27c4c14618cf8d11852'),
 ('012', 'senha_alterada_em', 'eb3b1c6617b4f579775cbef86417acbecd6c01b44d29b897a94d1a9d04dc9a15'),
 ('013', 'cnpj_alfanumerico', 'aa76bf87806aa13ab184fa5f02825f6b870a290980f784b20d482476fcaef128'),
-('014', 'popup_cms', 'f2477a282641c24ee184c0df42066b88efdc1d734e32ab968956ad0187842a6b');
+('014', 'popup_cms', 'f2477a282641c24ee184c0df42066b88efdc1d734e32ab968956ad0187842a6b'),
+('015', 'banner_destino_campanha_slug', '78a93b3760453b651e364281c07a74180f4b23181d7db5f409c9f0720db0e323');

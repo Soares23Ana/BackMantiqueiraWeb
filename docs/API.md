@@ -235,6 +235,7 @@ Visitantes e clientes **nunca** recebem a quantidade exata em estoque, em nenhum
 |---|---|
 | `busca` (ou `q`) | Termos separados por espaço; **todos** precisam aparecer em nome, SKU, descrição, marca ou categoria. Ignora acentos e maiúsculas (`locao` encontra "Loção"). Até 100 caracteres. `q` é apelido de `busca`; se vierem os dois, vale `busca`. |
 | `categoria`, `marca` | Slug ou id; vários separados por vírgula (`marca=bic,risque`) |
+| `campanha` | Slug de uma campanha **ativa** (dentro do período): lista só os produtos dela; slug desconhecido ou campanha encerrada/agendada não lista nada |
 | `disponibilidade` | `disponivel`, `ultimas_unidades`, `indisponivel` ou `em_estoque` (as duas primeiras) |
 | `ordenar` | `relevancia` (padrão com busca), `nome` (padrão sem busca), `nome_desc`, `recentes`; equipe também `estoque`, `estoque_desc` |
 | `pagina`, `limite` | Padrão 24, máximo 100 |
@@ -691,9 +692,9 @@ Todas: **equipe**. "Estoque baixo" = produto ativo com estoque menor ou igual ao
 | PUT | `/cms/ordem` | equipe | Reordena |
 | DELETE | `/cms/:id` | equipe | Exclui banner e imagem |
 
-- `GET /cms`: banners no ar (ativos e dentro da janela `inicio_em`/`fim_em`), na `ordem` definida. `{ "banners": [{ "id_banner": 1, "titulo": "Promo", "link": "/promocoes", "imagem_url": "/arquivos/uploads/<uuid>.png", "ordem": 1 }] }`.
-- `GET /cms/todos`: objetos completos (`ativo`, `inicio_em`, `fim_em`, `criado_em`, `atualizado_em`) + `situacao`: `no_ar`, `agendado`, `expirado` ou `inativo`.
-- `POST /cms` (multipart): `titulo` e `imagem` (JPEG, PNG, WEBP ou GIF; até 5 MB) obrigatórios; sem `ordem`, o banner vai para o fim da fila. Opcionais `link` (caminho interno ou URL http/https), `ordem`, `ativo`, `inicio_em`, `fim_em`. Datas sem fuso são horário de Brasília (`2026-11-01T08:00`). `201`: `{ "mensagem": "Banner salvo com sucesso.", "banner": { ... } }`.
+- `GET /cms`: banners no ar (ativos e dentro da janela `inicio_em`/`fim_em`), na `ordem` definida. `{ "banners": [{ "id_banner": 1, "titulo": "Promo", "link": "/promocoes", "imagem_url": "/arquivos/uploads/<uuid>.png", "ordem": 1, "destino": { "tipo": "link", "id": null, "link": "/promocoes" } }] }`.
+- `GET /cms/todos`: objetos completos (`tipo_destino`, `id_destino`, `ativo`, `inicio_em`, `fim_em`, `criado_em`, `atualizado_em`) + `destino` + `situacao`: `no_ar`, `agendado`, `expirado` ou `inativo`.
+- `POST /cms` (multipart): `titulo` e `imagem` (JPEG, PNG, WEBP ou GIF; até 5 MB) obrigatórios; sem `ordem`, o banner vai para o fim da fila. Opcionais `tipo_destino`, `id_destino`, `link` ([destino do banner](#destino-do-banner-e-do-pop-up); só `link` informado vale como tipo `link`), `ordem`, `ativo`, `inicio_em`, `fim_em`. Datas sem fuso são horário de Brasília (`2026-11-01T08:00`). `201`: `{ "mensagem": "Banner salvo com sucesso.", "banner": { ... } }`.
 - `PATCH /cms/:id`: os mesmos campos, todos opcionais; com nova `imagem`, a anterior é apagada; `{ "ativo": false }` desativa; `null` em `inicio_em`/`fim_em` remove a janela.
 - `PUT /cms/ordem`: `{ "ids": [3, 1, 2] }` com **todos** os banners; devolve a lista completa reordenada.
 - Erros: `422 VALIDACAO` (ex.: `fim_em` antes de `inicio_em`), `404`.
@@ -739,7 +740,7 @@ O pop-up do site é o bloco de conteúdo de chave reservada `popup`, editado pel
 Fora da janela de datas, ou com `ativo: false`, ou sem pop-up salvo: `{ "popup": null }`. Erros do `PUT`: `422 VALIDACAO` (título ausente, destino inexistente, `fim_em` antes de `inicio_em`, campo não permitido).
 
 ### Destino do banner e do pop-up
-`tipo_destino`: `nenhum`, `produto`, `categoria`, `marca` ou `link`. `id_destino` é obrigatório (e precisa existir) nos tipos `produto`, `categoria` e `marca`; `link` só vale no tipo `link` (caminho interno ou URL http/https). A resposta traz `"destino": { "tipo", "id", "link" }` com o link interno já resolvido: `produto` → `/produto/{id}`, `categoria` → `/categoria/{slug}`, `marca` → `/marca/{slug}`, `link` → o texto digitado; `nenhum` → `link: null`.
+`tipo_destino`: `nenhum`, `produto`, `categoria`, `marca`, `campanha` ou `link`. `id_destino` é obrigatório (e precisa existir) nos tipos `produto`, `categoria`, `marca` e `campanha`; `link` só vale no tipo `link` (caminho interno ou URL http/https). A resposta traz `"destino": { "tipo", "id", "link" }` com o link interno já resolvido: `produto` → `/produto/{id}`, `categoria` → `/categoria/{slug}`, `marca` → `/marca/{slug}`, `campanha` → `/produtos?campanha={slug}`, `link` → o texto digitado; `nenhum` → `link: null`. Se o alvo for excluído depois, o `link` resolvido vem `null`. Os banners que já tinham `link` passaram para o tipo `link`. O clique segue registrado pelo evento `banner_clique` (`POST /eventos`). `422 VALIDACAO` para tipo desconhecido, `id_destino` ausente ou inexistente, e `link` fora do tipo `link`.
 
 ---
 
@@ -855,6 +856,7 @@ Os produtos vêm no mesmo formato da vitrine (`GET /produtos`), com `faixa_estoq
     {
       "id_campanha": 1,
       "titulo": "Semana da Higiene",
+      "slug": "semana-da-higiene",
       "selo": "Leve 8 pague 6",
       "inicio_em": "2026-10-25T03:00:00.000Z",
       "fim_em": "2026-11-01T03:00:00.000Z",
@@ -879,7 +881,7 @@ Para mostrar o selo nos cards da vitrine, cruze os `id_produto` desta resposta c
 {
   "mensagem": "Campanha criada.",
   "campanha": {
-    "id_campanha": 1, "titulo": "Semana da Higiene", "selo": "Leve 8 pague 6",
+    "id_campanha": 1, "titulo": "Semana da Higiene", "slug": "semana-da-higiene", "selo": "Leve 8 pague 6",
     "inicio_em": "2026-11-01T03:00:00.000Z", "fim_em": "2026-11-08T03:00:00.000Z", "situacao": "agendada",
     "produtos": [{ "id_produto": 15, "sku": "SKU-115", "nome": "...", "imagem_url": "/img/colgate-plax.webp", "ativo": true }],
     "total_produtos": 3, "criado_em": "...", "atualizado_em": "..."
@@ -887,6 +889,8 @@ Para mostrar o selo nos cards da vitrine, cruze os `id_produto` desta resposta c
 }
 ```
 - Erros: `422 VALIDACAO` (todos os campos em `detalhes`; produtos inexistentes são listados na mensagem).
+
+O `slug` é gerado do título na criação (único: título repetido ganha `-2`, `-3`...) e não muda quando o título é editado. Ele vem também em `GET /campanhas/ativas`.
 
 ### PATCH /campanhas/:id (equipe)
 Qualquer subconjunto dos campos do `POST`. `produtos`, quando enviado, **substitui a lista inteira**. Para encerrar antes do previsto, envie `fim_em` com a data/hora atual. `200`: `{ "mensagem": "Campanha atualizada.", "campanha": { ... } }`.

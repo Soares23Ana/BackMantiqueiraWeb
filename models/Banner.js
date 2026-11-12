@@ -15,6 +15,16 @@ const Banner = sequelize.define('Banner', {
         type: DataTypes.STRING(2048),
         allowNull: true
     },
+    // Para onde o clique leva: nenhum, produto, categoria, marca, campanha ou link (o texto de "link").
+    tipo_destino: {
+        type: DataTypes.ENUM('nenhum', 'produto', 'categoria', 'marca', 'campanha', 'link'),
+        allowNull: false,
+        defaultValue: 'nenhum'
+    },
+    id_destino: {
+        type: DataTypes.INTEGER,
+        allowNull: true
+    },
     imagem_url: {
         type: DataTypes.STRING(2048),
         allowNull: false

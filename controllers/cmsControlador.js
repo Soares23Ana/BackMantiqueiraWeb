@@ -6,7 +6,7 @@ const { Banner, BlocoCms } = require('../models');
 const logger = require('../lib/logger');
 const { ErroApi } = require('../lib/erros');
 const { ehEquipe } = require('../lib/perfis');
-const { ehCaminhoOuUrlSegura, gerarSlug } = require('../lib/texto');
+const { gerarSlug } = require('../lib/texto');
 const { lerDataHora } = require('../lib/datas');
 const { validarDestino, resolverDestinos } = require('../servicos/destinos');
 
@@ -32,10 +32,11 @@ async function removerUploadDoBanner(imagemUrl) {
 }
 
 // Campos do banner vindos de JSON ou multipart (no multipart tudo chega como texto).
-function validarBanner(corpo, { parcial }) {
+// O destino (tipo_destino, id_destino, link) é validado por servicos/destinos.js; só "link" vale como tipo "link".
+async function validarBanner(corpo, { parcial, atual = null }) {
     const erros = [];
     const dados = {};
-    const permitidos = ['titulo', 'link', 'ordem', 'ativo', 'inicio_em', 'fim_em'];
+    const permitidos = ['titulo', 'link', 'tipo_destino', 'id_destino', 'ordem', 'ativo', 'inicio_em', 'fim_em'];
     for (const campo of Object.keys(corpo)) {
         if (!permitidos.includes(campo)) erros.push({ campo, mensagem: `Campo não permitido: ${campo}.` });
     }
@@ -44,13 +45,8 @@ function validarBanner(corpo, { parcial }) {
         if (!titulo || titulo.length > 150) erros.push({ campo: 'titulo', mensagem: 'O título é obrigatório (até 150 caracteres).' });
         dados.titulo = titulo;
     }
-    if (corpo.link !== undefined) {
-        const link = typeof corpo.link === 'string' ? corpo.link.trim() : '';
-        if (link && (link.length > 2048 || !ehCaminhoOuUrlSegura(link))) {
-            erros.push({ campo: 'link', mensagem: 'O link deve ser uma URL HTTP/HTTPS ou um caminho interno.' });
-        }
-        dados.link = link || null;
-    }
+    const destino = await validarDestino(corpo, erros, { atual });
+    if (destino) Object.assign(dados, destino);
     if (corpo.ordem !== undefined) {
         const ordem = Number(corpo.ordem);
         if (!Number.isSafeInteger(ordem) || ordem < 0 || ordem > 100000) erros.push({ campo: 'ordem', mensagem: 'A ordem deve ser um inteiro maior ou igual a zero.' });
@@ -75,7 +71,11 @@ function situacao(banner, agora = new Date()) {
     return 'no_ar';
 }
 
-const apresentar = (banner) => ({ ...banner.toJSON(), situacao: situacao(banner) });
+// O destino é resolvido em lote (uma consulta por tipo) para a lista inteira.
+async function apresentarBanners(banners) {
+    const destinos = await resolverDestinos(banners);
+    return banners.map((banner, i) => ({ ...banner.toJSON(), situacao: situacao(banner), destino: destinos[i] }));
+}
 
 // GET /cms (público): banners no ar, na ordem definida.
 async function listarBanners(req, res) {
@@ -88,21 +88,27 @@ async function listarBanners(req, res) {
                 { [Op.or]: [{ fim_em: null }, { fim_em: { [Op.gt]: agora } }] }
             ]
         },
-        attributes: ['id_banner', 'titulo', 'link', 'imagem_url', 'ordem'],
+        attributes: ['id_banner', 'titulo', 'link', 'tipo_destino', 'id_destino', 'imagem_url', 'ordem'],
         order: [['ordem', 'ASC'], ['id_banner', 'DESC']]
     });
-    return res.status(200).json({ banners });
+    const destinos = await resolverDestinos(banners);
+    return res.status(200).json({
+        banners: banners.map((banner, i) => {
+            const { tipo_destino: _tipo, id_destino: _id, ...dados } = banner.toJSON();
+            return { ...dados, destino: destinos[i] };
+        })
+    });
 }
 
 // GET /cms/todos (equipe): todos os banners, com a situação de cada um.
 async function listarTodosBanners(req, res) {
     const banners = await Banner.findAll({ order: [['ordem', 'ASC'], ['id_banner', 'DESC']] });
-    return res.status(200).json({ banners: banners.map(apresentar) });
+    return res.status(200).json({ banners: await apresentarBanners(banners) });
 }
 
 // POST /cms (equipe, multipart): titulo, imagem e opcionalmente link, ordem, ativo, inicio_em, fim_em.
 async function salvarBanner(req, res) {
-    const { dados, erros } = validarBanner(req.body || {}, { parcial: false });
+    const { dados, erros } = await validarBanner(req.body || {}, { parcial: false });
     if (!req.file) erros.push({ campo: 'imagem', mensagem: 'O arquivo de imagem é obrigatório.' });
     if (dados.inicio_em && dados.fim_em && dados.fim_em <= dados.inicio_em) {
         erros.push({ campo: 'fim_em', mensagem: 'O fim da exibição deve ser depois do início.' });
@@ -115,7 +121,7 @@ async function salvarBanner(req, res) {
         // Sem ordem informada, o banner novo vai para o fim da fila.
         const ordem = dados.ordem ?? ((await Banner.max('ordem')) || 0) + 1;
         const banner = await Banner.create({ ...dados, ordem, imagem_url: `/arquivos/uploads/${req.file.filename}` });
-        return res.status(201).json({ mensagem: 'Banner salvo com sucesso.', banner: apresentar(banner) });
+        return res.status(201).json({ mensagem: 'Banner salvo com sucesso.', banner: (await apresentarBanners([banner]))[0] });
     } catch (erro) {
         await removerArquivo(req.file.path);
         throw erro;
@@ -129,7 +135,7 @@ async function atualizarBanner(req, res) {
         await removerArquivo(req.file && req.file.path);
         throw new ErroApi(404, 'NAO_ENCONTRADO', 'Banner não encontrado.');
     }
-    const { dados, erros } = validarBanner(req.body || {}, { parcial: true });
+    const { dados, erros } = await validarBanner(req.body || {}, { parcial: true, atual: banner });
     const inicio = dados.inicio_em !== undefined ? dados.inicio_em : banner.inicio_em;
     const fim = dados.fim_em !== undefined ? dados.fim_em : banner.fim_em;
     if (inicio && fim && fim <= inicio) {
@@ -151,7 +157,7 @@ async function atualizarBanner(req, res) {
         throw erro;
     }
     if (req.file) await removerUploadDoBanner(imagemAnterior);
-    return res.status(200).json({ mensagem: 'Banner atualizado.', banner: apresentar(banner) });
+    return res.status(200).json({ mensagem: 'Banner atualizado.', banner: (await apresentarBanners([banner]))[0] });
 }
 
 // DELETE /cms/:id (equipe): exclui o banner e a imagem enviada.
