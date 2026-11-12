@@ -582,7 +582,8 @@ O estoque de todos os itens volta na mesma transação, com movimentação do ti
 | Método | Rota | Perfil | Descrição |
 |---|---|---|---|
 | GET | `/clientes` | equipe | Lista com busca, ordenação e paginação |
-| GET | `/clientes/:id/detalhes` | equipe | Dados, endereços, histórico e produtos mais pedidos |
+| GET | `/clientes/:id/detalhes` | equipe | Dados, endereços, histórico, produtos mais pedidos, carrinho atual e último evento |
+| GET | `/clientes/:id/historico` | equipe | Linha do tempo do cliente (cadastro, pedidos, carrinho, acessos e notas) |
 | PUT | `/clientes/:id` | equipe | Atualiza dados operacionais |
 | PUT | `/clientes/:id/senha` | equipe | Define uma senha temporária |
 
@@ -610,10 +611,33 @@ O estoque de todos os itens volta na mesma transação, com movimentação do ti
   "cliente": { "id_usuario": 2, "nome": "Maria Souza", "razao_social": null, "nome_exibicao": "Maria Souza", "cnpj": "11.222.333/0001-81",
                "email": "...", "telefone": "...", "ativo": true, "criado_em": "...", "enderecos": [ ... ] },
   "historico_pedidos": [ { "id_pedido": 1, "status": "Entregue", "data_pedido": "...", "itens": [ ... ] } ],
-  "produtos_mais_solicitados": [ { "id_produto": 15, "nome": "...", "quantidade_solicitada": 12 } ]
+  "produtos_mais_solicitados": [ { "id_produto": 15, "nome": "...", "quantidade_solicitada": 12 } ],
+  "carrinho_atual": {
+    "itens": [ { "id_produto": 15, "sku": "SKU-115", "nome": "...", "quantidade": 2 } ],
+    "total_unidades": 2, "ultimo_movimento_em": "...", "dias_parado": 5, "abandonado": true, "contatado_em": null
+  },
+  "ultimo_evento_em": "2026-10-26T23:41:10.000Z"
 }
 ```
-`produtos_mais_solicitados` ignora pedidos cancelados.
+`produtos_mais_solicitados` ignora pedidos cancelados. `carrinho_atual` é `null` quando o cliente não tem carrinho com itens; `abandonado` segue a regra de [carrinhos abandonados](#18-carrinhos-abandonados-equipe) e `contatado_em` é o último contato da equipe depois da última atualização do carrinho. `ultimo_evento_em` é a data do último evento de uso do cliente (`null` se nunca houve).
+
+### GET /clientes/:id/historico
+Linha do tempo do cliente, do **mais recente para o mais antigo**, unindo o cadastro, os pedidos (criação, mudanças de status e cancelamentos), o carrinho (última atualização, abandono e contatos da equipe), os acessos (eventos `produto_visto`, `carrinho_adicionar`, `checkout_iniciado` e `pedido_concluido` do cliente) e as notas de suporte.
+
+Filtros: `tipo` (`pedido`, `carrinho`, `acesso`, `nota` ou `cadastro`), `de` e `ate` (`AAAA-MM-DD`, inclusivos, horário de Brasília), `pagina` e `limite` (padrão 50, máximo 200).
+```json
+{
+  "historico": [
+    { "tipo": "nota", "data": "2026-10-26T23:41:10.000Z", "titulo": "Nota de Atendente", "detalhe": "Prefere entrega pela manhã.", "referencia": { "tipo": "nota", "id": 3 } },
+    { "tipo": "carrinho", "data": "2026-10-26T18:00:00.000Z", "titulo": "Contato sobre o carrinho abandonado", "detalhe": "Por Atendente. Ligou e vai pedir", "referencia": { "tipo": "carrinho_contato", "id": 1 } },
+    { "tipo": "pedido", "data": "2026-10-20T12:00:00.000Z", "titulo": "Pedido #7 cancelado", "detalhe": "Motivo: Cliente desistiu", "referencia": { "tipo": "pedido", "id": 7 } },
+    { "tipo": "acesso", "data": "2026-10-20T11:50:00.000Z", "titulo": "Viu um produto", "detalhe": "Anti-séptico bucal Colgate Plax ...", "referencia": { "tipo": "produto", "id": 15 } },
+    { "tipo": "cadastro", "data": "2026-10-01T09:00:00.000Z", "titulo": "Cadastro criado", "detalhe": null, "referencia": { "tipo": "cliente", "id": 2 } }
+  ],
+  "paginacao": { "total": 5, "pagina": 1, "limite": 50, "total_paginas": 1 }
+}
+```
+Cada entrada: `tipo` (`cadastro`, `pedido`, `carrinho`, `acesso` ou `nota`), `data`, `titulo`, `detalhe` (texto ou `null`) e `referencia` (`{ "tipo", "id" }` do registro de origem — `cliente`, `pedido`, `produto`, `carrinho`, `carrinho_contato` ou `nota` — ou `null`, como no checkout iniciado). O `carrinho abandonado` aparece na data em que o carrinho completou o prazo de abandono e só enquanto o carrinho continua abandonado. Erros: `400 FILTRO_INVALIDO`, `400 PAGINACAO_INVALIDA`, `404` (cliente inexistente).
 
 Clientes guardam só dados operacionais e comerciais (`razao_social`, `cnpj`, `telefone` e endereços de entrega). Nenhum dado bancário, de cartão ou limite de crédito é armazenado.
 

@@ -9,6 +9,7 @@ const acessoGestor = [autenticarToken, exigirEquipe];
 
 router.get('/', ...acessoGestor, clienteControlador.listarClientes);
 router.get('/:id/detalhes', ...acessoGestor, clienteControlador.obterDetalhesCliente);
+router.get('/:id/historico', ...acessoGestor, clienteControlador.obterHistoricoCliente);
 router.get('/:id/notas', ...acessoGestor, suporteControlador.listarNotas);
 router.post('/:id/notas', ...acessoGestor, suporteControlador.criarNota);
 router.delete('/:id/notas/:id_nota', ...acessoGestor, suporteControlador.excluirNota);

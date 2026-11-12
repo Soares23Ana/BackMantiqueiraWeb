@@ -94,7 +94,7 @@ describe('contrato padronizado', () => {
     test('GET /clientes/:id/detalhes em snake_case', async () => {
         const { body } = await request(app).get(`/api/v1/clientes/${semRazao.usuario.id_usuario}/detalhes`)
             .set('Authorization', equipe.auth).expect(200);
-        assert.deepEqual(Object.keys(body).sort(), ['cliente', 'historico_pedidos', 'produtos_mais_solicitados']);
+        assert.deepEqual(Object.keys(body).sort(), ['carrinho_atual', 'cliente', 'historico_pedidos', 'produtos_mais_solicitados', 'ultimo_evento_em']);
         assert.equal(body.cliente.nome_exibicao, 'Bruno Responsável');
         assert.equal(body.cliente.cnpj, '11.444.777/0001-61');
         assert.deepEqual(body.produtos_mais_solicitados[0].quantidade_solicitada, 2);

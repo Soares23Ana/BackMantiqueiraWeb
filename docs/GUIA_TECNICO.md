@@ -333,3 +333,6 @@ A API consulta serviços públicos com o `fetch` nativo do Node (sem dependênci
 ### Suporte: notas e auditoria
 - `notas_cliente` e `auditoria` (migration 020). A auditoria é gravada por `registrarAuditoria` (`servicos/auditoria.js`), chamado **depois** que a operação principal conclui. O helper captura qualquer erro (só vai para o log), remove chaves com `senha`, `password`, `hash`, `token`, `segredo`, `secret` ou `authorization` em qualquer nível, corta textos em 200 caracteres e não grava quando nada mudou. Preço de produto fica de fora dos campos auditados.
 - Para auditar uma nova ação: tire um `instantaneo(registro, CAMPOS)` antes e depois e chame `registrarAuditoria({ usuario, acao, entidade, idEntidade, antes, depois, detalhe })`.
+
+### Histórico do cliente
+- `GET /clientes/:id/historico` (`servicos/historicoCliente.js`) lê as fontes numa só consulta `UNION ALL` (cadastro, pedidos, `pedido_historico`, carrinho, contatos do carrinho, eventos do cliente e notas), ordena e pagina no banco e monta título e detalhe em JavaScript. Não há tabela própria de histórico: ele sempre reflete o estado atual das tabelas de origem. Usa `JSON_TABLE` (MySQL 8) para somar as unidades do carrinho.

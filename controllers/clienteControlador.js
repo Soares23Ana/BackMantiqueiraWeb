@@ -10,6 +10,7 @@ const { ErroApi } = require('../lib/erros');
 const { CUSTO_BCRYPT } = require('./usuarioControlador');
 const { agoraParaTrocaDeSenha } = require('../models/Usuario');
 const { registrarAuditoria, instantaneo } = require('../servicos/auditoria');
+const { listarHistorico, obterCarrinhoAtual, ultimoEventoEm, TIPOS_FILTRO } = require('../servicos/historicoCliente');
 
 const CAMPOS_AUDITORIA_CLIENTE = ['razao_social', 'cnpj', 'telefone', 'ativo'];
 
@@ -229,6 +230,7 @@ async function obterDetalhesCliente(req, res) {
             .sort((a, b) => b.quantidade_solicitada - a.quantidade_solicitada ||
                 (a.nome || '').localeCompare(b.nome || ''));
 
+        const [carrinhoAtual, ultimoEvento] = await Promise.all([obterCarrinhoAtual(idCliente), ultimoEventoEm(idCliente)]);
         return res.status(200).json({
             cliente: apresentarCliente({
                 id_usuario: clienteJson.id_usuario,
@@ -242,12 +244,52 @@ async function obterDetalhesCliente(req, res) {
                 enderecos: clienteJson.enderecos
             }),
             historico_pedidos: clienteJson.pedidosComoCliente,
-            produtos_mais_solicitados: produtosMaisSolicitados
+            produtos_mais_solicitados: produtosMaisSolicitados,
+            carrinho_atual: carrinhoAtual,
+            ultimo_evento_em: ultimoEvento
         });
     } catch (erro) {
         logger.error('Erro ao obter detalhes do cliente.', { erro });
         return res.status(500).json({ mensagem: 'Erro ao obter detalhes do cliente.' });
     }
+}
+
+// Data AAAA-MM-DD em horário de Brasília; "ate" é inclusivo (vira o início do dia seguinte).
+function lerDataHistorico(valor, campo, fimDoDia) {
+    if (valor === undefined) return null;
+    if (typeof valor !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(valor) || Number.isNaN(Date.parse(`${valor}T00:00:00-03:00`))) {
+        throw new ErroApi(400, 'FILTRO_INVALIDO', `Use o formato AAAA-MM-DD em "${campo}".`);
+    }
+    const data = new Date(`${valor}T00:00:00-03:00`);
+    if (fimDoDia) data.setUTCDate(data.getUTCDate() + 1);
+    return data;
+}
+
+/**
+ * GET /clientes/:id/historico (equipe): linha do tempo do cliente, do mais recente para o mais antigo, com
+ * cadastro, pedidos, carrinho, acessos e notas. Filtros: tipo (pedido|carrinho|acesso|nota|cadastro), de e ate.
+ */
+async function obterHistoricoCliente(req, res) {
+    const idCliente = obterIdCliente(req.params.id);
+    if (!idCliente) {
+        throw new ErroApi(400, 'REQUISICAO_INVALIDA', 'Identificador de cliente inválido.');
+    }
+    const paginacao = lerPaginacao(req.query, { limitePadrao: 50, limiteMaximo: 200 });
+    const tipo = req.query.tipo;
+    if (tipo !== undefined && !TIPOS_FILTRO.includes(tipo)) {
+        throw new ErroApi(400, 'FILTRO_INVALIDO', `tipo deve ser: ${TIPOS_FILTRO.join(', ')}.`);
+    }
+    const de = lerDataHistorico(req.query.de, 'de', false);
+    const ate = lerDataHistorico(req.query.ate, 'ate', true);
+    if (de && ate && ate <= de) {
+        throw new ErroApi(400, 'FILTRO_INVALIDO', '"ate" deve ser igual ou depois de "de".');
+    }
+    const cliente = await Usuario.findOne({ where: { id_usuario: idCliente, tipo: 'cliente' }, attributes: ['id_usuario'] });
+    if (!cliente) {
+        throw new ErroApi(404, 'NAO_ENCONTRADO', 'Cliente não encontrado.');
+    }
+    const { entradas, total } = await listarHistorico(idCliente, { tipo, de, ate, limite: paginacao.limite, offset: paginacao.offset });
+    return res.status(200).json({ historico: entradas, paginacao: montarPaginacao(total, paginacao) });
 }
 
 async function atualizarCliente(req, res) {
@@ -452,4 +494,4 @@ async function definirSenhaTemporaria(req, res) {
     });
 }
 
-module.exports = { listarClientes, obterDetalhesCliente, atualizarCliente, definirSenhaTemporaria };
+module.exports = { listarClientes, obterDetalhesCliente, obterHistoricoCliente, atualizarCliente, definirSenhaTemporaria };
