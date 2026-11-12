@@ -203,7 +203,7 @@ describe('importação por pasta (jobs)', () => {
 
     test('carga completa da meia-noite desativa produtos ausentes do arquivo', async () => {
         const { processarPasta } = require('../servicos/sincronizacao');
-        escrever('catalogo_completo.csv', CSV);
+        escrever('carga_completa_0000.csv', CSV);
         const [resultado] = await processarPasta('carga_completa', base);
         assert.equal(resultado.status, 'sucesso');
         // NOVO-A e LATIN-1 vieram de outros testes e não estão no catálogo.
@@ -240,7 +240,7 @@ describe('importação por pasta (jobs)', () => {
     test('jobs têm expressões válidas e ficam desligados nos testes', () => {
         const cron = require('node-cron');
         const { DEFINICOES, situacaoJobs } = require('../jobs');
-        assert.deepEqual(DEFINICOES.map((d) => [d.nome, d.expressao]), [['carga-completa', '0 0 * * *'], ['estoque', '*/30 * * * *'], ['limpeza-eventos', '0 3 * * *']]);
+        assert.deepEqual(DEFINICOES.map((d) => [d.nome, d.expressao]), [['catalogo', '0 * * * *'], ['carga-completa', '0 0 * * *'], ['estoque', '*/30 * * * *'], ['limpeza-eventos', '0 3 * * *']]);
         assert.ok(DEFINICOES.every((d) => cron.validate(d.expressao)));
         assert.ok(situacaoJobs().every((job) => job.ativo === false && job.fuso === 'America/Sao_Paulo'));
     });
@@ -407,7 +407,7 @@ describe('/saude/detalhado', () => {
         assert.equal(resposta.body.status, 'ok');
         assert.deepEqual(resposta.body.banco.migracoes_pendentes, []);
         assert.equal(typeof resposta.body.banco.latencia_ms, 'number');
-        assert.equal(resposta.body.jobs.length, 3);
+        assert.equal(resposta.body.jobs.length, 4);
         assert.ok(resposta.body.sincronizacoes.ultima_carga_completa);
         assert.ok(resposta.body.sincronizacoes.ultima_estoque);
     });

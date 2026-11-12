@@ -49,6 +49,7 @@ node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"
 | `CORS_ORIGINS` | — | Origens do front liberadas além das padrão ([CORS](#6-cors)) |
 | `TRUST_PROXY` | — | `1` quando a API fica atrás de proxy (ex.: Nginx na EC2), para os limites verem o IP real |
 | `JOBS_ATIVOS` | `true` (exceto nos testes) | `false` desliga os [jobs agendados](#8-jobs-agendados) |
+| `JOB_CATALOGO_CRON`, `JOB_CARGA_COMPLETA_CRON`, `JOB_ESTOQUE_CRON` | `0 * * * *`, `0 0 * * *`, `*/30 * * * *` | Horários dos jobs (cron de 5 campos); validados ao iniciar |
 | `IMPORTACAO_DIR` | `./importacao` | Pasta com `entrada/`, `processados/` e `rejeitados/` usada pelos jobs |
 | `LOG_LEVEL` | `info` (`silent` nos testes) | `debug`, `info`, `warn`, `error` ou `silent` |
 | `LOG_FORMAT` | `texto` em dev, `json` em produção | Formato dos logs |
@@ -200,13 +201,19 @@ Fuso `America/Sao_Paulo`. A API lê arquivos colocados em `importacao/entrada/` 
 
 | Job | Quando | Arquivos | O que faz |
 |---|---|---|---|
-| `carga-completa` | Meia-noite | `catalogo*.csv` | Importa tudo e desativa produtos ausentes |
+| `catalogo` | De hora em hora | `catalogo*.csv` | Carga incremental: cria e atualiza, **sem desativar** os ausentes |
+| `carga-completa` | Meia-noite | `carga_completa*.csv` | Importa tudo e desativa produtos ausentes (só se o arquivo não tiver erro) |
 | `estoque` | A cada 30 min | `estoque*.csv` | Aplica só `sku` e `estoque` (outras colunas são ignoradas) |
 | `limpeza-eventos` | 3h | — | Apaga eventos de uso com mais de 12 meses |
 
+Os arquivos são preparados e colocados na pasta pela própria equipe. Os horários dos três primeiros vêm das variáveis `JOB_CATALOGO_CRON`, `JOB_CARGA_COMPLETA_CRON` e `JOB_ESTOQUE_CRON` (cron de 5 campos, fuso de São Paulo; padrões `0 * * * *`, `0 0 * * *` e `*/30 * * * *`). Uma expressão inválida impede a API de subir, com a mensagem apontando a variável.
+
 - **Arquivos sendo copiados:** os jobs ignoram arquivos modificados nos últimos 60 segundos (podem estar no meio da cópia); eles ficam na entrada e são lidos na execução seguinte, e aparecem com `"status": "ignorado"` no `ultimo_resultado` do job. Mesmo assim, o recomendado é **gravar com a extensão `.tmp` e renomear para `.csv` ao terminar** (ex.: copiar `estoque_20261026_1430.tmp` e depois renomear para `estoque_20261026_1430.csv`): só arquivos `.csv` são lidos, e renomear dentro da mesma pasta é instantâneo, então o job nunca pega um arquivo pela metade.
 - Os arquivos são processados em ordem alfabética (use data/hora no nome, ex.: `estoque_20261026_1430.csv`) e depois movidos para `processados/` ou `rejeitados/`, com um `.relatorio.json` ao lado.
-- Cada execução fica em `sincronizacoes_log`.
+- Cada execução fica em `sincronizacoes_log` (tipos `catalogo`, `carga_completa` e `estoque`).
+- **Saúde dos jobs:** `/saude/detalhado` mostra por job a última execução, status, duração, próxima execução e falhas seguidas. O status geral vira `degradado` se um job falhar 2 vezes seguidas ou não rodar por mais de 2 intervalos (o intervalo é calculado da expressão cron).
+- **Nova tentativa:** em falha transitória (conexão perdida, timeout, deadlock) o job tenta de novo após 1 minuto; só se a segunda tentativa falhar a falha conta nas "falhas seguidas".
+- **Execução manual:** `POST /admin/jobs/:nome/executar` (equipe) roda o job na hora, com a mesma trava do MySQL, e devolve o relatório.
 - Uma trava do MySQL (`GET_LOCK`) garante que, com várias instâncias da API, só uma rode cada job, e que job e upload não importem ao mesmo tempo.
 - `JOBS_ATIVOS=false` desliga os jobs (nos testes eles já vêm desligados).
 

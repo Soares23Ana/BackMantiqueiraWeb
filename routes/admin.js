@@ -1,9 +1,16 @@
 const express = require('express');
 const adminUsuarioControlador = require('../controllers/adminUsuarioControlador');
 const autenticarToken = require('../middlewares/authMiddleware');
-const { exigirGestaoDeEquipe } = require('../middlewares/roleMiddleware');
+const { exigirEquipe, exigirGestaoDeEquipe } = require('../middlewares/roleMiddleware');
+const { executarAgora } = require('../jobs');
 
 const router = express.Router();
+
+// POST /admin/jobs/:nome/executar (equipe): roda o job agora, respeitando a trava do MySQL, e devolve o relatório.
+router.post('/jobs/:nome/executar', autenticarToken, exigirEquipe, async (req, res) => {
+    const relatorio = await executarAgora(req.params.nome);
+    return res.status(200).json({ mensagem: 'Job executado.', ...relatorio });
+});
 
 // Gestão de usuários: só equipe com pode_gerenciar_equipe.
 router.use(autenticarToken, exigirGestaoDeEquipe);

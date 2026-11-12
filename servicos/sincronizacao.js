@@ -12,8 +12,9 @@ const { importarCatalogo } = require('./importadorCatalogo');
 // Importações (upload ou job) nunca rodam ao mesmo tempo, nem em instâncias diferentes da API.
 const TRAVA_IMPORTACAO = 'mantiqueira:importacao';
 
-// Arquivos lidos pelos jobs em importacao/entrada/, pelo prefixo do nome.
-const PREFIXOS = { carga_completa: 'catalogo', estoque: 'estoque' };
+// Arquivos lidos pelos jobs em importacao/entrada/, pelo prefixo do nome: catalogo*.csv (incremental, de hora em hora),
+// carga_completa*.csv (meia-noite, desativa os ausentes) e estoque*.csv.
+const PREFIXOS = { catalogo: 'catalogo', carga_completa: 'carga_completa', estoque: 'estoque' };
 // Arquivo modificado há menos tempo que isso pode ainda estar sendo copiado: fica para a próxima execução.
 const IDADE_MINIMA_MS = 60 * 1000;
 
@@ -29,7 +30,7 @@ function statusDoRelatorio(relatorio) {
 
 /**
  * Roda o importador registrando início, resultado e erros em sincronizacoes_log.
- * tipo: importacao_manual | carga_completa | estoque. Devolve { log, relatorio }.
+ * tipo: importacao_manual | catalogo | carga_completa | estoque. Devolve { log, relatorio }.
  * Erros do arquivo (CSV ilegível, sem coluna sku) ficam registrados como "falha" e são relançados.
  */
 async function executarImportacao({ conteudo, tipo, origem, simular = false, idUsuario = null }) {
@@ -96,8 +97,8 @@ async function mover(origem, pastaDestino, relatorio) {
 }
 
 /**
- * Processa os arquivos de importacao/entrada/ do tipo informado (catalogo*.csv para a carga completa,
- * estoque*.csv para o estoque), em ordem alfabética. Cada arquivo vai para processados/ (com ou sem
+ * Processa os arquivos de importacao/entrada/ do tipo informado (catalogo*.csv na carga incremental,
+ * carga_completa*.csv na carga completa, estoque*.csv no estoque), em ordem alfabética. Cada arquivo vai para processados/ (com ou sem
  * linhas rejeitadas) ou rejeitados/ (arquivo ilegível ou todas as linhas com erro), junto com o relatório.
  * Arquivos modificados nos últimos 60 segundos ficam na entrada e voltam a ser vistos na próxima execução.
  */

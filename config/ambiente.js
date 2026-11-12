@@ -1,5 +1,6 @@
 const path = require('node:path');
 const dotenv = require('dotenv');
+const cron = require('node-cron');
 
 dotenv.config({ quiet: true });
 
@@ -96,6 +97,17 @@ function validarAmbiente(env) {
         erros.push('JOBS_ATIVOS deve ser true ou false.');
     }
 
+    // Horários dos jobs (cron de 5 campos, fuso de São Paulo). Expressão inválida impede a API de subir.
+    const PADROES_CRON = { JOB_CATALOGO_CRON: '0 * * * *', JOB_CARGA_COMPLETA_CRON: '0 0 * * *', JOB_ESTOQUE_CRON: '*/30 * * * *' };
+    const expressoes = {};
+    for (const [nome, padrao] of Object.entries(PADROES_CRON)) {
+        const valor = (env[nome] || padrao).trim();
+        if (valor.split(/\s+/).length !== 5 || !cron.validate(valor)) {
+            erros.push(`${nome} deve ser uma expressão cron válida de 5 campos (ex.: ${padrao}).`);
+        }
+        expressoes[nome] = valor;
+    }
+
     const niveisLog = ['debug', 'info', 'warn', 'error', 'silent'];
     const nivelLog = env.LOG_LEVEL || (teste ? 'silent' : 'info');
     if (!niveisLog.includes(nivelLog)) {
@@ -121,7 +133,14 @@ function validarAmbiente(env) {
             // Por IP: requisições por minuto em /api/v1, tentativas de login com falha a cada 15 min e cadastros por hora.
             limites: { global: limiteGlobal, login: limiteLogin, cadastro: limiteCadastro },
             // Jobs agendados (carga do catálogo e estoque). Desligados nos testes.
-            jobs: { ativos: env.JOBS_ATIVOS ? env.JOBS_ATIVOS === 'true' : !teste },
+            jobs: {
+                ativos: env.JOBS_ATIVOS ? env.JOBS_ATIVOS === 'true' : !teste,
+                cron: {
+                    catalogo: expressoes.JOB_CATALOGO_CRON,
+                    cargaCompleta: expressoes.JOB_CARGA_COMPLETA_CRON,
+                    estoque: expressoes.JOB_ESTOQUE_CRON
+                }
+            },
             importacao: { pasta: path.resolve(env.IMPORTACAO_DIR || path.join(__dirname, '..', 'importacao')) },
             log: {
                 nivel: nivelLog,

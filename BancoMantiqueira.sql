@@ -259,7 +259,7 @@ CREATE TABLE `schema_migrations` (
 
 CREATE TABLE `sincronizacoes_log` (
   `id_sincronizacao` int NOT NULL AUTO_INCREMENT,
-  `tipo` enum('importacao_manual','carga_completa','estoque') NOT NULL,
+  `tipo` enum('importacao_manual','catalogo','carga_completa','estoque') NOT NULL,
   `origem` varchar(255) NOT NULL,
   `simulado` tinyint(1) NOT NULL DEFAULT '0',
   `status` enum('em_andamento','sucesso','parcial','falha') NOT NULL DEFAULT 'em_andamento',
@@ -323,4 +323,5 @@ INSERT INTO schema_migrations (versao, nome, checksum) VALUES
 ('013', 'cnpj_alfanumerico', 'aa76bf87806aa13ab184fa5f02825f6b870a290980f784b20d482476fcaef128'),
 ('014', 'popup_cms', 'f2477a282641c24ee184c0df42066b88efdc1d734e32ab968956ad0187842a6b'),
 ('015', 'banner_destino_campanha_slug', '78a93b3760453b651e364281c07a74180f4b23181d7db5f409c9f0720db0e323'),
-('016', 'evento_visita', '61dfa380947d92eef6a533e02de9768bdae1f895acff50a4736f3667cb2bb7d6');
+('016', 'evento_visita', '61dfa380947d92eef6a533e02de9768bdae1f895acff50a4736f3667cb2bb7d6'),
+('017', 'sincronizacao_catalogo', '3cde303d21dda3461605c1cd5c4a4afc37797a0ba42e18244b8fb8f4de422669');

@@ -41,8 +41,9 @@ async function verificarSaudeDetalhada(req, res) {
         }
     }
     const memoria = process.memoryUsage();
+    const jobs = situacaoJobs();
     return res.status(bancoOk ? 200 : 503).json({
-        status: bancoOk && migracoesPendentes && migracoesPendentes.length === 0 ? 'ok' : 'degradado',
+        status: bancoOk && migracoesPendentes && migracoesPendentes.length === 0 && jobs.every((job) => job.situacao === 'ok') ? 'ok' : 'degradado',
         versao: version,
         banco: {
             status: bancoOk ? 'conectado' : 'indisponivel',
@@ -55,9 +56,10 @@ async function verificarSaudeDetalhada(req, res) {
             node: process.version,
             memoria_mb: Math.round(memoria.rss / 1024 / 1024)
         },
-        jobs: situacaoJobs(),
+        jobs,
         sincronizacoes: bancoOk ? {
             ultima: await dataUltimaSincronizacao(),
+            ultima_catalogo: await dataUltimaSincronizacao('catalogo'),
             ultima_carga_completa: await dataUltimaSincronizacao('carga_completa'),
             ultima_estoque: await dataUltimaSincronizacao('estoque'),
             ultima_importacao_manual: await dataUltimaSincronizacao('importacao_manual')

@@ -406,7 +406,7 @@ O formato do CSV e as colunas estão no [guia técnico](GUIA_TECNICO.md#7-import
 `status`: `sucesso`, `parcial` ou `falha`. Erros: `422 VALIDACAO` (sem arquivo ou não é .csv), `422 CSV_INVALIDO` (ilegível ou sem coluna `sku`), `409 IMPORTACAO_EM_ANDAMENTO`.
 
 ### GET /produtos/importacoes
-`?tipo=importacao_manual|carga_completa|estoque&pagina=&limite=`. Cada item: `id_sincronizacao`, `tipo`, `origem`, `simulado`, `status`, `linhas`, `criados`, `atualizados`, `inalterados`, `desativados`, `com_erro`, `movimentacoes_estoque`, `mensagem`, `iniciado_em`, `finalizado_em`, `duracao_ms`, `usuario` (`null` nos jobs). O detalhe (`/:id`) inclui `relatorio: { erros, avisos }`.
+`?tipo=importacao_manual|catalogo|carga_completa|estoque&pagina=&limite=`. Cada item: `id_sincronizacao`, `tipo`, `origem`, `simulado`, `status`, `linhas`, `criados`, `atualizados`, `inalterados`, `desativados`, `com_erro`, `movimentacoes_estoque`, `mensagem`, `iniciado_em`, `finalizado_em`, `duracao_ms`, `usuario` (`null` nos jobs). O detalhe (`/:id`) inclui `relatorio: { erros, avisos }`.
 
 ---
 
@@ -789,11 +789,27 @@ Só esses dois campos. Versão, uptime, data de início e sincronizações ficam
   "processo": { "iniciado_em": "2026-10-26T23:27:33.479Z", "uptime_segundos": 4, "node": "v24.20.0", "memoria_mb": 108 },
   "jobs": [
     { "nome": "estoque", "descricao": "A cada 30 min: ...", "expressao": "*/30 * * * *", "fuso": "America/Sao_Paulo", "ativo": true,
-      "proxima_execucao": "2026-10-26T23:30:00.000Z", "ultima_execucao": null, "ultimo_resultado": null, "ultimo_erro": null }
+      "proxima_execucao": "2026-10-26T23:30:00.000Z", "ultima_execucao": "2026-10-26T23:00:00.012Z", "ultimo_status": "sucesso",
+      "ultima_duracao_ms": 142, "falhas_seguidas": 0, "nova_tentativa_em": null, "atrasado": false, "situacao": "ok",
+      "ultimo_resultado": [], "ultimo_erro": null }
   ],
-  "sincronizacoes": { "ultima": null, "ultima_carga_completa": null, "ultima_estoque": null, "ultima_importacao_manual": null }
+  "sincronizacoes": { "ultima": null, "ultima_catalogo": null, "ultima_carga_completa": null, "ultima_estoque": null, "ultima_importacao_manual": null }
 }
 ```
+Por job: `ultima_execucao`, `ultimo_status` (`sucesso`, `falha` ou `ignorado`, quando outra instância estava rodando o job), `ultima_duracao_ms`, `proxima_execucao`, `falhas_seguidas`, `nova_tentativa_em` (quando há uma nova tentativa agendada), `atrasado` e `situacao` (`ok` ou `degradado`). O `status` geral fica `degradado` se algum job falhou **2 vezes seguidas** ou, estando agendado, **não rodou por mais de 2 intervalos** (além de banco fora do ar ou migrations pendentes). Uma falha de conexão ou deadlock ganha **uma nova tentativa automática após 1 minuto**; só depois dela a falha conta.
+
+### POST /admin/jobs/:nome/executar (equipe)
+Roda um job na hora, com a mesma trava do MySQL do agendamento. `:nome`: `catalogo`, `carga-completa`, `estoque` ou `limpeza-eventos`. Funciona mesmo com `JOBS_ATIVOS=false`. Não faz nova tentativa automática.
+```json
+{
+  "mensagem": "Job executado.",
+  "job": "estoque",
+  "iniciado_em": "2026-10-26T23:41:10.120Z",
+  "duracao_ms": 85,
+  "resultado": [{ "arquivo": "estoque_0800.csv", "status": "sucesso", "destino": "processados", "id_sincronizacao": 12 }]
+}
+```
+`resultado` é o relatório do job (a lista de arquivos processados nos jobs de pasta). Erros: `404 JOB_NAO_ENCONTRADO`, `409 JOB_EM_EXECUCAO` (o job já está rodando), `500 JOB_FALHOU` (veja o log pelo `request_id`).
 
 ---
 
@@ -801,7 +817,7 @@ Só esses dois campos. Versão, uptime, data de início e sincronizações ficam
 
 **Estoque e importação**
 1. **O estoque importado substitui o valor atual; não soma nem subtrai.** Se um pedido baixar o estoque entre a geração do arquivo e a importação, o valor do arquivo volta a valer e essa baixa é "desfeita" no estoque (o pedido continua registrado). Gere o arquivo o mais perto possível da importação.
-2. A importação não tem integração com ERP: os arquivos precisam ser enviados pela tela (upload) ou copiados para `importacao/entrada/` no servidor.
+2. O estoque é mantido pelo painel (ajustes com observação), pelos pedidos e cancelamentos e por planilhas que a própria equipe prepara: os arquivos precisam ser enviados pela tela (upload) ou copiados para `importacao/entrada/` no servidor.
 3. No arquivo de estoque, um SKU que não existe é rejeitado (não cria produto). Na carga completa, produtos ausentes só são desativados quando o arquivo não tem nenhum erro.
 4. O relatório de cada importação guarda no máximo 500 erros.
 5. Uma linha com vários problemas pode aparecer mais de uma vez em `erros` (uma por campo).

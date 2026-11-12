@@ -8,7 +8,7 @@ const SincronizacaoLog = sequelize.define('SincronizacaoLog', {
         autoIncrement: true
     },
     tipo: {
-        type: DataTypes.ENUM('importacao_manual', 'carga_completa', 'estoque'),
+        type: DataTypes.ENUM('importacao_manual', 'catalogo', 'carga_completa', 'estoque'),
         allowNull: false
     },
     origem: {

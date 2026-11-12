@@ -3,7 +3,7 @@ const { ErroApi } = require('../lib/erros');
 const { lerPaginacao, montarPaginacao } = require('../lib/paginacao');
 const { importarUpload } = require('../servicos/sincronizacao');
 
-const TIPOS = ['importacao_manual', 'carga_completa', 'estoque'];
+const TIPOS = ['importacao_manual', 'catalogo', 'carga_completa', 'estoque'];
 
 function lerBooleano(valor, campo) {
     if (valor === undefined || valor === '') return false;
