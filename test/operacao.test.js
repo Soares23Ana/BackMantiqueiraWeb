@@ -6,7 +6,7 @@ const path = require('node:path');
 const request = require('supertest');
 const { prepararApp, criarUsuario } = require('./ajuda');
 
-const CSV = fs.readFileSync(path.join(__dirname, '..', 'seeds', 'catalogo_inicial.csv'));
+const CSV = fs.readFileSync(path.join(__dirname, 'fixtures', 'catalogo_legado.csv'));
 const PNG = Buffer.from(
     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=',
     'base64'

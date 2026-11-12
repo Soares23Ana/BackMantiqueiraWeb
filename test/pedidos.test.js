@@ -47,7 +47,7 @@ before(async () => {
     ({ app, sequelize } = await prepararApp());
     ({ Produto, Endereco } = require('../models'));
     const { importarCatalogo } = require('../servicos/importadorCatalogo');
-    await importarCatalogo(fs.readFileSync(path.join(__dirname, '..', 'seeds', 'catalogo_inicial.csv'), 'utf8'));
+    await importarCatalogo(fs.readFileSync(path.join(__dirname, 'fixtures', 'catalogo_legado.csv'), 'utf8'));
     for (const produto of await Produto.findAll()) produtos[produto.sku] = produto.id_produto;
 
     // Produtos controlados pelos testes.

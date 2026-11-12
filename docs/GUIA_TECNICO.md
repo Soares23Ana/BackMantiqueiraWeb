@@ -90,15 +90,21 @@ Para alterar o banco, **crie uma migration nova** com o próximo número (nunca 
 ## 3. Dados de teste (seeds)
 
 ```bash
-npm run seed:catalogo                         # importa seeds/catalogo_inicial.csv (38 produtos, upsert por SKU)
+npm run seed:catalogo                         # importa seeds/catalogo_inicial.csv (upsert por SKU)
 npm run seed:catalogo -- --simular            # mostra o que mudaria, sem gravar
-npm run seed:catalogo -- --desativar-ausentes # também desativa produtos que não estão no CSV
+npm run seed:catalogo -- --desativar-ausentes # desativa TODO produto que não está no CSV (não só os antigos SKU-1xx)
+npm run seed:catalogo -- --arquivo=caminho.csv # usa outro arquivo
 npm run seed:dev                              # usuários de teste (recusa produção e RDS)
 npm run seed:dev -- --redefinir-senhas        # volta a senha dos usuários de teste já existentes
 npm run seed:demo                             # dados de demonstração (recusa produção e RDS)
 ```
 
-**`seed:catalogo`** pode rodar quantas vezes quiser: só altera o que mudou e registra mudanças de estoque em `movimentacoes_estoque`. As imagens ficam no front; o CSV guarda só o caminho (`/img/...`).
+**`seed:catalogo`** pode rodar quantas vezes quiser (é idempotente): só altera o que mudou e registra mudanças de estoque em `movimentacoes_estoque`. As imagens ficam no front; o CSV guarda só o caminho (`/img/...`).
+
+Colunas de `seeds/catalogo_inicial.csv` (o catálogo real): `sku` (código do portfólio), `nome`, `nome_erp`, `categoria`, `subcategoria`, `marca`, `estoque`, `estoque_minimo`, `multiplo_venda`, `ativo`, `imagem_url` e `sku_antigo`. Os valores de `estoque` são definidos para a demonstração (com alguns produtos de estoque baixo e zerado).
+- **`sku_antigo`** (ex.: `SKU-101`): se já existe um produto com esse SKU, o **produto existente** troca o SKU para o novo, mantendo o id, o estoque, as movimentações e os pedidos; a linha segue como atualização. Se o SKU novo já existe, o produto antigo não é tocado. SKU antigo repetido no arquivo ou fora do padrão é erro da linha.
+- **Produtos antigos sem correspondência** (SKU `SKU-123` que nem o arquivo nem um `sku_antigo` aproveitou) ficam **desativados**, nunca apagados; produtos com outros SKUs (cadastrados à mão) não são tocados. Como em toda carga que desativa, nada é desativado se o arquivo tiver erro.
+- O relatório mostra `skus_trocados`, `criados`, `atualizados`, `desativados` e as pendências da importação (`abreviacoes_pendentes`, `categorias_sem_mapa`). Use `--simular` antes.
 
 **`seed:dev`** cria os usuários abaixo com a senha `Mantiqueira@2026` (troque com `SEED_SENHA`). A senha só vale para os usuários criados naquela execução; `-- --redefinir-senhas` volta a senha dos que já existiam.
 
@@ -212,6 +218,7 @@ Qualquer outra coluna (por exemplo `CÓDIGO DE BARRAS`) é **ignorada, sem erro*
 | `preco` | Opcional; nunca aparece para clientes |
 | `estoque` | Quantidade atual; vazio mantém o estoque. Mudanças viram movimentações `importacao` |
 | `nome_erp` | Nome original do portfólio (vem de `PRODUTO`) |
+| `sku_antigo` | Opcional: o produto que hoje tem esse SKU troca para o `sku` da linha (mesmo id e pedidos) |
 | `gerado_em` | Opcional: quando a planilha de estoque foi gerada (horário de São Paulo); pedidos posteriores são descontados do `estoque` |
 
 - Cada linha é validada separadamente: as boas são gravadas e as com problema voltam em `relatorio.erros` (`linha`, `sku`, `campo`, `mensagem`).
@@ -267,7 +274,7 @@ Num ambiente novo (ex.: EC2 com banco no RDS), com o `.env` de produção já pr
 
 ```bash
 npm run migrar          # cria as tabelas
-npm run seed:catalogo   # opcional: só se quiser o catálogo inicial de 38 produtos
+npm run seed:catalogo   # opcional: só se quiser o catálogo inicial
 npm run criar-admin     # cria o primeiro administrador
 ```
 

@@ -414,7 +414,7 @@ O formato das planilhas e as colunas estão no [guia técnico](GUIA_TECNICO.md#7
     "simulado": true, "linhas": 2, "criados": 0, "atualizados": 1, "inalterados": 0, "desativados": 0,
     "com_erro": 1, "categorias_criadas": 0, "marcas_criadas": 0, "movimentacoes_estoque": 1,
     "formato": "xlsx",
-    "total_descontado": 7, "produtos_com_desconto": 1, "gerado_em_padrao": "2026-10-26T23:41:10.000Z",
+    "skus_trocados": 0, "total_descontado": 7, "produtos_com_desconto": 1, "gerado_em_padrao": "2026-10-26T23:41:10.000Z",
     "abreviacoes_pendentes": [{ "abreviacao": "ED.", "ocorrencias": 3, "exemplo": "ESM. ED. LIMITADA RISQUE 8ML" }],
     "categorias_sem_mapa": [],
     "colunas_ignoradas": ["CÓDIGO DE BARRAS"],
@@ -425,7 +425,7 @@ O formato das planilhas e as colunas estão no [guia técnico](GUIA_TECNICO.md#7
 ```
 `status`: `sucesso`, `parcial` ou `falha`. **Estoque e pedidos recentes:** a planilha pode ter a coluna opcional `gerado_em` (data e hora no horário de São Paulo, ex.: `2026-11-10 08:30` ou `10/11/2026 08:30`; no Excel, uma célula de data). O estoque gravado é `max(0, estoque da planilha − unidades de pedidos não cancelados feitos depois de gerado_em)`, e a movimentação registra o desconto na observação. Sem a coluna, vale a data de modificação do arquivo nos jobs de pasta e o horário do envio no `POST /produtos/importar`. `total_descontado` (unidades abatidas), `produtos_com_desconto` e `gerado_em_padrao` ficam no relatório; o log guarda `estoque_descontado`. `gerado_em` inválido ou no futuro é erro da linha. A regra e a limitação estão no [guia técnico](GUIA_TECNICO.md#7-importação-de-catálogo-planilhas-xlsx-e-csv).
 
-O relatório tem também `abreviacoes_pendentes` (abreviações do nome do produto que a importação **não** expandiu, por serem ambíguas), `categorias_sem_mapa` e `colunas_ignoradas` (colunas não reconhecidas, como o código de barras: ignoradas sem erro).
+A coluna opcional `sku_antigo` troca o SKU do produto existente (`skus_trocados` no relatório; o id e os pedidos ficam). O relatório tem também `abreviacoes_pendentes` (abreviações do nome do produto que a importação **não** expandiu, por serem ambíguas), `categorias_sem_mapa` e `colunas_ignoradas` (colunas não reconhecidas, como o código de barras: ignoradas sem erro).
 
 A planilha pode ser o portfólio da empresa (`CÓDIGO`, `PRODUTO`, `FABRICANTE`, `CATEGORIA - Cad. ERP`...) ou o formato atual do CSV; os cabeçalhos aceitos estão no [guia técnico](GUIA_TECNICO.md#7-importação-de-catálogo-planilhas-xlsx-e-csv). Linha com célula de erro do Excel (`#N/D`, `#REF!`) vira linha com erro no relatório (`"Célula com erro (#N/D)."`) e as demais entram.
 

@@ -9,14 +9,16 @@ const { lerCsvMatriz } = require('../lib/csv');
 const { gerarNomeExibicao, carregarDicionario } = require('../lib/nomeProduto');
 const { gerarSlug } = require('../lib/texto');
 const { lerDataHoraSaoPaulo } = require('../lib/datas');
-const { validarDadosProduto } = require('../helpers/validacaoProduto');
+const { validarDadosProduto, PADRAO_SKU } = require('../helpers/validacaoProduto');
 const { alterarEstoque } = require('./estoque');
 
 // Mesmo formato do seeds/catalogo_inicial.csv. Só "sku" é obrigatória; colunas ausentes não são alteradas.
 const COLUNAS = [
     'sku', 'nome', 'categoria', 'subcategoria', 'marca', 'descricao', 'destaques', 'imagem_url',
-    'ativo', 'estoque_minimo', 'multiplo_venda', 'preco', 'estoque', 'gerado_em'
+    'ativo', 'estoque_minimo', 'multiplo_venda', 'preco', 'estoque', 'gerado_em', 'sku_antigo'
 ];
+// Produtos do catálogo antigo de demonstração (SKU-101...), desativados quando o catálogo real não os aproveita.
+const SKU_LEGADO = /^SKU-\d+$/i;
 // Cabeçalhos do portfólio (CSV ou Excel), sem diferenciar maiúsculas nem acentos. "PRODUTO" é o nome do portfólio
 // (nome_erp): dele sai o nome de exibição, a menos que a planilha tenha a própria coluna "nome".
 const COLUNAS_ACEITAS = [...COLUNAS, 'nome_erp', 'categoria_erp'];
@@ -87,6 +89,16 @@ function converterLinha(valores, cabecalho, dicionario) {
         }
     }
 
+    // SKU antigo: o produto que hoje tem esse SKU passa a ter o novo (mesmo id, mesmos pedidos).
+    let skuAntigo;
+    if (tem('sku_antigo') && valores.sku_antigo) {
+        if (!PADRAO_SKU.test(valores.sku_antigo)) {
+            erros.push({ campo: 'sku_antigo', mensagem: 'O SKU antigo deve conter apenas letras, números, ponto, hífen ou sublinhado.' });
+        } else if (valores.sku_antigo.toUpperCase() !== String(valores.sku).toUpperCase()) {
+            skuAntigo = valores.sku_antigo;
+        }
+    }
+
     // Quando a planilha de estoque foi gerada (horário de São Paulo): pedidos feitos depois dela são descontados do estoque.
     let geradoEm;
     if (tem('gerado_em') && valores.gerado_em) {
@@ -127,7 +139,7 @@ function converterLinha(valores, cabecalho, dicionario) {
         if (!(erro instanceof ErroApi)) throw erro;
         erros.push(...erro.detalhes);
     }
-    return { dados, estoque, geradoEm, nomesTaxonomia, nomeErp, nomeGerado, pendentes, erros };
+    return { dados, estoque, geradoEm, skuAntigo, nomesTaxonomia, nomeErp, nomeGerado, pendentes, erros };
 }
 
 /**
@@ -283,7 +295,8 @@ async function importarCatalogo(entrada, {
     formato,
     dicionario = carregarDicionario(),
     mapaCategoriasOrigem,
-    geradoEmPadrao
+    geradoEmPadrao,
+    desativarLegados = false
 } = {}) {
     const { linhas, formato: formatoLido } = await lerMatriz(entrada, { formato });
     const csv = montarTabela(linhas);
@@ -310,6 +323,7 @@ async function importarCatalogo(entrada, {
         categorias_criadas: 0,
         marcas_criadas: 0,
         movimentacoes_estoque: 0,
+        skus_trocados: 0,
         total_descontado: 0,
         produtos_com_desconto: 0,
         gerado_em_padrao: geradoEmPadrao ? geradoEmPadrao.toISOString() : null,
@@ -344,6 +358,7 @@ async function importarCatalogo(entrada, {
 
     // Valida todas as linhas antes de abrir a transação.
     const skusNoArquivo = new Set();
+    const antigosNoArquivo = new Set();
     const validas = [];
     for (const registro of registros) {
         const sku = registro.valores.sku;
@@ -359,6 +374,12 @@ async function importarCatalogo(entrada, {
             convertido.erros.push({ campo: 'sku', mensagem: 'SKU repetido no arquivo.' });
         }
         if (chave) skusNoArquivo.add(chave);
+        if (convertido.skuAntigo) {
+            if (antigosNoArquivo.has(convertido.skuAntigo.toUpperCase())) {
+                convertido.erros.push({ campo: 'sku_antigo', mensagem: 'SKU antigo repetido no arquivo.' });
+            }
+            antigosNoArquivo.add(convertido.skuAntigo.toUpperCase());
+        }
         if (convertido.erros.length > 0) {
             registrarErros(registro.linha, sku, convertido.erros);
         } else {
@@ -374,7 +395,7 @@ async function importarCatalogo(entrada, {
     const transacao = await sequelize.transaction();
     try {
         const existentes = validas.length === 0 ? [] : await Produto.findAll({
-            where: { sku: { [Op.in]: validas.map((item) => item.dados.sku) } },
+            where: { sku: { [Op.in]: [...validas.map((item) => item.dados.sku), ...validas.filter((item) => item.skuAntigo).map((item) => item.skuAntigo)] } },
             transaction: transacao,
             lock: transacao.LOCK.UPDATE
         });
@@ -414,6 +435,15 @@ async function importarCatalogo(entrada, {
 
             let produto = porSku.get(dados.sku.toUpperCase());
             let alterado = false;
+            if (!produto && item.skuAntigo && porSku.has(item.skuAntigo.toUpperCase())) {
+                // Troca o SKU do produto EXISTENTE (mantém o id, o estoque e os pedidos) e segue como atualização.
+                produto = porSku.get(item.skuAntigo.toUpperCase());
+                porSku.delete(item.skuAntigo.toUpperCase());
+                await produto.update({ sku: dados.sku }, { transaction: transacao });
+                porSku.set(dados.sku.toUpperCase(), produto);
+                relatorio.skus_trocados += 1;
+                alterado = true;
+            }
             if (!produto) {
                 if (somenteEstoque) {
                     registrarErros(item.linha, dados.sku, [{ campo: 'sku', mensagem: 'SKU não cadastrado. O arquivo de estoque não cria produtos.' }]);
@@ -482,16 +512,18 @@ async function importarCatalogo(entrada, {
         // Proteção: um arquivo vazio, truncado ou com erros desativaria produtos que só "sumiram" por falha
         // no arquivo. Nesses casos, ninguém é desativado e o relatório avisa.
         const arquivoIntegro = relatorio.linhas > 0 && relatorio.com_erro === 0;
-        if (desativarAusentes && !arquivoIntegro) {
+        if ((desativarAusentes || desativarLegados) && !arquivoIntegro) {
             relatorio.avisos.push('Nenhum produto foi desativado: a carga completa só desativa ausentes quando o arquivo não tem erros.');
         }
-        if (desativarAusentes && arquivoIntegro) {
+        if ((desativarAusentes || desativarLegados) && arquivoIntegro) {
             const ativos = await Produto.findAll({
                 where: { ativo: true },
                 attributes: ['id_produto', 'sku'],
                 transaction: transacao
             });
-            const ausentes = ativos.filter((produto) => !skusNoArquivo.has(produto.sku.toUpperCase()));
+            // Carga completa: todo produto ausente. Catálogo real (seed): só os antigos "SKU-123" sem correspondência.
+            const ausentes = ativos.filter((produto) => !skusNoArquivo.has(produto.sku.toUpperCase()) &&
+                (desativarAusentes || SKU_LEGADO.test(produto.sku)));
             if (ausentes.length > 0) {
                 await Produto.update(
                     { ativo: false },

@@ -5,7 +5,7 @@ const path = require('node:path');
 const request = require('supertest');
 const { prepararApp, criarUsuario } = require('./ajuda');
 
-const CSV = fs.readFileSync(path.join(__dirname, '..', 'seeds', 'catalogo_inicial.csv'), 'utf8');
+const CSV = fs.readFileSync(path.join(__dirname, 'fixtures', 'catalogo_legado.csv'), 'utf8');
 
 let app;
 let sequelize;

@@ -1,0 +1,6 @@
+﻿"sku";"nome";"nome_erp";"categoria";"subcategoria";"marca";"estoque";"estoque_minimo";"multiplo_venda";"ativo";"imagem_url";"sku_antigo"
+"1391";"Sabonete Phebo 90 g Frescor da Manhã";"SAB. PHEBO FRESCOR DA MANHA 90G*";"Higiene e Beleza";"Sabonetes";"Phebo";"0";"10";"1";"sim";"/img/phebo.webp";"SKU-104"
+"1392";"Esmalte Risqué Renda 8 ml";"ESM. RISQUE RENDA 8ML";"Higiene e Beleza";"Unhas";"Risqué";"8";"10";"1";"sim";"/img/risque.webp";"SKU-103"
+"1393";"Loção hidratante Paixão Flor de Baunilha 200 ml";"LOC.HID. PAIXAO FLOR DE BAUNILHA 200ML";"Higiene e Beleza";"Cremes";"Paixão";"120";"10";"1";"sim";"/img/paixao.webp";"SKU-101"
+"1394";"Biscoito Recheado Chocolate 130 g";"BISC. RECH. CHOC 130G";"Mercearia";"Biscoitos";"Marca Nova";"45";"10";"6";"sim";"";""
+"1395";"Produto de linha parada";"PRODUTO LINHA PARADA";"Mercearia";"";"Marca Nova";"3";"10";"1";"nao";"";""

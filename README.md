@@ -34,7 +34,7 @@ As variáveis opcionais (limites, CORS, jobs, logs etc.) estão no [guia técnic
 ```bash
 npm install             # dependências
 npm run migrar          # cria o banco e aplica as migrations
-npm run seed:catalogo   # 38 produtos do catálogo inicial
+npm run seed:catalogo   # catálogo inicial (seeds/catalogo_inicial.csv)
 npm run seed:dev        # usuários de teste
 npm run seed:demo       # banners, campanha, contatos e pedidos de demonstração
 npm run dev             # API em http://localhost:3000 (a API fica em /api/v1)
