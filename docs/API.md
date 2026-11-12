@@ -50,9 +50,9 @@ Todos os usuários da equipe têm as mesmas permissões na área do gestor (prod
 Na coluna **Perfil** das tabelas: **público** (sem token), **logado** (qualquer perfil), **cliente**, **equipe**, **gestor da equipe** (equipe com `pode_gerenciar_equipe`).
 
 ### Formato de erro
-Todo erro segue o mesmo formato (`detalhes` é opcional):
+Todo erro segue o mesmo formato (`detalhes` é opcional). `request_id` é o `X-Request-Id` da requisição (o mesmo cabeçalho da resposta): informe-o ao suporte para achar o log.
 ```json
-{ "sucesso": false, "mensagem": "Texto para mostrar ao usuário.", "codigo": "CODIGO_ESTAVEL", "detalhes": [] }
+{ "sucesso": false, "mensagem": "Texto para mostrar ao usuário.", "codigo": "CODIGO_ESTAVEL", "detalhes": [], "request_id": "3f0c8e0e-7a55-4f1c-9d2b-0a1b2c3d4e5f" }
 ```
 Erros de validação de formulário (`422 VALIDACAO`) trazem **todos** os campos com problema:
 ```json
@@ -220,11 +220,15 @@ Depois da troca, **todos os tokens emitidos antes dela deixam de valer, inclusiv
 ### O que cada perfil vê
 | Campo | Público | Cliente logado | Equipe |
 |---|---|---|---|
-| `id_produto`, `sku`, `nome`, `descricao`, `destaques`, `imagem_url`, `categoria`, `marca`, `multiplo_venda`, `disponibilidade` | ✓ | ✓ | ✓ |
-| `estoque` (quantidade exata) | | ✓ | ✓ |
+| `id_produto`, `sku`, `nome`, `descricao`, `destaques`, `imagem_url`, `categoria`, `marca`, `multiplo_venda`, `disponibilidade`, `faixa_estoque` | ✓ | ✓ | ✓ |
+| `estoque` (quantidade exata) | | | ✓ |
 | `preco`, `estoque_minimo`, `ativo`, `id_fornecedor`, `criado_em`, `atualizado_em` | | | ✓ |
 
+Visitantes e clientes **nunca** recebem a quantidade exata em estoque, em nenhuma rota (vitrine, produto, campanhas, repetir pedido, erros de checkout). Só a equipe vê `estoque`.
+
 `disponibilidade`: `indisponivel` (estoque abaixo do múltiplo de venda), `ultimas_unidades` (estoque até o `estoque_minimo`) ou `disponivel`.
+
+`faixa_estoque`: `{ "codigo": "...", "rotulo": "..." }`, com `codigo` `acima_do_limite` ("Mais de 50 disponíveis"), `disponivel` ("Disponível"), `ultimas_unidades` ("Últimas unidades") ou `indisponivel` ("Indisponível"). O limite de `acima_do_limite` é a configuração `estoque_faixa_alta` (padrão 50, inteiro de 1 a 10000, editável em `PUT /configuracoes/estoque_faixa_alta`); o número do rótulo acompanha o limite.
 
 ### GET /produtos
 | Parâmetro | Descrição |
@@ -252,13 +256,14 @@ Resposta (visitante):
       "categoria": { "id_categoria": 1, "nome": "Higiene e beleza", "slug": "higiene-e-beleza" },
       "marca": { "id_marca": 7, "nome": "Colgate-Palmolive", "slug": "colgate-palmolive" },
       "multiplo_venda": 1,
-      "disponibilidade": "disponivel"
+      "disponibilidade": "disponivel",
+      "faixa_estoque": { "codigo": "disponivel", "rotulo": "Disponível" }
     }
   ],
   "paginacao": { "total": 1, "pagina": 1, "limite": 24, "total_paginas": 1 }
 }
 ```
-Cliente logado: mesmo objeto + `"estoque": 25`. Equipe: + `"preco": null, "estoque_minimo": 10, "ativo": true, "id_fornecedor": null, "criado_em": "...", "atualizado_em": "..."`.
+Cliente logado: o mesmo objeto do visitante. Equipe: + `"estoque": 25, "preco": null, "estoque_minimo": 10, "ativo": true, "id_fornecedor": null, "criado_em": "...", "atualizado_em": "..."`.
 Erros: `400 FILTRO_INVALIDO`, `400 PAGINACAO_INVALIDA`.
 
 ### GET /produtos/sugestoes?busca=gran
@@ -472,11 +477,11 @@ Se algum item tiver problema, **nada é gravado** e vem a lista completa:
   "codigo": "ITENS_INDISPONIVEIS",
   "detalhes": [
     { "id_produto": 15, "sku": "SKU-115", "nome": "Anti-séptico bucal Colgate Plax sem álcool Melancia 750 ml",
-      "solicitado": 500, "disponivel": 22, "multiplo_venda": 1, "motivo": "estoque_insuficiente" }
+      "solicitado": 500, "multiplo_venda": 1, "disponibilidade": "ultimas_unidades", "motivo": "estoque_insuficiente" }
   ]
 }
 ```
-`motivo`: `produto_inexistente`, `produto_inativo`, `multiplo_de_venda` ou `estoque_insuficiente`. `disponivel` é a maior quantidade que pode ser pedida agora, respeitando o múltiplo de venda.
+`motivo`: `produto_inexistente`, `produto_inativo`, `multiplo_de_venda` ou `estoque_insuficiente`. `disponibilidade` é `disponivel`, `ultimas_unidades` ou `indisponivel`; a quantidade em estoque nunca é informada.
 Outros erros: `422 VALIDACAO`, `422 ENDERECO_OBRIGATORIO` (cliente sem endereço).
 
 Pedido, itens, baixa de estoque, movimentações e histórico são gravados na mesma transação, e pedidos simultâneos não usam o mesmo estoque. Todo pedido nas respostas traz `pode_cancelar`, calculado para quem fez a requisição.
@@ -515,19 +520,19 @@ Equipe vê qualquer pedido; cliente só os próprios (o de outro cliente respond
 ```
 
 ### GET /pedidos/:id_pedido/repetir (cliente dono)
-Sugere os itens de um pedido anterior (de qualquer status) ajustados ao catálogo de agora. **Não reserva estoque**: o checkout valida tudo de novo.
+Sugere os itens de um pedido anterior (de qualquer status) ajustados ao catálogo de agora. **Não reserva estoque**: o checkout valida tudo de novo. A quantidade do pedido anterior é mantida para o cliente ajustar; o item sem estoque suficiente vem marcado em `ajuste`.
 ```json
 {
   "id_pedido_origem": 12,
   "itens": [
     { "id_produto": 15, "sku": "SKU-115", "nome": "Anti-séptico bucal Colgate Plax ...", "imagem_url": "/img/colgate-plax.webp",
-      "multiplo_venda": 1, "disponibilidade": "disponivel", "estoque": 24,
+      "multiplo_venda": 1, "disponibilidade": "disponivel", "faixa_estoque": { "codigo": "disponivel", "rotulo": "Disponível" },
       "quantidade_anterior": 4, "quantidade_sugerida": 4, "ajuste": null },
     { "id_produto": 7, "sku": "SKU-107", "nome": "Fralda Huggies ...", "imagem_url": "/img/huggies.webp",
-      "multiplo_venda": 1, "disponibilidade": "ultimas_unidades", "estoque": 6,
-      "quantidade_anterior": 10, "quantidade_sugerida": 6, "ajuste": "reduzido_ao_estoque" }
+      "multiplo_venda": 1, "disponibilidade": "ultimas_unidades", "faixa_estoque": { "codigo": "ultimas_unidades", "rotulo": "Últimas unidades" },
+      "quantidade_anterior": 10, "quantidade_sugerida": 10, "ajuste": "estoque_parcial" }
   ],
-  "itens_para_checkout": [{ "id_produto": 15, "quantidade": 4 }, { "id_produto": 7, "quantidade": 6 }],
+  "itens_para_checkout": [{ "id_produto": 15, "quantidade": 4 }],
   "itens_ajustados": 1
 }
 ```
@@ -535,11 +540,11 @@ Sugere os itens de um pedido anterior (de qualquer status) ajustados ao catálog
 |---|---|
 | `null` | Mesma quantidade do pedido anterior |
 | `ajustado_ao_multiplo` | O múltiplo de venda mudou; arredondado para baixo, com no mínimo um múltiplo |
-| `reduzido_ao_estoque` | Menos estoque que o pedido anterior; sugere o máximo disponível |
-| `indisponivel` | Sem estoque agora (`quantidade_sugerida: 0`) |
-| `produto_inativo` | Produto fora de linha (`quantidade_sugerida: 0`) |
+| `estoque_parcial` | O estoque de agora não cobre a quantidade (parcial); a quantidade original fica para o cliente ajustar |
+| `indisponivel` | Sem estoque agora; a quantidade original fica para o cliente decidir |
+| `produto_inativo` | Produto fora de linha |
 
-`itens_para_checkout` já vem no formato de `POST /pedidos` (sem os itens zerados). Pedido de outro cliente ou inexistente: `404`.
+`itens_para_checkout` já vem no formato de `POST /pedidos` e traz só os itens que o estoque cobre por inteiro (`ajuste` `null` ou `ajustado_ao_multiplo`). Pedido de outro cliente ou inexistente: `404`.
 
 ### PUT /pedidos/:id_pedido/status (equipe)
 ```json
@@ -735,6 +740,7 @@ Textos editáveis do site, identificados por uma chave (ex.: `sobre`, `politica-
 | `horario_atendimento` | sim | texto até 200 caracteres |
 | `aviso_topo` | sim | texto até 200 caracteres |
 | `meta_reposicao` | não | inteiro de 1 a 1.000.000 (padrão 50) |
+| `estoque_faixa_alta` | não | inteiro de 1 a 10000 (padrão 50): acima dele o produto disponível aparece como "Mais de N disponíveis" |
 
 Erros: `422 VALIDACAO`, `404` (chave desconhecida).
 
@@ -818,7 +824,7 @@ Campanhas **não aplicam desconto**: são um título, um selo de texto (ex.: "Le
 | DELETE | `/campanhas/:id` | equipe | Exclui |
 
 ### GET /campanhas/ativas (público)
-Os produtos vêm no mesmo formato da vitrine (`GET /produtos`), inclusive com `estoque` para quem estiver logado. Produtos desativados não aparecem. Ordem: as que terminam primeiro vêm antes.
+Os produtos vêm no mesmo formato da vitrine (`GET /produtos`), com `faixa_estoque` (o estoque exato só aparece para a equipe). Produtos desativados não aparecem. Ordem: as que terminam primeiro vêm antes.
 ```json
 {
   "campanhas": [

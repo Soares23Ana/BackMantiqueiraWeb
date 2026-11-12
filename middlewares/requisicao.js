@@ -32,13 +32,14 @@ function identificarRequisicao(req, res, next) {
     logger.contexto.run({ request_id: req.id }, next);
 }
 
-// Garante o formato { sucesso:false, mensagem, codigo, detalhes? } em qualquer resposta de erro,
-// inclusive nas que os controladores ainda devolvem como { mensagem }.
+// Garante o formato { sucesso:false, mensagem, codigo, detalhes?, request_id } em qualquer resposta de erro,
+// inclusive nas que os controladores ainda devolvem como { mensagem }. O request_id é o X-Request-Id da
+// requisição, para o suporte achar o log.
 function padronizarErros(req, res, next) {
     const json = res.json.bind(res);
     res.json = (corpo) => {
         if (res.statusCode >= 400 && corpo && typeof corpo === 'object' && !Array.isArray(corpo)) {
-            return json(corpoErro(res.statusCode, corpo));
+            return json({ ...corpoErro(res.statusCode, corpo), request_id: req.id });
         }
         return json(corpo);
     };

@@ -7,7 +7,7 @@ const { somenteDigitos, normalizarCnpj } = require('../lib/cnpj');
 const { apresentarCliente } = require('../lib/apresentacao');
 const { lerPaginacao, montarPaginacao } = require('../lib/paginacao');
 const servicoPedidos = require('../servicos/pedidos');
-const { disponibilidade } = require('../servicos/estoque');
+const { disponibilidade, faixaEstoque, lerLimiteFaixa } = require('../servicos/estoque');
 const { registrarEvento } = require('../servicos/eventos');
 
 const INCLUDE_ITENS = {
@@ -252,7 +252,9 @@ async function cancelarPedido(req, res) {
 /**
  * GET /pedidos/:id_pedido/repetir (cliente dono): sugere os itens de um pedido anterior ajustados ao
  * catálogo de agora. Não reserva estoque; o checkout valida tudo de novo.
- * ajuste por item: null (igual ao anterior), ajustado_ao_multiplo, reduzido_ao_estoque, indisponivel ou produto_inativo.
+ * A quantidade do pedido anterior é mantida para o cliente ajustar; sem o estoque exato, o item vem marcado.
+ * ajuste por item: null (cabe no estoque), ajustado_ao_multiplo, estoque_parcial (o estoque não cobre a
+ * quantidade), indisponivel ou produto_inativo.
  */
 async function repetirPedido(req, res) {
     const idPedido = lerIdPedido(req.params.id_pedido);
@@ -273,20 +275,19 @@ async function repetirPedido(req, res) {
         throw new ErroApi(404, 'PEDIDO_NAO_ENCONTRADO', 'Pedido não encontrado.');
     }
 
+    const limiteFaixa = await lerLimiteFaixa();
     const itens = pedido.itens.map(({ quantidade: anterior, produto }) => {
         const multiplo = Math.max(produto.multiplo_venda, 1);
         // Múltiplo de venda pode ter mudado: arredonda para baixo, com no mínimo um múltiplo.
         const ajustada = Math.max(Math.floor(anterior / multiplo), 1) * multiplo;
         const maximoAgora = Math.floor(produto.quantidade_estoque / multiplo) * multiplo;
-        let sugerida = Math.min(ajustada, maximoAgora);
         let ajuste = null;
         if (!produto.ativo) {
-            sugerida = 0;
             ajuste = 'produto_inativo';
         } else if (maximoAgora === 0) {
             ajuste = 'indisponivel';
-        } else if (sugerida < ajustada) {
-            ajuste = 'reduzido_ao_estoque';
+        } else if (maximoAgora < ajustada) {
+            ajuste = 'estoque_parcial';
         } else if (ajustada !== anterior) {
             ajuste = 'ajustado_ao_multiplo';
         }
@@ -297,9 +298,11 @@ async function repetirPedido(req, res) {
             imagem_url: produto.imagem_url,
             multiplo_venda: multiplo,
             disponibilidade: produto.ativo ? disponibilidade(produto) : 'indisponivel',
-            estoque: produto.quantidade_estoque,
+            faixa_estoque: produto.ativo
+                ? faixaEstoque(produto, limiteFaixa)
+                : { codigo: 'indisponivel', rotulo: 'Indisponível' },
             quantidade_anterior: anterior,
-            quantidade_sugerida: sugerida,
+            quantidade_sugerida: ajustada,
             ajuste
         };
     });
@@ -307,9 +310,9 @@ async function repetirPedido(req, res) {
     return res.status(200).json({
         id_pedido_origem: pedido.id_pedido,
         itens,
-        // Pronto para enviar em POST /pedidos (só os itens com quantidade sugerida).
+        // Pronto para enviar em POST /pedidos: só os itens que o estoque cobre por inteiro.
         itens_para_checkout: itens
-            .filter((item) => item.quantidade_sugerida > 0)
+            .filter((item) => item.ajuste === null || item.ajuste === 'ajustado_ao_multiplo')
             .map((item) => ({ id_produto: item.id_produto, quantidade: item.quantidade_sugerida })),
         itens_ajustados: itens.filter((item) => item.ajuste !== null).length
     });

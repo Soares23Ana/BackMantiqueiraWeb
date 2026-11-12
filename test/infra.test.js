@@ -1,7 +1,7 @@
 const { test, before, after, describe } = require('node:test');
 const assert = require('node:assert/strict');
 const request = require('supertest');
-const { config, prepararApp, criarUsuario } = require('./ajuda');
+const { config, prepararApp, criarUsuario, semRequestId } = require('./ajuda');
 const { aplicarMigracoes, abrirConexao } = require('../db/migracoes');
 const { validarAmbiente } = require('../config/ambiente');
 
@@ -144,7 +144,7 @@ describe('HTTP', () => {
     test('a API fica em /api/v1 e rotas sem versão respondem 404 padronizado', async () => {
         await request(app).get('/api/v1/cms').expect(200);
         const resposta = await request(app).get('/cms').expect(404);
-        assert.deepEqual(resposta.body, {
+        assert.deepEqual(semRequestId(resposta.body), {
             sucesso: false,
             mensagem: 'Rota não encontrada.',
             codigo: 'ROTA_NAO_ENCONTRADA'
@@ -158,7 +158,7 @@ describe('HTTP', () => {
             .get('/api/v1/pedidos/abc')
             .set('Authorization', auth)
             .expect(400);
-        assert.deepEqual(resposta.body, {
+        assert.deepEqual(semRequestId(resposta.body), {
             sucesso: false,
             mensagem: 'Identificador de pedido inválido.',
             codigo: 'REQUISICAO_INVALIDA'

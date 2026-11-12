@@ -9,7 +9,7 @@ const { ehEquipe } = require('../lib/perfis');
 const { lerPaginacao, montarPaginacao } = require('../lib/paginacao');
 const { escaparLike, termosDeBusca } = require('../lib/texto');
 const { validarDadosProduto } = require('../helpers/validacaoProduto');
-const { alterarEstoque, disponibilidade } = require('../servicos/estoque');
+const { alterarEstoque, disponibilidade, faixaEstoque, lerLimiteFaixa } = require('../servicos/estoque');
 const { registrarEvento } = require('../servicos/eventos');
 
 const PASTA_UPLOADS = path.join(__dirname, '..', 'publico', 'uploads');
@@ -22,8 +22,9 @@ const INCLUDES = [
     { model: Marca, as: 'marca', attributes: ['id_marca', 'nome', 'slug'] }
 ];
 
-// O que cada perfil vê: visitante não vê estoque exato; só a equipe vê preço e dados de gestão.
-function apresentarProduto(produto, usuario) {
+// O que cada perfil vê: só a equipe vê o estoque exato, o preço e os dados de gestão.
+// Visitante e cliente recebem a disponibilidade e a faixa de estoque (limiteFaixa vem de lerLimiteFaixa()).
+function apresentarProduto(produto, usuario, limiteFaixa) {
     const dados = {
         id_produto: produto.id_produto,
         sku: produto.sku,
@@ -38,13 +39,12 @@ function apresentarProduto(produto, usuario) {
             ? { id_marca: produto.marca.id_marca, nome: produto.marca.nome, slug: produto.marca.slug }
             : null,
         multiplo_venda: produto.multiplo_venda,
-        disponibilidade: disponibilidade(produto)
+        disponibilidade: disponibilidade(produto),
+        faixa_estoque: faixaEstoque(produto, limiteFaixa)
     };
-    if (usuario) {
-        dados.estoque = produto.quantidade_estoque;
-    }
     if (ehEquipe(usuario)) {
         Object.assign(dados, {
+            estoque: produto.quantidade_estoque,
             preco: produto.preco === null ? null : Number(produto.preco),
             estoque_minimo: produto.estoque_minimo,
             ativo: produto.ativo,
@@ -178,6 +178,7 @@ async function listar(req, res) {
     const filtros = lerFiltros(req.query, req.usuario);
     const paginacao = lerPaginacao(req.query, { limitePadrao: 24, limiteMaximo: 100 });
 
+    const limiteFaixa = await lerLimiteFaixa();
     const { rows, count } = await Produto.findAndCountAll({
         where: montarWhere(filtros),
         include: INCLUDES,
@@ -195,7 +196,7 @@ async function listar(req, res) {
         });
     }
     return res.status(200).json({
-        produtos: rows.map((produto) => apresentarProduto(produto, req.usuario)),
+        produtos: rows.map((produto) => apresentarProduto(produto, req.usuario, limiteFaixa)),
         paginacao: montarPaginacao(count, paginacao)
     });
 }
@@ -305,7 +306,7 @@ async function obter(req, res) {
     if (!produto || (!produto.ativo && !ehEquipe(req.usuario))) {
         throw new ErroApi(404, 'PRODUTO_NAO_ENCONTRADO', 'Produto não encontrado.');
     }
-    return res.status(200).json({ produto: apresentarProduto(produto, req.usuario) });
+    return res.status(200).json({ produto: apresentarProduto(produto, req.usuario, await lerLimiteFaixa()) });
 }
 
 async function validarReferencias(dados, transacao) {
@@ -355,7 +356,7 @@ async function cadastrar(req, res) {
         return res.status(201).json({
             mensagem: 'Produto cadastrado com sucesso.',
             id_produto: produto.id_produto,
-            produto: apresentarProduto(completo, req.usuario)
+            produto: apresentarProduto(completo, req.usuario, await lerLimiteFaixa())
         });
     } catch (erro) {
         return tratarErroDeGravacao(erro);
@@ -395,7 +396,7 @@ function atualizar({ parcial }) {
             tratarErroDeGravacao(erro);
         }
         const produto = await buscarProduto(idProduto);
-        return res.status(200).json({ mensagem: 'Produto atualizado.', produto: apresentarProduto(produto, req.usuario) });
+        return res.status(200).json({ mensagem: 'Produto atualizado.', produto: apresentarProduto(produto, req.usuario, await lerLimiteFaixa()) });
     };
 }
 
@@ -446,7 +447,7 @@ async function ajustarEstoque(req, res) {
 
     return res.status(200).json({
         mensagem: resultado.movimentacao ? 'Estoque atualizado.' : 'O estoque já estava com esse valor.',
-        produto: apresentarProduto(resultado.produto, req.usuario),
+        produto: apresentarProduto(resultado.produto, req.usuario, await lerLimiteFaixa()),
         movimentacao: resultado.movimentacao
     });
 }
@@ -477,7 +478,7 @@ async function desativar(req, res) {
     if (produto.ativo) {
         await produto.update({ ativo: false });
     }
-    return res.status(200).json({ mensagem: 'Produto desativado.', produto: apresentarProduto(produto, req.usuario) });
+    return res.status(200).json({ mensagem: 'Produto desativado.', produto: apresentarProduto(produto, req.usuario, await lerLimiteFaixa()) });
 }
 
 async function removerArquivo(caminho) {
@@ -511,7 +512,7 @@ async function enviarImagem(req, res) {
     if (upload) {
         await removerArquivo(path.join(PASTA_UPLOADS, upload[1]));
     }
-    return res.status(200).json({ mensagem: 'Imagem atualizada.', produto: apresentarProduto(produto, req.usuario) });
+    return res.status(200).json({ mensagem: 'Imagem atualizada.', produto: apresentarProduto(produto, req.usuario, await lerLimiteFaixa()) });
 }
 
 module.exports = {

@@ -55,4 +55,13 @@ async function criarUsuario(tipo, dados = {}) {
     return { usuario, token, auth: `Bearer ${token}` };
 }
 
-module.exports = { config, recriarBancoDeTeste, prepararApp, criarUsuario };
+const assert = require('node:assert/strict');
+
+// Todo corpo de erro leva o request_id (o X-Request-Id da requisição); devolve o corpo sem ele para comparar o resto.
+function semRequestId(corpo) {
+    assert.equal(typeof corpo.request_id, 'string', 'o corpo de erro deve trazer request_id');
+    const { request_id: _id, ...resto } = corpo;
+    return resto;
+}
+
+module.exports = { config, recriarBancoDeTeste, prepararApp, criarUsuario, semRequestId };

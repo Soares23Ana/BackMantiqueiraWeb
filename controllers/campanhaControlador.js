@@ -4,6 +4,7 @@ const { Campanha, CampanhaProduto, Produto, Categoria, Marca } = require('../mod
 const { ErroApi } = require('../lib/erros');
 const { lerDataHora } = require('../lib/datas');
 const { apresentarProduto } = require('./produtoControlador');
+const { lerLimiteFaixa } = require('../servicos/estoque');
 
 const SITUACOES = ['agendada', 'ativa', 'encerrada'];
 const ATRIBUTOS_PRODUTO_EQUIPE = ['id_produto', 'sku', 'nome', 'imagem_url', 'ativo'];
@@ -122,6 +123,7 @@ async function listarAtivas(req, res) {
         }],
         order: [['fim_em', 'ASC'], ['id_campanha', 'ASC'], [{ model: Produto, as: 'produtos' }, 'nome', 'ASC']]
     });
+    const limiteFaixa = await lerLimiteFaixa();
     return res.status(200).json({
         campanhas: campanhas.map((campanha) => ({
             id_campanha: campanha.id_campanha,
@@ -129,7 +131,7 @@ async function listarAtivas(req, res) {
             selo: campanha.selo,
             inicio_em: campanha.inicio_em,
             fim_em: campanha.fim_em,
-            produtos: campanha.produtos.map((produto) => apresentarProduto(produto, req.usuario))
+            produtos: campanha.produtos.map((produto) => apresentarProduto(produto, req.usuario, limiteFaixa))
         }))
     });
 }

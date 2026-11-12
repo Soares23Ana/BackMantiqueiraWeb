@@ -110,13 +110,15 @@ describe('vitrine pública', () => {
         assert.ok(produto.categoria.slug && produto.marca.slug);
     });
 
-    test('cliente logado vê estoque exato, mas não preço; equipe vê preço', async () => {
+    test('cliente logado não vê estoque exato nem preço; equipe vê os dois', async () => {
         const doCliente = await listar('?busca=SKU-101', cliente.auth).expect(200);
-        assert.equal(doCliente.body.produtos[0].estoque, 120);
+        assert.equal(doCliente.body.produtos[0].estoque, undefined);
+        assert.equal(doCliente.body.produtos[0].faixa_estoque.codigo, 'acima_do_limite');
         assert.equal(doCliente.body.produtos[0].preco, undefined);
         const daEquipe = await listar('?busca=SKU-101', funcionario.auth).expect(200);
         assert.ok('preco' in daEquipe.body.produtos[0]);
         assert.equal(daEquipe.body.produtos[0].estoque_minimo, 10);
+        assert.equal(daEquipe.body.produtos[0].estoque, 120);
     });
 
     test('token inválido é tratado como visitante', async () => {

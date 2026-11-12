@@ -116,12 +116,12 @@ describe('checkout (POST /pedidos)', () => {
         assert.equal(porProduto[999999].motivo, 'produto_inexistente');
         assert.equal(porProduto[produtos['T-INATIVO']].motivo, 'produto_inativo');
         assert.deepEqual(
-            { motivo: porProduto[produtos['T-MULT6']].motivo, multiplo: porProduto[produtos['T-MULT6']].multiplo_venda, disponivel: porProduto[produtos['T-MULT6']].disponivel },
-            { motivo: 'multiplo_de_venda', multiplo: 6, disponivel: 30 }
+            { motivo: porProduto[produtos['T-MULT6']].motivo, multiplo: porProduto[produtos['T-MULT6']].multiplo_venda, disponibilidade: porProduto[produtos['T-MULT6']].disponibilidade },
+            { motivo: 'multiplo_de_venda', multiplo: 6, disponibilidade: 'disponivel' }
         );
         assert.deepEqual(
-            { motivo: porProduto[produtos['T-ULTIMOS']].motivo, solicitado: porProduto[produtos['T-ULTIMOS']].solicitado, disponivel: porProduto[produtos['T-ULTIMOS']].disponivel },
-            { motivo: 'estoque_insuficiente', solicitado: 8, disponivel: 5 }
+            { motivo: porProduto[produtos['T-ULTIMOS']].motivo, solicitado: porProduto[produtos['T-ULTIMOS']].solicitado, disponibilidade: porProduto[produtos['T-ULTIMOS']].disponibilidade },
+            { motivo: 'estoque_insuficiente', solicitado: 8, disponibilidade: 'ultimas_unidades' }
         );
         assert.equal(porProduto[produtos['SKU-104']].motivo, 'estoque_insuficiente');
         assert.equal(await estoqueDe('SKU-102'), antes);
@@ -428,13 +428,13 @@ describe('repetir pedido (GET /pedidos/:id/repetir)', () => {
         assert.deepEqual(porSku, {
             'R-OK': [4, 4, null],
             'R-MULT': [5, 6, 'ajustado_ao_multiplo'],
-            'R-POUCO': [10, 3, 'reduzido_ao_estoque'],
-            'R-INATIVO': [2, 0, 'produto_inativo'],
-            'R-ZERO': [2, 0, 'indisponivel']
+            'R-POUCO': [10, 10, 'estoque_parcial'],
+            'R-INATIVO': [2, 2, 'produto_inativo'],
+            'R-ZERO': [2, 2, 'indisponivel']
         });
         assert.equal(resposta.body.id_pedido_origem, id);
         assert.equal(resposta.body.itens_ajustados, 4);
-        assert.equal(resposta.body.itens_para_checkout.length, 3);
+        assert.equal(resposta.body.itens_para_checkout.length, 2);
 
         await pedir(cliente.auth, { itens: resposta.body.itens_para_checkout }).expect(201);
     });

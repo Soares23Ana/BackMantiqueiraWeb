@@ -40,6 +40,18 @@ const DEFINICOES = {
             return String(numero);
         }
     },
+    estoque_faixa_alta: {
+        descricao: 'Acima deste estoque, a vitrine mostra "Mais de N disponíveis" em vez de uma quantidade.',
+        publica: false,
+        padrao: '50',
+        validar: (valor) => {
+            const numero = Number(valor);
+            if (typeof valor === 'boolean' || !Number.isSafeInteger(numero) || numero < 1 || numero > 10000) {
+                throw new Error('deve ser um número inteiro entre 1 e 10.000');
+            }
+            return String(numero);
+        }
+    },
     whatsapp: { descricao: 'WhatsApp de atendimento, com DDI e DDD (ex.: 5519999990000).', publica: true, validar: telefone(12, 13) },
     telefone_contato: { descricao: 'Telefone de contato com DDD.', publica: true, validar: telefone(10, 11) },
     email_contato: {

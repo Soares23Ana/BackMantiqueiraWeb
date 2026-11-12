@@ -15,6 +15,7 @@ Detalhes de configuração e operação da API. O passo a passo para rodar o pro
 10. [Primeiro acesso em produção](#10-primeiro-acesso-em-produção)
 11. [Serviços externos (CEP e CNPJ)](#11-serviços-externos-cep-e-cnpj)
 12. [Riscos aceitos](#12-riscos-aceitos)
+13. [Regras de negócio](#13-regras-de-negócio)
 
 ---
 
@@ -296,3 +297,12 @@ A API consulta serviços públicos com o `fetch` nativo do Node (sem dependênci
 - **Por que não se corrige agora:** a correção que o npm sugere (`npm audit fix --force`) instala o `sequelize@3.30.0`, uma versão muito antiga e incompatível com esta API. Não usar `--force`.
 - **Registrado em:** 30/10/2026.
 - **Revisão:** sempre que sair uma nova versão do Sequelize, rodar `npm update sequelize` e `npm audit --omit=dev`; se o `uuid` já estiver corrigido, remover este item.
+
+---
+
+## 13. Regras de negócio
+
+### Estoque por faixa e rastreio de erros
+- **Estoque exato só para a equipe.** Visitantes e clientes recebem `disponibilidade` e `faixa_estoque` (`acima_do_limite`, `disponivel`, `ultimas_unidades` ou `indisponivel`) em toda rota que mostra produto (vitrine, produto, campanhas, repetir pedido), e o 409 `ITENS_INDISPONIVEIS` do checkout traz só o motivo e a disponibilidade. A função `faixaEstoque` (`servicos/estoque.js`) é o único ponto que decide a faixa.
+- **Limite da faixa alta:** configuração `estoque_faixa_alta` (padrão 50, inteiro de 1 a 10000), editável pela rota de configurações.
+- **`request_id` nos erros:** todo corpo de erro leva o `request_id`, igual ao cabeçalho `X-Request-Id` da resposta e ao campo `request_id` dos logs. O suporte usa esse valor para achar a linha do log. O middleware `padronizarErros` (`middlewares/requisicao.js`) acrescenta o campo em qualquer erro.

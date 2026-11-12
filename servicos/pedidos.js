@@ -3,7 +3,7 @@ const sequelize = require('../db/conn');
 const { Produto, Pedido, ItemPedido, Endereco, PedidoHistorico } = require('../models');
 const logger = require('../lib/logger');
 const { ErroApi } = require('../lib/erros');
-const { alterarEstoque } = require('./estoque');
+const { alterarEstoque, disponibilidade } = require('./estoque');
 
 // Fluxo operacional: cada status só avança para o próximo.
 const PROXIMO_STATUS = {
@@ -142,6 +142,7 @@ async function resolverEndereco(idCliente, idEndereco, transacao) {
 /**
  * Verifica todos os itens de uma vez e devolve a lista de problemas
  * (produto inexistente, inativo, fora do múltiplo de venda ou sem estoque suficiente).
+ * Nunca revela a quantidade em estoque: só o motivo e a disponibilidade.
  */
 function verificarItens(itens, produtosPorId) {
     const problemas = [];
@@ -149,15 +150,19 @@ function verificarItens(itens, produtosPorId) {
         const produto = produtosPorId.get(item.id_produto);
         const base = { id_produto: item.id_produto, solicitado: item.quantidade };
         if (!produto) {
-            problemas.push({ ...base, disponivel: 0, motivo: 'produto_inexistente' });
+            problemas.push({ ...base, disponibilidade: 'indisponivel', motivo: 'produto_inexistente' });
             continue;
         }
         const multiplo = Math.max(produto.multiplo_venda, 1);
-        // Maior quantidade que pode ser pedida agora, respeitando o múltiplo de venda.
-        const disponivel = Math.floor(produto.quantidade_estoque / multiplo) * multiplo;
-        const detalhe = { ...base, sku: produto.sku, nome: produto.nome, disponivel, multiplo_venda: multiplo };
+        const detalhe = {
+            ...base,
+            sku: produto.sku,
+            nome: produto.nome,
+            multiplo_venda: multiplo,
+            disponibilidade: produto.ativo ? disponibilidade(produto) : 'indisponivel'
+        };
         if (!produto.ativo) {
-            problemas.push({ ...detalhe, disponivel: 0, motivo: 'produto_inativo' });
+            problemas.push({ ...detalhe, motivo: 'produto_inativo' });
         } else if (item.quantidade % multiplo !== 0) {
             problemas.push({ ...detalhe, motivo: 'multiplo_de_venda' });
         } else if (item.quantidade > produto.quantidade_estoque) {

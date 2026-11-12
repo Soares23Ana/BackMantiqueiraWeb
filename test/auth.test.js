@@ -5,7 +5,7 @@ process.env.CADASTRO_LIMITE = '100';
 const { test, before, after, describe } = require('node:test');
 const assert = require('node:assert/strict');
 const request = require('supertest');
-const { prepararApp, criarUsuario, config } = require('./ajuda');
+const { prepararApp, criarUsuario, config, semRequestId } = require('./ajuda');
 const { aplicarMigracoes, abrirConexao } = require('../db/migracoes');
 
 let app;
@@ -167,14 +167,14 @@ describe('login', () => {
 
     test('cliente usando e-mail no lugar do CNPJ falha', async () => {
         const resposta = await login('compras@mercadinho.com').expect(401);
-        assert.deepEqual(resposta.body, CREDENCIAIS_INVALIDAS);
+        assert.deepEqual(semRequestId(resposta.body), CREDENCIAIS_INVALIDAS);
     });
 
     test('equipe usando CNPJ no lugar do e-mail falha (mesmo que tenha CNPJ gravado)', async () => {
         // Equipe não deveria ter CNPJ; força um no banco para provar que o login por CNPJ só procura clientes.
         await sequelize.query('UPDATE usuarios SET cnpj = ? WHERE email = ?', { replacements: [CNPJ_3, equipeEmail] });
         const resposta = await login(CNPJ_3).expect(401);
-        assert.deepEqual(resposta.body, CREDENCIAIS_INVALIDAS);
+        assert.deepEqual(semRequestId(resposta.body), CREDENCIAIS_INVALIDAS);
         await sequelize.query('UPDATE usuarios SET cnpj = NULL WHERE email = ?', { replacements: [equipeEmail] });
     });
 
@@ -182,7 +182,7 @@ describe('login', () => {
         for (const corpo of [{}, { identificador: 'abc', senha: SENHA }, { identificador: 123, senha: SENHA },
             { identificador: '12345678901', senha: SENHA }, { identificador: CNPJ_CLIENTE }, { identificador: CNPJ_CLIENTE, senha: ['x'] }]) {
             const resposta = await request(app).post('/api/v1/auth/login').send(corpo).expect(401);
-            assert.deepEqual(resposta.body, CREDENCIAIS_INVALIDAS);
+            assert.deepEqual(semRequestId(resposta.body), CREDENCIAIS_INVALIDAS);
         }
     });
 
@@ -199,7 +199,7 @@ describe('login', () => {
             senhasErradas.push(await medir(CNPJ_CLIENTE, 'senha-errada'));
         }
         for (const medida of [...inexistentes, ...senhasErradas]) {
-            assert.deepEqual(medida.corpo, CREDENCIAIS_INVALIDAS);
+            assert.deepEqual(semRequestId(medida.corpo), CREDENCIAIS_INVALIDAS);
         }
         const mediana = (lista) => lista.map((m) => m.ms).sort((a, b) => a - b)[1];
         const [rapido, lento] = [mediana(inexistentes), mediana(senhasErradas)].sort((a, b) => a - b);
@@ -213,7 +213,7 @@ describe('login', () => {
         await sequelize.query("UPDATE usuarios SET ativo = FALSE WHERE cnpj = '11222333000181'");
 
         const resposta = await login(CNPJ_CLIENTE).expect(401);
-        assert.deepEqual(resposta.body, CREDENCIAIS_INVALIDAS);
+        assert.deepEqual(semRequestId(resposta.body), CREDENCIAIS_INVALIDAS);
         await request(app).get('/api/v1/auth/me').set('Authorization', token).expect(401);
 
         await sequelize.query("UPDATE usuarios SET ativo = TRUE WHERE cnpj = '11222333000181'");
@@ -245,7 +245,7 @@ describe('permissões', () => {
         for (const [metodo, rota] of rotas) {
             const resposta = await request(app)[metodo](rota).set('Authorization', cliente.auth).send({});
             assert.equal(resposta.status, 403, `${metodo.toUpperCase()} ${rota}`);
-            assert.deepEqual(resposta.body, { sucesso: false, mensagem: 'Acesso negado.', codigo: 'ACESSO_NEGADO' });
+            assert.deepEqual(semRequestId(resposta.body), { sucesso: false, mensagem: 'Acesso negado.', codigo: 'ACESSO_NEGADO' });
         }
     });
 

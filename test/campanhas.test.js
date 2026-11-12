@@ -72,7 +72,8 @@ describe('campanhas', () => {
         assert.equal(campanha.produtos[0].preco, undefined);
 
         const logado = await request(app).get('/api/v1/campanhas/ativas').set('Authorization', cliente.auth).expect(200);
-        assert.equal(logado.body.campanhas[0].produtos[0].estoque, 40);
+        assert.equal(logado.body.campanhas[0].produtos[0].estoque, undefined);
+        assert.deepEqual(logado.body.campanhas[0].produtos[0].faixa_estoque, { codigo: 'disponivel', rotulo: 'Disponível' });
     });
 
     test('equipe lista com filtro de situação; cliente não acessa a gestão', async () => {

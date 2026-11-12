@@ -39,4 +39,25 @@ function disponibilidade({ quantidade_estoque: estoque, estoque_minimo: minimo, 
     return 'disponivel';
 }
 
-module.exports = { alterarEstoque, disponibilidade };
+const ROTULOS_FAIXA = {
+    indisponivel: 'Indisponível',
+    ultimas_unidades: 'Últimas unidades',
+    disponivel: 'Disponível'
+};
+
+// Faixa mostrada a visitantes e clientes no lugar do estoque exato: { codigo, rotulo }.
+// "acima_do_limite" vale quando o produto está disponível e o estoque passa de "limiteAlto".
+function faixaEstoque(produto, limiteAlto) {
+    const situacao = disponibilidade(produto);
+    if (situacao === 'disponivel' && produto.quantidade_estoque > limiteAlto) {
+        return { codigo: 'acima_do_limite', rotulo: `Mais de ${limiteAlto} disponíveis` };
+    }
+    return { codigo: situacao, rotulo: ROTULOS_FAIXA[situacao] };
+}
+
+// Configuração "estoque_faixa_alta" (padrão 50).
+async function lerLimiteFaixa() {
+    return require('./configuracoes').obterNumero('estoque_faixa_alta');
+}
+
+module.exports = { alterarEstoque, disponibilidade, faixaEstoque, lerLimiteFaixa };
