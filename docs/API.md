@@ -414,6 +414,7 @@ O formato das planilhas e as colunas estão no [guia técnico](GUIA_TECNICO.md#7
     "simulado": true, "linhas": 2, "criados": 0, "atualizados": 1, "inalterados": 0, "desativados": 0,
     "com_erro": 1, "categorias_criadas": 0, "marcas_criadas": 0, "movimentacoes_estoque": 1,
     "formato": "xlsx",
+    "total_descontado": 7, "produtos_com_desconto": 1, "gerado_em_padrao": "2026-10-26T23:41:10.000Z",
     "abreviacoes_pendentes": [{ "abreviacao": "ED.", "ocorrencias": 3, "exemplo": "ESM. ED. LIMITADA RISQUE 8ML" }],
     "categorias_sem_mapa": [],
     "colunas_ignoradas": ["CÓDIGO DE BARRAS"],
@@ -422,14 +423,16 @@ O formato das planilhas e as colunas estão no [guia técnico](GUIA_TECNICO.md#7
   }
 }
 ```
-`status`: `sucesso`, `parcial` ou `falha`. O relatório tem também `abreviacoes_pendentes` (abreviações do nome do produto que a importação **não** expandiu, por serem ambíguas), `categorias_sem_mapa` e `colunas_ignoradas` (colunas não reconhecidas, como o código de barras: ignoradas sem erro).
+`status`: `sucesso`, `parcial` ou `falha`. **Estoque e pedidos recentes:** a planilha pode ter a coluna opcional `gerado_em` (data e hora no horário de São Paulo, ex.: `2026-11-10 08:30` ou `10/11/2026 08:30`; no Excel, uma célula de data). O estoque gravado é `max(0, estoque da planilha − unidades de pedidos não cancelados feitos depois de gerado_em)`, e a movimentação registra o desconto na observação. Sem a coluna, vale a data de modificação do arquivo nos jobs de pasta e o horário do envio no `POST /produtos/importar`. `total_descontado` (unidades abatidas), `produtos_com_desconto` e `gerado_em_padrao` ficam no relatório; o log guarda `estoque_descontado`. `gerado_em` inválido ou no futuro é erro da linha. A regra e a limitação estão no [guia técnico](GUIA_TECNICO.md#7-importação-de-catálogo-planilhas-xlsx-e-csv).
+
+O relatório tem também `abreviacoes_pendentes` (abreviações do nome do produto que a importação **não** expandiu, por serem ambíguas), `categorias_sem_mapa` e `colunas_ignoradas` (colunas não reconhecidas, como o código de barras: ignoradas sem erro).
 
 A planilha pode ser o portfólio da empresa (`CÓDIGO`, `PRODUTO`, `FABRICANTE`, `CATEGORIA - Cad. ERP`...) ou o formato atual do CSV; os cabeçalhos aceitos estão no [guia técnico](GUIA_TECNICO.md#7-importação-de-catálogo-planilhas-xlsx-e-csv). Linha com célula de erro do Excel (`#N/D`, `#REF!`) vira linha com erro no relatório (`"Célula com erro (#N/D)."`) e as demais entram.
 
 Erros: `422 VALIDACAO` (sem arquivo; extensão diferente de `.csv`/`.xlsx`; `.xls`, `.xlsm` e `.xlsb`: "Salve o arquivo como .xlsx ou CSV."), `422 PLANILHA_INVALIDA` ("Arquivo de planilha inválido.": `.xlsx` corrompido, que não é planilha ou cujo conteúdo não começa com a assinatura de `.xlsx`; a falha fica registrada em `sincronizacoes_log`), `422 CSV_INVALIDO` (ilegível ou sem coluna `sku`/`código`), `422 LIMITE_DE_LINHAS` (mais de 20.000 linhas), `422 ARQUIVO_MUITO_GRANDE` (mais de 5 MB), `409 IMPORTACAO_EM_ANDAMENTO`.
 
 ### GET /produtos/importacoes
-`?tipo=importacao_manual|catalogo|carga_completa|estoque&pagina=&limite=`. Cada item: `id_sincronizacao`, `tipo`, `origem`, `simulado`, `status`, `linhas`, `criados`, `atualizados`, `inalterados`, `desativados`, `com_erro`, `movimentacoes_estoque`, `mensagem`, `iniciado_em`, `finalizado_em`, `duracao_ms`, `usuario` (`null` nos jobs). O detalhe (`/:id`) inclui `relatorio: { erros, avisos }`.
+`?tipo=importacao_manual|catalogo|carga_completa|estoque&pagina=&limite=`. Cada item: `id_sincronizacao`, `tipo`, `origem`, `simulado`, `status`, `linhas`, `criados`, `atualizados`, `inalterados`, `desativados`, `com_erro`, `movimentacoes_estoque`, `estoque_descontado`, `mensagem`, `iniciado_em`, `finalizado_em`, `duracao_ms`, `usuario` (`null` nos jobs). O detalhe (`/:id`) inclui `relatorio: { erros, avisos }`.
 
 ---
 
@@ -864,7 +867,7 @@ Roda um job na hora, com a mesma trava do MySQL do agendamento. `:nome`: `catalo
 ## 13. Limitações conhecidas
 
 **Estoque e importação**
-1. **O estoque importado substitui o valor atual; não soma nem subtrai.** Se um pedido baixar o estoque entre a geração do arquivo e a importação, o valor do arquivo volta a valer e essa baixa é "desfeita" no estoque (o pedido continua registrado). Gere o arquivo o mais perto possível da importação.
+1. **O estoque importado substitui o valor atual**, mas descontando os pedidos feitos depois de `gerado_em` (a coluna do arquivo, a data de modificação do arquivo nos jobs ou o horário do envio no upload). Sem `gerado_em`, um pedido feito **entre a preparação da planilha e o envio** não é descontado: a baixa dele é "desfeita" no estoque (o pedido continua registrado). Para evitar, preencha `gerado_em` com o horário em que a planilha foi preparada.
 2. O estoque é mantido pelo painel (ajustes com observação), pelos pedidos e cancelamentos e por planilhas que a própria equipe prepara: os arquivos precisam ser enviados pela tela (upload) ou copiados para `importacao/entrada/` no servidor.
 3. No arquivo de estoque, um SKU que não existe é rejeitado (não cria produto). Na carga completa, produtos ausentes só são desativados quando o arquivo não tem nenhum erro.
 4. O relatório de cada importação guarda no máximo 500 erros.

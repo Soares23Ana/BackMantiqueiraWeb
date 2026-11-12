@@ -1,5 +1,5 @@
 const fs = require('node:fs');
-const { Op } = require('sequelize');
+const { Op, QueryTypes } = require('sequelize');
 const config = require('../config/ambiente');
 const sequelize = require('../db/conn');
 const { Produto, Categoria, Marca } = require('../models');
@@ -8,13 +8,14 @@ const { lerMatriz, normalizarNomeColuna, decodificarArquivo } = require('../lib/
 const { lerCsvMatriz } = require('../lib/csv');
 const { gerarNomeExibicao, carregarDicionario } = require('../lib/nomeProduto');
 const { gerarSlug } = require('../lib/texto');
+const { lerDataHoraSaoPaulo } = require('../lib/datas');
 const { validarDadosProduto } = require('../helpers/validacaoProduto');
 const { alterarEstoque } = require('./estoque');
 
 // Mesmo formato do seeds/catalogo_inicial.csv. Só "sku" é obrigatória; colunas ausentes não são alteradas.
 const COLUNAS = [
     'sku', 'nome', 'categoria', 'subcategoria', 'marca', 'descricao', 'destaques', 'imagem_url',
-    'ativo', 'estoque_minimo', 'multiplo_venda', 'preco', 'estoque'
+    'ativo', 'estoque_minimo', 'multiplo_venda', 'preco', 'estoque', 'gerado_em'
 ];
 // Cabeçalhos do portfólio (CSV ou Excel), sem diferenciar maiúsculas nem acentos. "PRODUTO" é o nome do portfólio
 // (nome_erp): dele sai o nome de exibição, a menos que a planilha tenha a própria coluna "nome".
@@ -86,6 +87,19 @@ function converterLinha(valores, cabecalho, dicionario) {
         }
     }
 
+    // Quando a planilha de estoque foi gerada (horário de São Paulo): pedidos feitos depois dela são descontados do estoque.
+    let geradoEm;
+    if (tem('gerado_em') && valores.gerado_em) {
+        geradoEm = lerDataHoraSaoPaulo(valores.gerado_em);
+        if (!geradoEm) {
+            erros.push({ campo: 'gerado_em', mensagem: 'Use data e hora, ex.: 2026-11-10 08:30 ou 10/11/2026 08:30 (horário de São Paulo).' });
+            geradoEm = undefined;
+        } else if (geradoEm.getTime() > Date.now() + 5 * 60 * 1000) {
+            erros.push({ campo: 'gerado_em', mensagem: 'A data e hora de geração está no futuro.' });
+            geradoEm = undefined;
+        }
+    }
+
     const nomesTaxonomia = {};
     for (const coluna of ['categoria', 'subcategoria', 'marca']) {
         if (!tem(coluna)) continue;
@@ -113,7 +127,7 @@ function converterLinha(valores, cabecalho, dicionario) {
         if (!(erro instanceof ErroApi)) throw erro;
         erros.push(...erro.detalhes);
     }
-    return { dados, estoque, nomesTaxonomia, nomeErp, nomeGerado, pendentes, erros };
+    return { dados, estoque, geradoEm, nomesTaxonomia, nomeErp, nomeGerado, pendentes, erros };
 }
 
 /**
@@ -225,6 +239,33 @@ async function resolverTaxonomia(Modelo, cache, nome, transacao, contador) {
     return cache.get(slug)[Modelo.primaryKeyAttribute];
 }
 
+const doisDigitos = (n) => String(n).padStart(2, '0');
+function formatarSaoPaulo(data) {
+    const local = new Date(data.getTime() - 3 * 60 * 60 * 1000);
+    return `${doisDigitos(local.getUTCDate())}/${doisDigitos(local.getUTCMonth() + 1)}/${local.getUTCFullYear()} ` +
+        `${doisDigitos(local.getUTCHours())}:${doisDigitos(local.getUTCMinutes())}`;
+}
+
+/**
+ * Unidades de pedidos NÃO cancelados criados depois de "geradoEm", por produto: Map(id_produto => unidades).
+ * Uma consulta por instante de geração (normalmente um só por arquivo) para todos os produtos já existentes da
+ * planilha, com o resultado no cache da importação. Roda dentro da transação, com os produtos já bloqueados.
+ */
+async function descontosDePedidos(geradoEm, idsProdutos, cache, transacao) {
+    const chave = geradoEm.getTime();
+    if (!cache.has(chave)) {
+        const somas = idsProdutos.length === 0 ? [] : await sequelize.query(
+            `SELECT i.id_produto, SUM(i.quantidade) AS total
+             FROM itens_pedido i JOIN pedidos p ON p.id_pedido = i.id_pedido
+             WHERE i.id_produto IN (:ids) AND p.status <> 'Cancelado' AND p.data_pedido > :geradoEm
+             GROUP BY i.id_produto`,
+            { replacements: { ids: idsProdutos, geradoEm }, type: QueryTypes.SELECT, transaction: transacao }
+        );
+        cache.set(chave, new Map(somas.map((linha) => [linha.id_produto, Number(linha.total)])));
+    }
+    return cache.get(chave);
+}
+
 /**
  * Importa produtos de um CSV, fazendo upsert por SKU.
  * - Cada linha é validada separadamente; linhas com erro são puladas e listadas no relatório.
@@ -241,7 +282,8 @@ async function importarCatalogo(entrada, {
     origem = 'importação',
     formato,
     dicionario = carregarDicionario(),
-    mapaCategoriasOrigem
+    mapaCategoriasOrigem,
+    geradoEmPadrao
 } = {}) {
     const { linhas, formato: formatoLido } = await lerMatriz(entrada, { formato });
     const csv = montarTabela(linhas);
@@ -268,6 +310,9 @@ async function importarCatalogo(entrada, {
         categorias_criadas: 0,
         marcas_criadas: 0,
         movimentacoes_estoque: 0,
+        total_descontado: 0,
+        produtos_com_desconto: 0,
+        gerado_em_padrao: geradoEmPadrao ? geradoEmPadrao.toISOString() : null,
         abreviacoes_pendentes: [],
         categorias_sem_mapa: [],
         colunas_ignoradas: [],
@@ -334,6 +379,8 @@ async function importarCatalogo(entrada, {
             lock: transacao.LOCK.UPDATE
         });
         const porSku = new Map(existentes.map((produto) => [produto.sku.toUpperCase(), produto]));
+        const idsExistentes = existentes.map((produto) => produto.id_produto);
+        const cacheDescontos = new Map();
         const resolverCategoria = criarResolvedorCategorias(await Categoria.findAll({ transaction: transacao }), transacao, contadorCategorias);
         const marcas = new Map((await Marca.findAll({ transaction: transacao })).map((m) => [m.slug, m]));
         const contadorMarcas = { total: 0 };
@@ -402,9 +449,22 @@ async function importarCatalogo(entrada, {
             }
 
             if (item.estoque !== undefined) {
-                const movimentacao = await alterarEstoque(produto, item.estoque, {
+                // estoque_final = max(0, estoque da planilha - unidades de pedidos não cancelados feitos depois de gerado_em).
+                // O produto está bloqueado nesta transação: um pedido simultâneo espera e depois baixa o estoque já importado.
+                const geradoEm = item.geradoEm || geradoEmPadrao;
+                const pedido = geradoEm ? (await descontosDePedidos(geradoEm, idsExistentes, cacheDescontos, transacao)).get(produto.id_produto) || 0 : 0;
+                const estoqueFinal = Math.max(0, item.estoque - pedido);
+                const descontado = item.estoque - estoqueFinal;
+                if (descontado > 0) {
+                    relatorio.total_descontado += descontado;
+                    relatorio.produtos_com_desconto += 1;
+                }
+                const observacao = `Importação de catálogo (${origem}), linha ${item.linha}.` + (descontado > 0
+                    ? ` Estoque da planilha: ${item.estoque}; descontadas ${descontado} un. de pedidos feitos depois de ${formatarSaoPaulo(geradoEm)}.`
+                    : '');
+                const movimentacao = await alterarEstoque(produto, estoqueFinal, {
                     tipo: 'importacao',
-                    observacao: `Importação de catálogo (${origem}), linha ${item.linha}.`,
+                    observacao: observacao.slice(0, 500),
                     idUsuario,
                     transacao
                 });

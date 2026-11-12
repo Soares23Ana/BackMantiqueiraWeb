@@ -339,6 +339,7 @@ CREATE TABLE `sincronizacoes_log` (
   `desativados` int NOT NULL DEFAULT '0',
   `com_erro` int NOT NULL DEFAULT '0',
   `movimentacoes_estoque` int NOT NULL DEFAULT '0',
+  `estoque_descontado` int NOT NULL DEFAULT '0',
   `relatorio` json DEFAULT NULL,
   `mensagem` varchar(500) DEFAULT NULL,
   `id_usuario` int DEFAULT NULL,
@@ -398,4 +399,5 @@ INSERT INTO schema_migrations (versao, nome, checksum) VALUES
 ('019', 'carrinho_contatos', '8fd4b73a8237f289aba7c605bc534596704dd46e68d5280fbaa07fe4f6f3d461'),
 ('020', 'suporte_notas_auditoria', '253f198e45a064a310ab3c5280cc08e965ec2b2b422723a5ea7be0c9783f2427'),
 ('021', 'produto_nome_erp', 'db573e0e0f6e4549876a5dff4733e44b9fd54a076f791f0c852d20880820fed7'),
-('022', 'categoria_subcategoria', '43a2a93f0e6cd3866b142a589263a724dde78a8df14e13a9d7c94f968e8e75fe');
+('022', 'categoria_subcategoria', '43a2a93f0e6cd3866b142a589263a724dde78a8df14e13a9d7c94f968e8e75fe'),
+('023', 'sincronizacao_estoque_descontado', '875209a73b4cefba3db54e42cb92114c54129357573b8f7b2f277064b8719ab4');

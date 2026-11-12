@@ -32,6 +32,8 @@ const SincronizacaoLog = sequelize.define('SincronizacaoLog', {
     desativados: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
     com_erro: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
     movimentacoes_estoque: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
+    // Unidades abatidas do estoque da planilha por pedidos feitos depois de gerado_em.
+    estoque_descontado: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
     relatorio: {
         type: DataTypes.JSON,
         allowNull: true

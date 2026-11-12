@@ -28,12 +28,13 @@ function statusDoRelatorio(relatorio) {
  * tipo: importacao_manual | catalogo | carga_completa | estoque. Devolve { log, relatorio }.
  * Erros do arquivo (CSV ilegível, sem coluna sku) ficam registrados como "falha" e são relançados.
  */
-async function executarImportacao({ conteudo, formato, tipo, origem, simular = false, idUsuario = null }) {
+async function executarImportacao({ conteudo, formato, tipo, origem, simular = false, idUsuario = null, geradoEmPadrao }) {
     const inicio = Date.now();
     const log = await SincronizacaoLog.create({ tipo, origem: origem.slice(0, 255), simulado: simular, id_usuario: idUsuario });
     try {
         const relatorio = await importarCatalogo(conteudo, {
             formato,
+            geradoEmPadrao,
             simular,
             desativarAusentes: tipo === 'carga_completa',
             somenteEstoque: tipo === 'estoque',
@@ -49,6 +50,7 @@ async function executarImportacao({ conteudo, formato, tipo, origem, simular = f
             desativados: relatorio.desativados,
             com_erro: relatorio.com_erro,
             movimentacoes_estoque: relatorio.movimentacoes_estoque,
+            estoque_descontado: relatorio.total_descontado,
             relatorio: { erros: relatorio.erros, avisos: relatorio.avisos },
             finalizado_em: new Date(),
             duracao_ms: Date.now() - inicio
@@ -72,6 +74,8 @@ async function importarUpload({ buffer, nomeArquivo, simular, cargaCompleta, idU
     const { executado, resultado } = await executarComTrava(TRAVA_IMPORTACAO, () => executarImportacao({
         conteudo: buffer,
         formato,
+        // Sem a coluna gerado_em, vale o horário do envio: só pedidos feitos depois dele são descontados.
+        geradoEmPadrao: new Date(),
         tipo: cargaCompleta ? 'carga_completa' : 'importacao_manual',
         origem: `upload: ${nomeArquivo}`,
         simular,
@@ -134,6 +138,8 @@ async function processarPasta(tipo, pastaBase = config.importacao.pasta) {
             const { log, relatorio } = await executarImportacao({
                 conteudo: await fs.readFile(caminho),
                 formato: formatoDoNome(nome),
+                // Sem a coluna gerado_em, vale a data de modificação do arquivo.
+                geradoEmPadrao: new Date(mtimeMs),
                 tipo,
                 origem: `arquivo: ${nome}`
             });

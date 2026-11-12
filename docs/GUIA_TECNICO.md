@@ -191,6 +191,12 @@ Qualquer outra coluna (por exemplo `CÓDIGO DE BARRAS`) é **ignorada, sem erro*
 
 **Categoria e subcategoria na planilha:** as colunas `categoria` e `subcategoria` criam o que faltar (a subcategoria fica sob a categoria da mesma linha; `subcategoria` sem `categoria` é erro da linha) e o produto aponta para a subcategoria quando houver. A coluna `CATEGORIA - Cad. ERP` do portfólio passa pelo **mapa** `seeds/mapa_categorias.csv` (colunas `categoria_erp;categoria;subcategoria`, sem diferenciar maiúsculas nem acentos; caminho em `MAPA_CATEGORIAS`, padrão `./seeds/mapa_categorias.csv`, relido a cada importação). Categoria do portfólio **sem mapa**: o produto novo entra sem categoria, o produto existente mantém a que tem, **nenhuma categoria é criada** e o valor vai para `relatorio.categorias_sem_mapa` (`{ categoria_erp, ocorrencias }`) para a equipe completar o mapa. Se o arquivo do mapa não existir, todas ficam sem mapa e o relatório avisa.
 
+**Estoque sem perder pedidos recentes (`gerado_em`):** as planilhas de estoque são preparadas pela equipe e podem ficar horas até serem importadas; nesse intervalo entram pedidos. Por isso, em toda importação com a coluna `estoque`, dentro da transação e com as linhas de produto bloqueadas, o estoque gravado é `max(0, estoque_da_planilha − soma das quantidades dos itens de pedidos NÃO cancelados criados DEPOIS de gerado_em, para aquele produto)`. A coluna opcional `gerado_em` (horário de São Paulo; texto `AAAA-MM-DD HH:MM[:SS]` ou `DD/MM/AAAA HH:MM[:SS]`, ou data do Excel) vale por linha; sem ela usa-se a **data de modificação do arquivo** nos jobs de pasta e o **horário do envio** no upload manual (importações por script, como o `seed:catalogo`, não descontam). A movimentação de estoque registra na observação o estoque da planilha e o desconto aplicado; o relatório traz `total_descontado`, `produtos_com_desconto` e `gerado_em_padrao`, e `sincronizacoes_log.estoque_descontado` guarda o total (migration 023). Pedido cancelado não conta (o cancelamento já devolveu o estoque). Um `gerado_em` no futuro é erro da linha.
+
+**Consistência com pedidos simultâneos:** o checkout grava o pedido e depois bloqueia as linhas de produto; a importação bloqueia as linhas dos produtos da planilha antes de somar os pedidos. Um pedido que ainda não confirmou espera o bloqueio, não aparece na soma e, depois da importação, baixa o estoque já importado; um pedido já confirmado entra no desconto. Nos dois casos o resultado é o mesmo: planilha − todos os pedidos posteriores a `gerado_em`.
+
+**Limitação:** o desconto só enxerga pedidos criados depois de `gerado_em`. Se a coluna não vier, um pedido feito entre a preparação da planilha e o horário usado como padrão (envio ou modificação do arquivo) **não** é descontado e sua baixa é desfeita; ajustes manuais de estoque feitos no painel depois de `gerado_em` também são sobrescritos pelo valor da planilha. Preencha `gerado_em` com o instante em que a contagem foi feita, e copie o arquivo para `importacao/entrada/` preservando a data de modificação (ou use a coluna).
+
 **Códigos só com dígitos:** `GET /produtos/:id` procura o número primeiro como id e, não havendo produto com esse id, como SKU.
 
 | Coluna | Conteúdo |
@@ -206,6 +212,7 @@ Qualquer outra coluna (por exemplo `CÓDIGO DE BARRAS`) é **ignorada, sem erro*
 | `preco` | Opcional; nunca aparece para clientes |
 | `estoque` | Quantidade atual; vazio mantém o estoque. Mudanças viram movimentações `importacao` |
 | `nome_erp` | Nome original do portfólio (vem de `PRODUTO`) |
+| `gerado_em` | Opcional: quando a planilha de estoque foi gerada (horário de São Paulo); pedidos posteriores são descontados do `estoque` |
 
 - Cada linha é validada separadamente: as boas são gravadas e as com problema voltam em `relatorio.erros` (`linha`, `sku`, `campo`, `mensagem`).
 - `status`: `sucesso`, `parcial` (algumas linhas rejeitadas) ou `falha` (arquivo ilegível ou todas as linhas com erro).
