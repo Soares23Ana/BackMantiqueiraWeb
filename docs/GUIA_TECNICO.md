@@ -306,3 +306,7 @@ A API consulta serviços públicos com o `fetch` nativo do Node (sem dependênci
 - **Estoque exato só para a equipe.** Visitantes e clientes recebem `disponibilidade` e `faixa_estoque` (`acima_do_limite`, `disponivel`, `ultimas_unidades` ou `indisponivel`) em toda rota que mostra produto (vitrine, produto, campanhas, repetir pedido), e o 409 `ITENS_INDISPONIVEIS` do checkout traz só o motivo e a disponibilidade. A função `faixaEstoque` (`servicos/estoque.js`) é o único ponto que decide a faixa.
 - **Limite da faixa alta:** configuração `estoque_faixa_alta` (padrão 50, inteiro de 1 a 10000), editável pela rota de configurações.
 - **`request_id` nos erros:** todo corpo de erro leva o `request_id`, igual ao cabeçalho `X-Request-Id` da resposta e ao campo `request_id` dos logs. O suporte usa esse valor para achar a linha do log. O middleware `padronizarErros` (`middlewares/requisicao.js`) acrescenta o campo em qualquer erro.
+
+### Pop-up e destinos
+- O pop-up é o bloco `popup` de `blocos_cms`; a coluna JSON `dados` guarda imagem, destino e janela de exibição (migration 014). A chave é reservada: o público só lê pelo `GET /cms/popup`.
+- `servicos/destinos.js` é o mecanismo de destino (`tipo_destino`, `id_destino`, `link`) compartilhado por banners e pop-up: valida se o alvo existe e resolve o link interno no formato das rotas do site.

@@ -8,6 +8,7 @@ const { ErroApi } = require('../lib/erros');
 const { ehEquipe } = require('../lib/perfis');
 const { ehCaminhoOuUrlSegura, gerarSlug } = require('../lib/texto');
 const { lerDataHora } = require('../lib/datas');
+const { validarDestino, resolverDestinos } = require('../servicos/destinos');
 
 const PASTA_UPLOADS = path.join(__dirname, '..', 'publico', 'uploads');
 
@@ -188,21 +189,126 @@ async function reordenarBanners(req, res) {
 // Blocos de conteúdo ------------------------------------------------------------------------
 
 // GET /cms/blocos (público): blocos ativos. A equipe vê também os inativos.
+// O pop-up (chave reservada) tem rota própria; no público, só aparece em GET /cms/popup.
+const CHAVE_POPUP = 'popup';
+
+async function apresentarBloco(bloco) {
+    const { dados, ...base } = bloco.toJSON();
+    if (bloco.chave !== CHAVE_POPUP) return base;
+    const extras = dados || {};
+    const [destino] = await resolverDestinos([extras]);
+    return {
+        ...base,
+        imagem_url: extras.imagem_url || null,
+        destino,
+        inicio_em: extras.inicio_em || null,
+        fim_em: extras.fim_em || null
+    };
+}
+
 async function listarBlocos(req, res) {
+    const equipe = ehEquipe(req.usuario);
     const blocos = await BlocoCms.findAll({
-        where: ehEquipe(req.usuario) ? {} : { ativo: true },
+        where: equipe ? {} : { ativo: true, chave: { [Op.ne]: CHAVE_POPUP } },
         order: [['chave', 'ASC']]
     });
-    return res.status(200).json({ blocos });
+    return res.status(200).json({ blocos: await Promise.all(blocos.map(apresentarBloco)) });
+}
+
+// GET /cms/popup (público): o pop-up ativo e dentro da janela de datas, ou { popup: null }.
+async function obterPopup(req, res) {
+    const bloco = await BlocoCms.findOne({ where: { chave: CHAVE_POPUP, ativo: true } });
+    const extras = (bloco && bloco.dados) || {};
+    const agora = new Date();
+    const noAr = bloco && (!extras.inicio_em || new Date(extras.inicio_em) <= agora) &&
+        (!extras.fim_em || new Date(extras.fim_em) > agora);
+    if (!noAr) return res.status(200).json({ popup: null });
+    const apresentado = await apresentarBloco(bloco);
+    return res.status(200).json({
+        popup: {
+            titulo: apresentado.titulo,
+            texto: apresentado.conteudo,
+            imagem_url: apresentado.imagem_url,
+            destino: apresentado.destino,
+            inicio_em: apresentado.inicio_em,
+            fim_em: apresentado.fim_em
+        }
+    });
+}
+
+// Pop-up: titulo, texto, tipo_destino/id_destino/link, inicio_em, fim_em e ativo. A imagem vai por
+// POST /cms/blocos/popup/imagem e é mantida quando o pop-up é salvo de novo.
+async function validarPopup(corpo, existente) {
+    const erros = [];
+    for (const campo of Object.keys(corpo)) {
+        if (!['titulo', 'texto', 'tipo_destino', 'id_destino', 'link', 'inicio_em', 'fim_em', 'ativo'].includes(campo)) {
+            erros.push({ campo, mensagem: `Campo não permitido: ${campo}.` });
+        }
+    }
+    const titulo = typeof corpo.titulo === 'string' ? corpo.titulo.trim() : '';
+    if (!titulo || titulo.length > 150) erros.push({ campo: 'titulo', mensagem: 'O título é obrigatório (até 150 caracteres).' });
+    if (corpo.texto !== undefined && corpo.texto !== null && (typeof corpo.texto !== 'string' || corpo.texto.length > 2000)) {
+        erros.push({ campo: 'texto', mensagem: 'O texto deve ter até 2.000 caracteres.' });
+    }
+    if (corpo.ativo !== undefined && typeof corpo.ativo !== 'boolean') {
+        erros.push({ campo: 'ativo', mensagem: 'O campo ativo deve ser true ou false.' });
+    }
+    const inicio = lerDataHora(corpo.inicio_em, 'inicio_em', erros);
+    const fim = lerDataHora(corpo.fim_em, 'fim_em', erros);
+    if (inicio && fim && fim <= inicio) erros.push({ campo: 'fim_em', mensagem: 'O fim da exibição deve ser depois do início.' });
+    const destino = (await validarDestino(corpo, erros)) || { tipo_destino: 'nenhum', id_destino: null, link: null };
+    if (erros.length > 0) throw new ErroApi(422, 'VALIDACAO', erros[0].mensagem, erros);
+    return {
+        titulo,
+        conteudo: typeof corpo.texto === 'string' ? corpo.texto.trim() : '',
+        ativo: corpo.ativo ?? true,
+        dados: {
+            imagem_url: (existente && existente.imagem_url) || null,
+            ...destino,
+            inicio_em: inicio ? inicio.toISOString() : null,
+            fim_em: fim ? fim.toISOString() : null
+        }
+    };
+}
+
+async function salvarPopup(req, res) {
+    const existente = await BlocoCms.findOne({ where: { chave: CHAVE_POPUP } });
+    const valores = await validarPopup(req.body || {}, existente && existente.dados);
+    await BlocoCms.upsert({ chave: CHAVE_POPUP, ...valores });
+    const bloco = await BlocoCms.findOne({ where: { chave: CHAVE_POPUP } });
+    return res.status(200).json({ mensagem: 'Bloco de conteúdo salvo.', bloco: await apresentarBloco(bloco) });
+}
+
+// POST /cms/blocos/popup/imagem (equipe, multipart "imagem"): troca a imagem do pop-up já salvo.
+async function enviarImagemBloco(req, res) {
+    if (req.params.chave !== CHAVE_POPUP) {
+        await removerArquivo(req.file && req.file.path);
+        throw new ErroApi(404, 'NAO_ENCONTRADO', 'Só o pop-up aceita imagem.');
+    }
+    if (!req.file) throw new ErroApi(422, 'VALIDACAO', 'O arquivo de imagem é obrigatório (campo "imagem").');
+    const bloco = await BlocoCms.findOne({ where: { chave: CHAVE_POPUP } });
+    if (!bloco) {
+        await removerArquivo(req.file.path);
+        throw new ErroApi(404, 'NAO_ENCONTRADO', 'Salve o pop-up antes de enviar a imagem.');
+    }
+    const anterior = bloco.dados && bloco.dados.imagem_url;
+    try {
+        await bloco.update({ dados: { ...(bloco.dados || {}), imagem_url: `/arquivos/uploads/${req.file.filename}` } });
+    } catch (erro) {
+        await removerArquivo(req.file.path);
+        throw erro;
+    }
+    await removerUploadDoBanner(anterior);
+    return res.status(200).json({ mensagem: 'Imagem atualizada.', bloco: await apresentarBloco(bloco) });
 }
 
 // GET /cms/blocos/:chave (público; bloco inativo só para a equipe).
 async function obterBloco(req, res) {
     const bloco = await BlocoCms.findOne({ where: { chave: req.params.chave } });
-    if (!bloco || (!bloco.ativo && !ehEquipe(req.usuario))) {
+    if (!bloco || ((!bloco.ativo || bloco.chave === CHAVE_POPUP) && !ehEquipe(req.usuario))) {
         throw new ErroApi(404, 'NAO_ENCONTRADO', 'Bloco de conteúdo não encontrado.');
     }
-    return res.status(200).json({ bloco });
+    return res.status(200).json({ bloco: await apresentarBloco(bloco) });
 }
 
 // PUT /cms/blocos/:chave { titulo?, conteudo, ativo? } (equipe): cria ou substitui o bloco.
@@ -211,6 +317,7 @@ async function salvarBloco(req, res) {
     if (!chave || chave !== req.params.chave) {
         throw new ErroApi(422, 'VALIDACAO', 'A chave deve ter só letras minúsculas, números e hífens (ex.: politica-de-entrega).');
     }
+    if (chave === CHAVE_POPUP) return salvarPopup(req, res);
     const corpo = req.body || {};
     const erros = [];
     for (const campo of Object.keys(corpo)) {
@@ -235,7 +342,7 @@ async function salvarBloco(req, res) {
     });
     // No MySQL o upsert não devolve o registro completo (id, atualizado_em); lê de novo.
     const bloco = await BlocoCms.findOne({ where: { chave } });
-    return res.status(200).json({ mensagem: 'Bloco de conteúdo salvo.', bloco });
+    return res.status(200).json({ mensagem: 'Bloco de conteúdo salvo.', bloco: await apresentarBloco(bloco) });
 }
 
 // DELETE /cms/blocos/:chave (equipe)
@@ -254,14 +361,16 @@ async function alterarAtivoBloco(req, res) {
         throw new ErroApi(404, 'NAO_ENCONTRADO', 'Bloco de conteúdo não encontrado.');
     }
     await bloco.update({ ativo: corpo.ativo });
-    return res.status(200).json({ mensagem: corpo.ativo ? 'Bloco ativado.' : 'Bloco desativado.', bloco });
+    return res.status(200).json({ mensagem: corpo.ativo ? 'Bloco ativado.' : 'Bloco desativado.', bloco: await apresentarBloco(bloco) });
 }
 
 async function excluirBloco(req, res) {
-    const excluidos = await BlocoCms.destroy({ where: { chave: req.params.chave } });
-    if (!excluidos) {
+    const bloco = await BlocoCms.findOne({ where: { chave: req.params.chave } });
+    if (!bloco) {
         throw new ErroApi(404, 'NAO_ENCONTRADO', 'Bloco de conteúdo não encontrado.');
     }
+    await bloco.destroy();
+    await removerUploadDoBanner(bloco.dados && bloco.dados.imagem_url);
     return res.status(200).json({ mensagem: 'Bloco de conteúdo excluído.' });
 }
 
@@ -273,6 +382,8 @@ module.exports = {
     excluirBanner,
     reordenarBanners,
     listarBlocos,
+    obterPopup,
+    enviarImagemBloco,
     obterBloco,
     salvarBloco,
     alterarAtivoBloco,

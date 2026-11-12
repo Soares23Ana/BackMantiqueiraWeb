@@ -11,6 +11,7 @@ const comImagem = [receberImagem, verificarConteudoImagem];
 
 // Banners
 router.get('/', cmsControlador.listarBanners);
+router.get('/popup', cmsControlador.obterPopup);
 router.get('/todos', ...equipe, cmsControlador.listarTodosBanners);
 router.put('/ordem', ...equipe, cmsControlador.reordenarBanners);
 router.post('/', ...equipe, ...comImagem, cmsControlador.salvarBanner);
@@ -19,6 +20,7 @@ router.post('/', ...equipe, ...comImagem, cmsControlador.salvarBanner);
 router.get('/blocos', autenticacaoOpcional, cmsControlador.listarBlocos);
 router.get('/blocos/:chave', autenticacaoOpcional, cmsControlador.obterBloco);
 router.put('/blocos/:chave', ...equipe, cmsControlador.salvarBloco);
+router.post('/blocos/:chave/imagem', ...equipe, ...comImagem, cmsControlador.enviarImagemBloco);
 router.patch('/blocos/:chave', ...equipe, cmsControlador.alterarAtivoBloco);
 router.delete('/blocos/:chave', ...equipe, cmsControlador.excluirBloco);
 

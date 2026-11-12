@@ -17,7 +17,7 @@ async function principal() {
 
         const [tabelas] = await conexao.query(
             `SELECT TABLE_NAME AS nome FROM information_schema.TABLES
-             WHERE TABLE_SCHEMA = ? AND TABLE_TYPE = 'BASE TABLE' ORDER BY CREATE_TIME, TABLE_NAME`,
+             WHERE TABLE_SCHEMA = ? AND TABLE_TYPE = 'BASE TABLE' ORDER BY TABLE_NAME`,
             [BANCO_TEMPORARIO]
         );
         const blocos = [];

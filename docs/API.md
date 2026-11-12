@@ -717,6 +717,30 @@ Textos editáveis do site, identificados por uma chave (ex.: `sobre`, `politica-
 
 `PATCH /cms/blocos/politica-de-entrega` com `{ "ativo": false }` liga ou desliga o bloco sem reenviar título e conteúdo (o botão de ativar da tela). Só aceita `ativo`, booleano; para mudar o conteúdo, use o `PUT`. `200`: `{ "mensagem": "Bloco desativado.", "bloco": { ... } }` (ou `"Bloco ativado."`). Erros: `422 VALIDACAO` (outro campo ou `ativo` que não seja `true`/`false`), `404` (chave inexistente).
 
+### Pop-up
+O pop-up do site é o bloco de conteúdo de chave reservada `popup`, editado pelas rotas de blocos. Ele **não aparece** em `GET /cms/blocos` nem em `GET /cms/blocos/popup` para o público (só para a equipe).
+
+| Método | Rota | Perfil | Descrição |
+|---|---|---|---|
+| GET | `/cms/popup` | público | O pop-up ativo e dentro da janela de datas, ou `{ "popup": null }` |
+| PUT | `/cms/blocos/popup` | equipe | Cria ou substitui o pop-up |
+| PATCH | `/cms/blocos/popup` | equipe | Liga ou desliga (`{ "ativo": false }`) |
+| POST | `/cms/blocos/popup/imagem` | equipe | Envia a imagem (multipart, campo `imagem`: JPEG, PNG, WEBP ou GIF; até 5 MB) |
+| DELETE | `/cms/blocos/popup` | equipe | Exclui o pop-up e a imagem |
+
+`PUT /cms/blocos/popup`: `titulo` (obrigatório, até 150), `texto` (até 2.000), destino (`tipo_destino`, `id_destino`, `link`: [mesmo formato dos banners](#destino-do-banner-e-do-pop-up)), `inicio_em`, `fim_em` (datas sem fuso são horário de Brasília) e `ativo` (padrão `true`). A imagem enviada antes é mantida ao salvar de novo; a imagem só é enviada depois que o pop-up existe (`404` antes disso).
+`200`: `{ "mensagem": "Bloco de conteúdo salvo.", "bloco": { "chave": "popup", "titulo": "...", "conteudo": "<texto>", "ativo": true, "imagem_url": null, "destino": { "tipo": "nenhum", "id": null, "link": null }, "inicio_em": null, "fim_em": null, "atualizado_em": "..." } }`.
+
+`GET /cms/popup`:
+```json
+{ "popup": { "titulo": "Novidade", "texto": "Venha conferir", "imagem_url": "/arquivos/uploads/<uuid>.png",
+             "destino": { "tipo": "produto", "id": 15, "link": "/produto/15" }, "inicio_em": null, "fim_em": null } }
+```
+Fora da janela de datas, ou com `ativo: false`, ou sem pop-up salvo: `{ "popup": null }`. Erros do `PUT`: `422 VALIDACAO` (título ausente, destino inexistente, `fim_em` antes de `inicio_em`, campo não permitido).
+
+### Destino do banner e do pop-up
+`tipo_destino`: `nenhum`, `produto`, `categoria`, `marca` ou `link`. `id_destino` é obrigatório (e precisa existir) nos tipos `produto`, `categoria` e `marca`; `link` só vale no tipo `link` (caminho interno ou URL http/https). A resposta traz `"destino": { "tipo", "id", "link" }` com o link interno já resolvido: `produto` → `/produto/{id}`, `categoria` → `/categoria/{slug}`, `marca` → `/marca/{slug}`, `link` → o texto digitado; `nenhum` → `link: null`.
+
 ---
 
 ## 11. Configurações

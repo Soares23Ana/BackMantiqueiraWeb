@@ -21,6 +21,11 @@ const BlocoCms = sequelize.define('BlocoCms', {
         type: DataTypes.TEXT,
         allowNull: false
     },
+    // Campos extras de blocos especiais (ex.: o pop-up guarda imagem, destino e janela de exibição).
+    dados: {
+        type: DataTypes.JSON,
+        allowNull: true
+    },
     ativo: {
         type: DataTypes.BOOLEAN,
         allowNull: false,
