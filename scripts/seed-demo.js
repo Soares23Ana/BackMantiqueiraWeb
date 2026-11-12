@@ -23,16 +23,17 @@ const BANNERS = [
 const CAMPANHA = {
     titulo: 'Semana Granado',
     selo: 'Seleção Granado',
-    skus: ['SKU-106', 'SKU-133', 'SKU-134', 'SKU-135', 'SKU-137']
+    // SKUs do portfólio (catálogo real); o que não existir é pulado e avisado.
+    skus: ['111741', '111805', '111814', '109276', '4126']
 };
 
 // Um pedido por status. A chave de idempotência fixa impede que uma nova execução crie outro pedido.
 const PEDIDOS = [
-    { chave: 'seed-demo-aguardando', status: 'Aguardando Separação', itens: [['SKU-101', 6], ['SKU-108', 4]] },
-    { chave: 'seed-demo-separacao', status: 'Em Separação', itens: [['SKU-111', 12]] },
-    { chave: 'seed-demo-saiu', status: 'Saiu para Entrega', itens: [['SKU-113', 10], ['SKU-110', 5]] },
-    { chave: 'seed-demo-entregue', status: 'Entregue', itens: [['SKU-101', 12], ['SKU-115', 3]] },
-    { chave: 'seed-demo-cancelado', status: 'Cancelado', itens: [['SKU-108', 2]], motivo: 'Cliente pediu o cancelamento (demonstração).' }
+    { chave: 'seed-demo-aguardando', status: 'Aguardando Separação', itens: [['110606', 6], ['111786', 4]] },
+    { chave: 'seed-demo-separacao', status: 'Em Separação', itens: [['101915', 12]] },
+    { chave: 'seed-demo-saiu', status: 'Saiu para Entrega', itens: [['104011', 10], ['111741', 5]] },
+    { chave: 'seed-demo-entregue', status: 'Entregue', itens: [['110606', 12], ['113902', 3]] },
+    { chave: 'seed-demo-cancelado', status: 'Cancelado', itens: [['104547', 2]], motivo: 'Cliente pediu o cancelamento (demonstração).' }
 ];
 
 async function semearConfiguracoes(log) {

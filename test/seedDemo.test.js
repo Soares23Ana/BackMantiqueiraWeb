@@ -13,7 +13,7 @@ before(async () => {
     const { importarCatalogo } = require('../servicos/importadorCatalogo');
     const { Endereco } = require('../models');
     const { USUARIOS } = require('../scripts/seed-dev');
-    await importarCatalogo(fs.readFileSync(path.join(__dirname, 'fixtures', 'catalogo_legado.csv'), 'utf8'));
+    await importarCatalogo(fs.readFileSync(path.join(__dirname, '..', 'seeds', 'catalogo_inicial.csv'), 'utf8'));
 
     // Os mesmos usuários do seed:dev que o seed:demo procura.
     const { endereco, ...dadosCliente } = USUARIOS.find((u) => u.tipo === 'cliente');
