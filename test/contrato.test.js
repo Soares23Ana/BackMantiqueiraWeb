@@ -111,7 +111,7 @@ describe('contrato padronizado', () => {
         assert.deepEqual(Object.keys(painel.body).sort(), ['clientes_ativos', 'estoque_baixo', 'pedidos_pendentes']);
         assert.equal(painel.body.pedidos_pendentes, 1);
         const contadores = await request(app).get('/api/v1/painel/contadores').set('Authorization', equipe.auth).expect(200);
-        assert.deepEqual(Object.keys(contadores.body).sort(), ['clientes_novos_7_dias', 'estoque_baixo', 'pedidos_pendentes']);
+        assert.deepEqual(Object.keys(contadores.body).sort(), ['carrinhos_abandonados', 'clientes_novos_7_dias', 'estoque_baixo', 'pedidos_pendentes']);
     });
 
     test('novos cadastros: clientes_novos_7_dias no /painel/contadores e GET /clientes?novos_dias=7, do mais recente', async (t) => {

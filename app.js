@@ -29,6 +29,7 @@ const campanhasRoutes = require('./routes/campanhas');
 const eventosRoutes = require('./routes/eventos');
 const metricasRoutes = require('./routes/metricas');
 const carrinhoRoutes = require('./routes/carrinho');
+const carrinhosAbandonadosRoutes = require('./routes/carrinhosAbandonados');
 const cepRoutes = require('./routes/cep');
 const cnpjRoutes = require('./routes/cnpj');
 const autenticarToken = require('./middlewares/authMiddleware');
@@ -97,6 +98,7 @@ function criarApp() {
     api.use('/metricas', metricasRoutes);
     api.use('/carrinho', carrinhoRoutes.carrinho);
     api.use('/favoritos', carrinhoRoutes.favoritos);
+    api.use('/carrinhos-abandonados', carrinhosAbandonadosRoutes);
 
     app.use('/api/v1', limitadorGlobal, api);
 

@@ -326,3 +326,6 @@ A API consulta serviços públicos com o `fetch` nativo do Node (sem dependênci
 ### Carrinho e favoritos
 - Tabelas `carrinhos` (uma linha por cliente, `itens` em JSON) e `favoritos` (chave composta), migration 018. Ficam no banco da API, então funcionam igual em banco local e na nuvem.
 - `PUT /carrinho` substitui a lista inteira e grava `atualizado_em` sempre (mesmo com a mesma lista): essa data é a "última atividade" usada nos carrinhos abandonados. O pedido apaga a linha do carrinho dentro da transação do checkout (`servicos/pedidos.js`).
+
+### Carrinhos abandonados
+- Calculados na hora a partir de `carrinhos` (`servicos/carrinhosAbandonados.js`): itens, `atualizado_em` mais antigo que `carrinho_abandonado_dias` e nenhum pedido do cliente depois dessa data. Não há job nem tabela de "abandonos": o contato fica em `carrinho_contatos` (migration 019) e vale enquanto for posterior à última atualização do carrinho. O contador do painel conta só os que ainda não tiveram contato.

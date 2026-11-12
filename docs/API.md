@@ -21,6 +21,7 @@ Para ter banners, campanha, contatos e pedidos em todos os status no ambiente lo
 15. [Eventos e métricas](#15-eventos-e-métricas)
 16. [Consultas externas (CEP e CNPJ)](#16-consultas-externas)
 17. [Carrinho e favoritos](#17-carrinho-e-favoritos)
+18. [Carrinhos abandonados](#18-carrinhos-abandonados-equipe)
 
 ---
 
@@ -663,7 +664,7 @@ Todas: **equipe**. "Estoque baixo" = produto ativo com estoque menor ou igual ao
 | Método | Rota | Resposta |
 |---|---|---|
 | GET | `/painel` | `{ "pedidos_pendentes": 0, "estoque_baixo": 5, "clientes_ativos": 1 }` |
-| GET | `/painel/contadores` | `{ "pedidos_pendentes": 0, "estoque_baixo": 5, "clientes_novos_7_dias": 2 }` |
+| GET | `/painel/contadores` | `{ "pedidos_pendentes": 0, "estoque_baixo": 5, "clientes_novos_7_dias": 2, "carrinhos_abandonados": 1 }` |
 | GET | `/painel/alertas-reposicao` | Ver abaixo |
 
 `pedidos_pendentes` conta `Aguardando Separação` + `Em Separação`; `clientes_ativos` conta clientes não bloqueados; `clientes_novos_7_dias` conta os clientes cadastrados nos últimos 7 dias (ativos ou não). É só informativo: não há aprovação de cadastro e nada fica bloqueado esperando revisão. Para ver quem são, use `GET /clientes?novos_dias=7`.
@@ -766,6 +767,7 @@ Fora da janela de datas, ou com `ativo: false`, ou sem pop-up salvo: `{ "popup":
 | `horario_atendimento` | sim | texto até 200 caracteres |
 | `aviso_topo` | sim | texto até 200 caracteres |
 | `meta_reposicao` | não | inteiro de 1 a 1.000.000 (padrão 50) |
+| `carrinho_abandonado_dias` | não | inteiro de 1 a 365 (padrão 3): dias parado para um carrinho com itens ser abandonado |
 | `estoque_faixa_alta` | não | inteiro de 1 a 10000 (padrão 50): acima dele o produto disponível aparece como "Mais de N disponíveis" |
 
 Erros: `422 VALIDACAO`, `404` (chave desconhecida).
@@ -1146,3 +1148,40 @@ Um produto desativado depois de entrar no carrinho continua na lista com `ativo:
 
 ### Favoritos
 `GET /favoritos`: `{ "produtos": [ ...mesmo objeto de GET /produtos... ], "paginacao": { ... } }`, do mais recente para o mais antigo; produtos desativados não aparecem. `PUT` e `DELETE` respondem `200` com `{ "mensagem": "...", "id_produto": 15, "favorito": true }` (`false` no `DELETE`), mesmo quando nada mudou. Erros: `404 PRODUTO_NAO_ENCONTRADO` (no `PUT`, produto inexistente ou inativo), `400` (id inválido).
+
+---
+
+## 18. Carrinhos abandonados (equipe)
+
+Um carrinho é **abandonado** quando tem itens, está parado há pelo menos N dias (configuração `carrinho_abandonado_dias`, inteiro de 1 a 365, padrão **3**) e o cliente (ativo) **não fez pedido depois da última atualização** do carrinho. Não há envio de e-mail nem valores em reais: a equipe fala com o cliente por conta própria (o `link_whatsapp` já vem com uma mensagem pronta).
+
+| Método | Rota | Descrição |
+|---|---|---|
+| GET | `/carrinhos-abandonados` | Lista paginada, do mais recente para o mais antigo |
+| PATCH | `/carrinhos-abandonados/:id_cliente/contatado` | Registra que a equipe entrou em contato |
+
+`GET /carrinhos-abandonados`: `pagina`, `limite` (padrão 20, máximo 100) e filtros `dias` (1 a 365; substitui a configuração nesta consulta), `busca` (nome, razão social, e-mail ou CNPJ) e `contatado=true|false`. "Contatado" significa que há um contato registrado **depois** da última atualização do carrinho: se o cliente mexer no carrinho e abandoná-lo de novo, ele volta a ficar sem contato.
+```json
+{
+  "dias": 3,
+  "carrinhos": [
+    {
+      "id_carrinho": 4,
+      "cliente": { "id_usuario": 7, "cnpj": "11.222.333/0001-81", "nome_exibicao": "Mercado Antigo Ltda", "telefone": "35999991234", "email": "compras@mercado.com.br" },
+      "ultimo_movimento_em": "2026-11-02T18:00:00.000Z",
+      "dias_parado": 10,
+      "total_unidades": 5,
+      "itens": [{ "id_produto": 15, "sku": "SKU-115", "nome": "Anti-séptico bucal Colgate Plax ...", "quantidade": 2 }],
+      "contatado_em": null,
+      "contatado_por": null,
+      "link_whatsapp": "https://wa.me/5535999991234?text=Ol%C3%A1%2C%20Mercado%20Antigo%20Ltda!%20..."
+    }
+  ],
+  "paginacao": { "total": 1, "pagina": 1, "limite": 20, "total_paginas": 1 }
+}
+```
+`link_whatsapp`: `https://wa.me/55` + telefone só com dígitos (DDD + número; o `55` não é duplicado se já vier no cadastro) + `?text=` com uma mensagem educada, sem valores; `null` quando o cliente não tem telefone válido. `contatado_por` é `{ id_usuario, nome }`. Erros: `400 FILTRO_INVALIDO`, `400 PAGINACAO_INVALIDA`.
+
+`PATCH /carrinhos-abandonados/:id_cliente/contatado` com `{ "observacao": "Falei pelo WhatsApp." }` (opcional, até 500 caracteres) registra o contato (quem, quando e a observação). `200`: `{ "mensagem": "Contato registrado.", "contato": { "id_usuario": 7, "contatado_em": "...", "contatado_por": { "id_usuario": 1, "nome": "..." }, "observacao": "..." } }`. Erros: `422 VALIDACAO`, `404 CARRINHO_ABANDONADO_NAO_ENCONTRADO` (o cliente não tem carrinho abandonado agora), `400` (id inválido).
+
+`GET /painel/contadores` ganhou `carrinhos_abandonados`: quantos carrinhos abandonados **ainda estão sem contato** da equipe.

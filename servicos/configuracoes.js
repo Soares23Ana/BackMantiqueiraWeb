@@ -40,6 +40,18 @@ const DEFINICOES = {
             return String(numero);
         }
     },
+    carrinho_abandonado_dias: {
+        descricao: 'Dias parado para um carrinho com itens ser considerado abandonado.',
+        publica: false,
+        padrao: '3',
+        validar: (valor) => {
+            const numero = Number(valor);
+            if (typeof valor === 'boolean' || !Number.isSafeInteger(numero) || numero < 1 || numero > 365) {
+                throw new Error('deve ser um número inteiro entre 1 e 365');
+            }
+            return String(numero);
+        }
+    },
     estoque_faixa_alta: {
         descricao: 'Acima deste estoque, a vitrine mostra "Mais de N disponíveis" em vez de uma quantidade.',
         publica: false,
