@@ -322,3 +322,7 @@ A API consulta serviços públicos com o `fetch` nativo do Node (sem dependênci
 
 ### Visitantes
 - O evento `visita` (migration 016) usa a coluna `dia_visita` e o índice único `(sessao, dia_visita)` para gravar no máximo uma visita por sessão por dia, mesmo com requisições simultâneas; a repetição é ignorada (`registrado: false`). Nenhum IP é guardado. As métricas de visitantes contam sessões únicas por dia (horário de Brasília).
+
+### Carrinho e favoritos
+- Tabelas `carrinhos` (uma linha por cliente, `itens` em JSON) e `favoritos` (chave composta), migration 018. Ficam no banco da API, então funcionam igual em banco local e na nuvem.
+- `PUT /carrinho` substitui a lista inteira e grava `atualizado_em` sempre (mesmo com a mesma lista): essa data é a "última atividade" usada nos carrinhos abandonados. O pedido apaga a linha do carrinho dentro da transação do checkout (`servicos/pedidos.js`).

@@ -1,6 +1,6 @@
 const { Op, UniqueConstraintError } = require('sequelize');
 const sequelize = require('../db/conn');
-const { Produto, Pedido, ItemPedido, Endereco, PedidoHistorico } = require('../models');
+const { Produto, Pedido, ItemPedido, Endereco, PedidoHistorico, Carrinho } = require('../models');
 const logger = require('../lib/logger');
 const { ErroApi } = require('../lib/erros');
 const { alterarEstoque, disponibilidade } = require('./estoque');
@@ -255,6 +255,8 @@ function gravarPedido(idCliente, { itens, idEndereco, observacao, dataEntregaDes
             });
         }
         await registrarHistorico(pedido, null, { idUsuario: idCliente, transacao });
+        // O pedido feito esvazia o carrinho guardado na conta, na mesma transação.
+        await Carrinho.destroy({ where: { id_usuario: idCliente }, transaction: transacao });
         return pedido;
     });
 }

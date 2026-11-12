@@ -49,6 +49,18 @@ CREATE TABLE `campanhas_produtos` (
   CONSTRAINT `fk_campanhas_produtos_produto` FOREIGN KEY (`id_produto`) REFERENCES `produtos` (`id_produto`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
+CREATE TABLE `carrinhos` (
+  `id_carrinho` int NOT NULL AUTO_INCREMENT,
+  `id_usuario` int NOT NULL,
+  `itens` json NOT NULL,
+  `criado_em` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `atualizado_em` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id_carrinho`),
+  UNIQUE KEY `uk_carrinhos_usuario` (`id_usuario`),
+  KEY `idx_carrinhos_atualizado` (`atualizado_em`),
+  CONSTRAINT `fk_carrinhos_usuario` FOREIGN KEY (`id_usuario`) REFERENCES `usuarios` (`id_usuario`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
 CREATE TABLE `categorias` (
   `id_categoria` int NOT NULL AUTO_INCREMENT,
   `nome` varchar(100) NOT NULL,
@@ -125,6 +137,16 @@ CREATE TABLE `eventos` (
   UNIQUE KEY `uk_eventos_visita_dia` (`sessao`,`dia_visita`),
   KEY `idx_eventos_tipo_data` (`tipo`,`criado_em`),
   KEY `idx_eventos_data` (`criado_em`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE `favoritos` (
+  `id_usuario` int NOT NULL,
+  `id_produto` int NOT NULL,
+  `criado_em` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id_usuario`,`id_produto`),
+  KEY `idx_favoritos_produto` (`id_produto`),
+  CONSTRAINT `fk_favoritos_produto` FOREIGN KEY (`id_produto`) REFERENCES `produtos` (`id_produto`) ON DELETE CASCADE,
+  CONSTRAINT `fk_favoritos_usuario` FOREIGN KEY (`id_usuario`) REFERENCES `usuarios` (`id_usuario`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 CREATE TABLE `fornecedores` (
@@ -324,4 +346,5 @@ INSERT INTO schema_migrations (versao, nome, checksum) VALUES
 ('014', 'popup_cms', 'f2477a282641c24ee184c0df42066b88efdc1d734e32ab968956ad0187842a6b'),
 ('015', 'banner_destino_campanha_slug', '78a93b3760453b651e364281c07a74180f4b23181d7db5f409c9f0720db0e323'),
 ('016', 'evento_visita', '61dfa380947d92eef6a533e02de9768bdae1f895acff50a4736f3667cb2bb7d6'),
-('017', 'sincronizacao_catalogo', '3cde303d21dda3461605c1cd5c4a4afc37797a0ba42e18244b8fb8f4de422669');
+('017', 'sincronizacao_catalogo', '3cde303d21dda3461605c1cd5c4a4afc37797a0ba42e18244b8fb8f4de422669'),
+('018', 'carrinho_favoritos', '98ab7144d64ee3f4b7fd26028f597581f88b623418725a2394e17f7fff927b39');

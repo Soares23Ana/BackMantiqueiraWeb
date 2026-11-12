@@ -20,6 +20,7 @@ Para ter banners, campanha, contatos e pedidos em todos os status no ambiente lo
 14. [Campanhas](#14-campanhas)
 15. [Eventos e métricas](#15-eventos-e-métricas)
 16. [Consultas externas (CEP e CNPJ)](#16-consultas-externas)
+17. [Carrinho e favoritos](#17-carrinho-e-favoritos)
 
 ---
 
@@ -1106,3 +1107,42 @@ Para o front mostrar o nome da empresa antes de enviar o cadastro. Envie o CNPJ 
 - `503 SERVICO_INDISPONIVEL`: os serviços de consulta estão fora do ar.
 - `429 LIMITE_REQUISICOES`: mais de 20 consultas por minuto do mesmo IP.
 - Funciona mesmo com `VALIDAR_CNPJ_RECEITA` desligado (a variável só controla o cadastro).
+
+---
+
+## 17. Carrinho e favoritos
+
+Guardados na conta do cliente, no banco da API (valem em qualquer aparelho). **Só o perfil `cliente`**: visitante recebe `401` e a equipe `403`.
+
+| Método | Rota | Descrição |
+|---|---|---|
+| GET | `/carrinho` | Carrinho atual |
+| PUT | `/carrinho` | Substitui o carrinho inteiro |
+| DELETE | `/carrinho` | Esvazia (idempotente) |
+| GET | `/favoritos` | Favoritos no formato da vitrine (`?pagina=&limite=`, padrão 24) |
+| PUT | `/favoritos/:id_produto` | Adiciona (idempotente) |
+| DELETE | `/favoritos/:id_produto` | Remove (idempotente) |
+
+### Carrinho
+`PUT /carrinho`: `{ "itens": [{ "id_produto": 15, "quantidade": 12 }] }`, de 0 a 200 itens, sem repetir produto. Cada item precisa de produto **ativo**, `quantidade` inteira positiva (até 100.000) e **múltipla** do `multiplo_venda` da embalagem. O estoque não é conferido aqui (o checkout confere). Lista vazia esvazia o carrinho.
+
+`GET` e `PUT` respondem `200` com o carrinho, sem o estoque exato:
+```json
+{
+  "itens": [
+    {
+      "id_produto": 15, "sku": "SKU-115", "nome": "Anti-séptico bucal Colgate Plax ...", "imagem_url": "/img/colgate-plax.webp",
+      "quantidade": 12, "multiplo_venda": 6, "ativo": true,
+      "disponibilidade": "disponivel", "faixa_estoque": { "codigo": "disponivel", "rotulo": "Disponível" }
+    }
+  ],
+  "total_itens": 12,
+  "atualizado_em": "2026-10-26T23:41:10.000Z"
+}
+```
+Um produto desativado depois de entrar no carrinho continua na lista com `ativo: false` e `disponibilidade: "indisponivel"`. `DELETE` responde `{ "mensagem": "Carrinho esvaziado.", "itens": [], "total_itens": 0, "atualizado_em": null }`. Erros do `PUT`: `422 VALIDACAO` (todos os problemas em `detalhes`, com `campo` `itens[i]`), `400` (corpo que não é objeto).
+
+**Ao criar um pedido (`POST /pedidos`), o carrinho do cliente é esvaziado na mesma transação.** Pedido recusado não mexe no carrinho.
+
+### Favoritos
+`GET /favoritos`: `{ "produtos": [ ...mesmo objeto de GET /produtos... ], "paginacao": { ... } }`, do mais recente para o mais antigo; produtos desativados não aparecem. `PUT` e `DELETE` respondem `200` com `{ "mensagem": "...", "id_produto": 15, "favorito": true }` (`false` no `DELETE`), mesmo quando nada mudou. Erros: `404 PRODUTO_NAO_ENCONTRADO` (no `PUT`, produto inexistente ou inativo), `400` (id inválido).
