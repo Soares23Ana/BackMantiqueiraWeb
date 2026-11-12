@@ -141,7 +141,11 @@ function validarAmbiente(env) {
                     estoque: expressoes.JOB_ESTOQUE_CRON
                 }
             },
-            importacao: { pasta: path.resolve(env.IMPORTACAO_DIR || path.join(__dirname, '..', 'importacao')) },
+            importacao: {
+                pasta: path.resolve(env.IMPORTACAO_DIR || path.join(__dirname, '..', 'importacao')),
+                // Mapa da coluna "CATEGORIA - Cad. ERP" do portfólio para categoria e subcategoria (CSV categoria_erp;categoria;subcategoria).
+                mapaCategorias: path.resolve(env.MAPA_CATEGORIAS || path.join(__dirname, '..', 'seeds', 'mapa_categorias.csv'))
+            },
             log: {
                 nivel: nivelLog,
                 formato: env.LOG_FORMAT || (producao ? 'json' : 'texto')

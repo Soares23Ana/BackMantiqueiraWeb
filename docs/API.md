@@ -223,11 +223,13 @@ Depois da troca, **todos os tokens emitidos antes dela deixam de valer, inclusiv
 ### O que cada perfil vê
 | Campo | Público | Cliente logado | Equipe |
 |---|---|---|---|
-| `id_produto`, `sku`, `nome`, `descricao`, `destaques`, `imagem_url`, `categoria`, `marca`, `multiplo_venda`, `disponibilidade`, `faixa_estoque` | ✓ | ✓ | ✓ |
+| `id_produto`, `sku`, `nome`, `descricao`, `destaques`, `imagem_url`, `categoria`, `subcategoria`, `marca`, `multiplo_venda`, `disponibilidade`, `faixa_estoque` | ✓ | ✓ | ✓ |
 | `estoque` (quantidade exata) | | | ✓ |
 | `preco`, `estoque_minimo`, `ativo`, `id_fornecedor`, `criado_em`, `atualizado_em` | | | ✓ |
 
 Visitantes e clientes **nunca** recebem a quantidade exata em estoque, em nenhuma rota (vitrine, produto, campanhas, repetir pedido, erros de checkout). Só a equipe vê `estoque`.
+
+`categoria` é sempre o nível principal e `subcategoria` o segundo nível (ou `null`), cada um com `{ id_categoria, nome, slug }`; produto sem categoria traz os dois `null`.
 
 `disponibilidade`: `indisponivel` (estoque abaixo do múltiplo de venda), `ultimas_unidades` (estoque até o `estoque_minimo`) ou `disponivel`.
 
@@ -237,14 +239,15 @@ Visitantes e clientes **nunca** recebem a quantidade exata em estoque, em nenhum
 | Parâmetro | Descrição |
 |---|---|
 | `busca` (ou `q`) | Termos separados por espaço; **todos** precisam aparecer em nome, SKU, descrição, marca ou categoria. Ignora acentos e maiúsculas (`locao` encontra "Loção"). Até 100 caracteres. `q` é apelido de `busca`; se vierem os dois, vale `busca`. |
-| `categoria`, `marca` | Slug ou id; vários separados por vírgula (`marca=bic,risque`) |
+| `categoria`, `marca` | Slug ou id; vários separados por vírgula (`marca=bic,risque`). `categoria` **inclui os produtos das suas subcategorias** |
+| `subcategoria` | Slug ou id de uma subcategoria: só os produtos dela (um slug de categoria principal não filtra nada) |
 | `campanha` | Slug de uma campanha **ativa** (dentro do período): lista só os produtos dela; slug desconhecido ou campanha encerrada/agendada não lista nada |
 | `disponibilidade` | `disponivel`, `ultimas_unidades`, `indisponivel` ou `em_estoque` (as duas primeiras) |
 | `ordenar` | `relevancia` (padrão com busca), `nome` (padrão sem busca), `nome_desc`, `recentes`; equipe também `estoque`, `estoque_desc` |
 | `pagina`, `limite` | Padrão 24, máximo 100 |
 | `incluir_inativos=true` | Só equipe |
 
-Só estes parâmetros são lidos; qualquer outro é ignorado (não dá erro). `GET /produtos/filtros` lê os mesmos filtros (`busca`/`q`, `categoria`, `marca`, `disponibilidade`, `incluir_inativos`).
+Só estes parâmetros são lidos; qualquer outro é ignorado (não dá erro). `GET /produtos/filtros` lê os mesmos filtros (`busca`/`q`, `categoria`, `subcategoria`, `marca`, `campanha`, `disponibilidade`, `incluir_inativos`).
 
 Resposta (visitante):
 ```json
@@ -258,6 +261,7 @@ Resposta (visitante):
       "destaques": ["Sem álcool", "Sabor Melancia Splash", "Elimina até 99,9% das bactérias", "Frasco de 750 ml"],
       "imagem_url": "/img/colgate-plax.webp",
       "categoria": { "id_categoria": 1, "nome": "Higiene e beleza", "slug": "higiene-e-beleza" },
+      "subcategoria": { "id_categoria": 8, "nome": "Higiene bucal", "slug": "higiene-bucal" },
       "marca": { "id_marca": 7, "nome": "Colgate-Palmolive", "slug": "colgate-palmolive" },
       "multiplo_venda": 1,
       "disponibilidade": "disponivel",
@@ -284,10 +288,13 @@ Aceita só `busca` (ou o apelido `q`; com os dois, vale `busca`); outros parâme
 Até 8 produtos, 3 categorias e 3 marcas.
 
 ### GET /produtos/filtros
-Aceita os mesmos filtros da listagem. Cada contagem considera os **outros** filtros (com `marca=granado`, as categorias mostram quantos produtos Granado há em cada uma, e a lista de marcas continua completa para permitir trocar de marca).
+Aceita os mesmos filtros da listagem. Cada contagem considera os **outros** filtros (com `marca=granado`, as categorias mostram quantos produtos Granado há em cada uma, e a lista de marcas continua completa para permitir trocar de marca). As categorias vêm em árvore: o `total` da principal soma os produtos dela e das subcategorias (`subcategorias: []` quando não há); a contagem de categorias não aplica o próprio filtro de categoria/subcategoria.
 ```json
 {
-  "categorias": [{ "id_categoria": 3, "nome": "Farmácia", "slug": "farmacia", "total": 5 }],
+  "categorias": [
+    { "id_categoria": 3, "nome": "Farmácia", "slug": "farmacia", "total": 5,
+      "subcategorias": [{ "id_categoria": 9, "nome": "Higiene bucal", "slug": "higiene-bucal", "total": 2 }] }
+  ],
   "marcas": [{ "id_marca": 2, "nome": "Baruel", "slug": "baruel", "total": 7 }],
   "disponibilidade": { "disponivel": 33, "ultimas_unidades": 3, "indisponivel": 2, "em_estoque": 36 }
 }
@@ -358,24 +365,29 @@ Mais recentes primeiro (`limite` padrão 50, máximo 200). `tipo`: `ajuste`, `pe
 
 | Método | Rota | Perfil | Descrição |
 |---|---|---|---|
-| GET | `/categorias`, `/marcas` | público | Ativas, com `total_produtos` ativos (equipe: `?incluir_inativos=true`) |
+| GET | `/categorias`, `/marcas` | público | Ativas, com `total_produtos` ativos (equipe: `?incluir_inativos=true`). Categorias vêm em árvore (`?plano=true`: lista plana) |
 | POST | `/categorias`, `/marcas` | equipe | Cria |
 | PUT/PATCH | `/categorias/:id`, `/marcas/:id` | equipe | Edita |
-| DELETE | `/categorias/:id`, `/marcas/:id` | equipe | Exclui (só sem produtos) |
+| DELETE | `/categorias/:id`, `/marcas/:id` | equipe | Exclui (só sem produtos e, nas categorias, sem subcategorias) |
 
-`GET /categorias`:
+**Categoria e subcategoria (2 níveis).** A categoria tem `id_pai` (nulo nas **principais**). A profundidade máxima é 2: uma subcategoria não tem filhas. O **nome é único dentro do mesmo pai** (sem diferenciar maiúsculas nem acentos) e o **slug é único no geral**; ao criar uma subcategoria sem informar o slug, um nome repetido em outro pai ganha um slug próprio (`casa-outros`). O produto aponta para a **subcategoria quando houver, senão para a categoria**.
+
+`GET /categorias` devolve as categorias principais, cada uma com `subcategorias` e com `total_produtos` somando as subcategorias; com `?plano=true`, a lista plana de todas (principais e subcategorias, com `id_pai`):
 ```json
 {
   "categorias": [
-    { "id_categoria": 3, "nome": "Farmácia", "slug": "farmacia", "ordem": 0, "ativo": true,
-      "criado_em": "2026-10-26T23:27:33.000Z", "atualizado_em": "2026-10-26T23:27:33.000Z", "total_produtos": 5 }
+    { "id_categoria": 3, "nome": "Higiene e Beleza", "slug": "higiene-e-beleza", "id_pai": null, "ordem": 0, "ativo": true,
+      "criado_em": "2026-10-26T23:27:33.000Z", "atualizado_em": "2026-10-26T23:27:33.000Z", "total_produtos": 5,
+      "subcategorias": [
+        { "id_categoria": 8, "nome": "Sabonetes", "slug": "sabonetes", "id_pai": 3, "ordem": 0, "ativo": true, "criado_em": "...", "atualizado_em": "...", "total_produtos": 2 }
+      ] }
   ]
 }
 ```
 `GET /marcas` devolve `{ "marcas": [ ... ] }` (sem `ordem`).
 
-Criar/editar: `{ "nome": "Perfumaria", "slug": "opcional", "ordem": 5, "ativo": true }` (`ordem` só em categorias). O slug é gerado do nome (`Loja do bebê` → `loja-do-bebe`). Respostas: `{ "mensagem": "...", "categoria": { ... } }` ou `{ "mensagem": "...", "marca": { ... } }`.
-Erros: `409 SLUG_DUPLICADO`; exclusão com produtos: `409 EM_USO` (use `PATCH { "ativo": false }`).
+Criar/editar: `{ "nome": "Perfumaria", "slug": "opcional", "ordem": 5, "ativo": true, "id_pai": 3 }` (`ordem` e `id_pai` só em categorias; `id_pai: null` torna a categoria principal). O slug é gerado do nome (`Loja do bebê` → `loja-do-bebe`). Respostas: `{ "mensagem": "...", "categoria": { ... } }` ou `{ "mensagem": "...", "marca": { ... } }`.
+Erros: `409 SLUG_DUPLICADO`; `409 NOME_DUPLICADO` (já existe uma categoria com esse nome no mesmo pai); `422 VALIDACAO` em `id_pai` (pai inexistente, pai que já é subcategoria, categoria pai dela mesma, ou categoria que tem subcategorias virando subcategoria); exclusão com produtos ou, nas categorias, com subcategorias: `409 EM_USO` (use `PATCH { "ativo": false }`).
 
 ---
 

@@ -16,6 +16,11 @@ const Categoria = sequelize.define('Categoria', {
         allowNull: false,
         unique: true
     },
+    // Categoria pai (2 níveis: principal e subcategoria). Nulo nas categorias principais.
+    id_pai: {
+        type: DataTypes.INTEGER,
+        allowNull: true
+    },
     ordem: {
         type: DataTypes.INTEGER,
         allowNull: false,

@@ -364,7 +364,7 @@ describe('categorias e marcas (gestão)', () => {
 
         const duplicada = await request(app).post('/api/v1/categorias').set('Authorization', gerente.auth)
             .send({ nome: 'Perfumaria fina' }).expect(409);
-        assert.equal(duplicada.body.codigo, 'SLUG_DUPLICADO');
+        assert.equal(duplicada.body.codigo, 'NOME_DUPLICADO');
 
         await request(app).patch(`/api/v1/categorias/${id}`).set('Authorization', gerente.auth)
             .send({ nome: 'Perfumaria' }).expect(200);

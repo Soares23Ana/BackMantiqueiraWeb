@@ -51,6 +51,7 @@ node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"
 | `JOBS_ATIVOS` | `true` (exceto nos testes) | `false` desliga os [jobs agendados](#8-jobs-agendados) |
 | `JOB_CATALOGO_CRON`, `JOB_CARGA_COMPLETA_CRON`, `JOB_ESTOQUE_CRON` | `0 * * * *`, `0 0 * * *`, `*/30 * * * *` | Horários dos jobs (cron de 5 campos); validados ao iniciar |
 | `IMPORTACAO_DIR` | `./importacao` | Pasta com `entrada/`, `processados/` e `rejeitados/` usada pelos jobs |
+| `MAPA_CATEGORIAS` | `./seeds/mapa_categorias.csv` | Mapa de `CATEGORIA - Cad. ERP` para categoria e subcategoria ([importação](#7-importação-de-catálogo-planilhas-xlsx-e-csv)) |
 | `LOG_LEVEL` | `info` (`silent` nos testes) | `debug`, `info`, `warn`, `error` ou `silent` |
 | `LOG_FORMAT` | `texto` em dev, `json` em produção | Formato dos logs |
 | `JSON_LIMIT` | `200kb` | Tamanho máximo do corpo JSON |
@@ -180,12 +181,15 @@ O mesmo formato serve para o upload (`POST /produtos/importar`, ver [API.md](API
 | `CÓDIGO`, `codigo`, `cod` | `sku` |
 | `PRODUTO` | `nome_erp` (nome original do portfólio; dele sai o `nome` de exibição) |
 | `FABRICANTE` | `marca` (criada se não existir) |
-| `CATEGORIA - Cad. ERP`, `categoria` | `categoria` |
+| `CATEGORIA - Cad. ERP` | `categoria_erp` (passa pelo mapa de categorias, abaixo) |
+| `categoria`, `subcategoria` | `categoria`, `subcategoria` |
 | `estoque`, `quantidade`, `saldo` | `estoque` |
 
 Qualquer outra coluna (por exemplo `CÓDIGO DE BARRAS`) é **ignorada, sem erro**, e listada em `relatorio.colunas_ignoradas`.
 
 **Nome de exibição:** o original fica em `produtos.nome_erp` e o `nome` é gerado pelo dicionário editável `config/abreviacoes.json` (`SAB.` → Sabonete, `SH` → Shampoo, `LOC.HID.` → Loção Hidratante...), com capitalização de título (preposições em minúsculas), unidades e `C/8` mantidos e o `*` final removido. As abreviações **ambíguas** (`ED.`, `RP.`, `P.`, `PRES.`, `CHUP.`, `AP.`, listadas em `ambiguas` no JSON) e qualquer outra abreviação terminada em ponto que não esteja no dicionário **não são expandidas**: vão para `relatorio.abreviacoes_pendentes` para a equipe decidir e acrescentar ao dicionário (o arquivo é relido quando muda, sem reiniciar). Se a planilha já trouxer a coluna `nome`, ele não é alterado pela geração. Num produto existente, o `nome` só é trocado se ainda for igual ao gerado a partir do `nome_erp` anterior (ninguém o editou à mão); o `nome_erp` sempre acompanha a planilha.
+
+**Categoria e subcategoria na planilha:** as colunas `categoria` e `subcategoria` criam o que faltar (a subcategoria fica sob a categoria da mesma linha; `subcategoria` sem `categoria` é erro da linha) e o produto aponta para a subcategoria quando houver. A coluna `CATEGORIA - Cad. ERP` do portfólio passa pelo **mapa** `seeds/mapa_categorias.csv` (colunas `categoria_erp;categoria;subcategoria`, sem diferenciar maiúsculas nem acentos; caminho em `MAPA_CATEGORIAS`, padrão `./seeds/mapa_categorias.csv`, relido a cada importação). Categoria do portfólio **sem mapa**: o produto novo entra sem categoria, o produto existente mantém a que tem, **nenhuma categoria é criada** e o valor vai para `relatorio.categorias_sem_mapa` (`{ categoria_erp, ocorrencias }`) para a equipe completar o mapa. Se o arquivo do mapa não existir, todas ficam sem mapa e o relatório avisa.
 
 **Códigos só com dígitos:** `GET /produtos/:id` procura o número primeiro como id e, não havendo produto com esse id, como SKU.
 
@@ -193,7 +197,7 @@ Qualquer outra coluna (por exemplo `CÓDIGO DE BARRAS`) é **ignorada, sem erro*
 |---|---|
 | `sku` | Identificador do produto (upsert por SKU) |
 | `nome` | Obrigatório para produto novo |
-| `categoria`, `marca` | Nome; criadas automaticamente se não existirem |
+| `categoria`, `subcategoria`, `marca` | Nome; criadas automaticamente se não existirem (a subcategoria fica sob a `categoria`) |
 | `descricao` | Texto |
 | `destaques` | Itens separados por `\|` |
 | `imagem_url` | Caminho do front (`/img/x.webp`) ou URL |
@@ -358,3 +362,7 @@ A API consulta serviços públicos com o `fetch` nativo do Node (sem dependênci
 
 ### Histórico do cliente
 - `GET /clientes/:id/historico` (`servicos/historicoCliente.js`) lê as fontes numa só consulta `UNION ALL` (cadastro, pedidos, `pedido_historico`, carrinho, contatos do carrinho, eventos do cliente e notas), ordena e pagina no banco e monta título e detalhe em JavaScript. Não há tabela própria de histórico: ele sempre reflete o estado atual das tabelas de origem. Usa `JSON_TABLE` (MySQL 8) para somar as unidades do carrinho.
+
+### Categorias em dois níveis
+- `categorias.id_pai` (migration 022) liga a subcategoria à categoria principal. O índice único `(chave_pai, nome)`, em que `chave_pai` é uma coluna gerada (`IFNULL(id_pai, 0)`), garante nome único dentro do mesmo pai, inclusive entre as principais; a migration renomeia (`" (2)"`) nomes repetidos que já existissem. A profundidade máxima (2) é validada na API (`taxonomiaControlador`).
+- O produto guarda só `id_categoria` (a subcategoria quando houver, senão a categoria); `categoria` e `subcategoria` das respostas saem do join com o pai. `GET /produtos?categoria=` também casa o pai (`$categoria.pai.slug$`).

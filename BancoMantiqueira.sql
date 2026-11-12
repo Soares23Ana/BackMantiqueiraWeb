@@ -93,12 +93,17 @@ CREATE TABLE `categorias` (
   `id_categoria` int NOT NULL AUTO_INCREMENT,
   `nome` varchar(100) NOT NULL,
   `slug` varchar(120) NOT NULL,
+  `id_pai` int DEFAULT NULL,
   `ordem` int NOT NULL DEFAULT '0',
   `ativo` tinyint(1) NOT NULL DEFAULT '1',
   `criado_em` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `atualizado_em` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `chave_pai` int GENERATED ALWAYS AS (ifnull(`id_pai`,0)) STORED,
   PRIMARY KEY (`id_categoria`),
-  UNIQUE KEY `uk_categorias_slug` (`slug`)
+  UNIQUE KEY `uk_categorias_slug` (`slug`),
+  UNIQUE KEY `uk_categorias_pai_nome` (`chave_pai`,`nome`),
+  KEY `idx_categorias_pai` (`id_pai`),
+  CONSTRAINT `fk_categorias_pai` FOREIGN KEY (`id_pai`) REFERENCES `categorias` (`id_categoria`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 CREATE TABLE `configuracoes` (
@@ -392,4 +397,5 @@ INSERT INTO schema_migrations (versao, nome, checksum) VALUES
 ('018', 'carrinho_favoritos', '98ab7144d64ee3f4b7fd26028f597581f88b623418725a2394e17f7fff927b39'),
 ('019', 'carrinho_contatos', '8fd4b73a8237f289aba7c605bc534596704dd46e68d5280fbaa07fe4f6f3d461'),
 ('020', 'suporte_notas_auditoria', '253f198e45a064a310ab3c5280cc08e965ec2b2b422723a5ea7be0c9783f2427'),
-('021', 'produto_nome_erp', 'db573e0e0f6e4549876a5dff4733e44b9fd54a076f791f0c852d20880820fed7');
+('021', 'produto_nome_erp', 'db573e0e0f6e4549876a5dff4733e44b9fd54a076f791f0c852d20880820fed7'),
+('022', 'categoria_subcategoria', '43a2a93f0e6cd3866b142a589263a724dde78a8df14e13a9d7c94f968e8e75fe');

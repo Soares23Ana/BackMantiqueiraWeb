@@ -17,6 +17,6 @@ function criarRotas(controlador) {
 }
 
 module.exports = {
-    categorias: criarRotas(criarControladorTaxonomia(Categoria, { rotulo: 'Categoria', artigo: 'a', chave: 'categoria', comOrdem: true })),
+    categorias: criarRotas(criarControladorTaxonomia(Categoria, { rotulo: 'Categoria', artigo: 'a', chave: 'categoria', comOrdem: true, comHierarquia: true })),
     marcas: criarRotas(criarControladorTaxonomia(Marca, { rotulo: 'Marca', artigo: 'a', chave: 'marca' }))
 };

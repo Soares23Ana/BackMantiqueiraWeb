@@ -6,21 +6,31 @@ const path = require('node:path');
 const request = require('supertest');
 const { zipSync, strToU8 } = require('fflate');
 const writeXlsxFile = require('write-excel-file/node').default;
-const { prepararApp, criarUsuario } = require('./ajuda');
+const { prepararApp, criarUsuario, config } = require('./ajuda');
 
 let app;
 let sequelize;
 let equipe;
 let Produto;
 let Marca;
+let pastaMapa;
+let mapaOriginal;
 
 before(async () => {
+    // Mapa de categorias pequeno (fixture): a coluna "CATEGORIA - Cad. ERP" do portfólio passa por ele.
+    pastaMapa = fs.mkdtempSync(path.join(os.tmpdir(), 'mantiqueira-mapa-'));
+    mapaOriginal = config.importacao.mapaCategorias;
+    config.importacao.mapaCategorias = path.join(pastaMapa, 'mapa_categorias.csv');
+    fs.writeFileSync(config.importacao.mapaCategorias,
+        'categoria_erp;categoria;subcategoria\nHIGIENE PESSOAL;Higiene e Beleza;Sabonetes\nCABELOS;Higiene e Beleza;Cabelos\nUNHAS;Maquiagem;\n');
     ({ app, sequelize } = await prepararApp());
     ({ Produto, Marca } = require('../models'));
     equipe = await criarUsuario('equipe');
 });
 
 after(async () => {
+    config.importacao.mapaCategorias = mapaOriginal;
+    fs.rmSync(pastaMapa, { recursive: true, force: true });
     await sequelize.close();
 });
 
@@ -156,7 +166,8 @@ describe('importação da planilha do portfólio (.xlsx e CSV equivalente)', () 
         const resposta = await enviar(await xlsxDoPortfolio(), 'portfolio.xlsx').expect(200);
         const relatorio = resposta.body.relatorio;
         relatorioXlsx = relatorio;
-        assert.deepEqual([relatorio.linhas, relatorio.criados, relatorio.com_erro, relatorio.marcas_criadas, relatorio.categorias_criadas], [5, 5, 0, 5, 3]);
+        // Categorias: Higiene e Beleza, Sabonetes, Cabelos e Maquiagem (as subcategorias contam como criadas).
+        assert.deepEqual([relatorio.linhas, relatorio.criados, relatorio.com_erro, relatorio.marcas_criadas, relatorio.categorias_criadas], [5, 5, 0, 5, 4]);
         assert.deepEqual(relatorio.colunas_ignoradas, ['CÓDIGO DE BARRAS']);
         assert.deepEqual(relatorio.categorias_sem_mapa, []);
         assert.deepEqual(relatorio.abreviacoes_pendentes.map((p) => [p.abreviacao, p.ocorrencias]), [['AP.', 1], ['ED.', 1]]);

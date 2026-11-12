@@ -65,6 +65,8 @@ Produto.belongsTo(Fornecedor, {
     as: 'fornecedor'
 });
 
+Categoria.hasMany(Categoria, { foreignKey: 'id_pai', as: 'subcategorias' });
+Categoria.belongsTo(Categoria, { foreignKey: 'id_pai', as: 'pai' });
 Categoria.hasMany(Produto, {
     foreignKey: 'id_categoria',
     as: 'produtos'

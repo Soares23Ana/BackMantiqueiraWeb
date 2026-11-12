@@ -22,10 +22,31 @@ const ORDENACOES_EQUIPE = [...ORDENACOES_PUBLICAS, 'estoque', 'estoque_desc'];
 const CAMPOS_AUDITORIA = ['sku', 'nome', 'descricao', 'destaques', 'imagem_url', 'id_categoria', 'id_marca', 'id_fornecedor',
     'estoque_minimo', 'multiplo_venda', 'ativo'];
 
+// O produto aponta para a subcategoria quando houver, senão para a categoria; o "pai" resolve o nível principal.
+const INCLUDE_CATEGORIA = {
+    model: Categoria,
+    as: 'categoria',
+    attributes: ['id_categoria', 'nome', 'slug', 'id_pai'],
+    include: [{ model: Categoria, as: 'pai', attributes: ['id_categoria', 'nome', 'slug'] }]
+};
 const INCLUDES = [
-    { model: Categoria, as: 'categoria', attributes: ['id_categoria', 'nome', 'slug'] },
+    INCLUDE_CATEGORIA,
     { model: Marca, as: 'marca', attributes: ['id_marca', 'nome', 'slug'] }
 ];
+// Mesmos joins, sem colunas: para as consultas de contagem (GROUP BY) dos filtros.
+const INCLUDES_CONTAGEM = [
+    { model: Categoria, as: 'categoria', attributes: [], include: [{ model: Categoria, as: 'pai', attributes: [] }] },
+    { model: Marca, as: 'marca', attributes: [] }
+];
+
+const resumoCategoria = (categoria) => ({ id_categoria: categoria.id_categoria, nome: categoria.nome, slug: categoria.slug });
+
+// "categoria" é sempre o nível principal e "subcategoria" o segundo nível (ou null).
+function separarCategorias(categoria) {
+    if (!categoria) return { categoria: null, subcategoria: null };
+    if (categoria.pai) return { categoria: resumoCategoria(categoria.pai), subcategoria: resumoCategoria(categoria) };
+    return { categoria: resumoCategoria(categoria), subcategoria: null };
+}
 
 // O que cada perfil vê: só a equipe vê o estoque exato, o preço e os dados de gestão.
 // Visitante e cliente recebem a disponibilidade e a faixa de estoque (limiteFaixa vem de lerLimiteFaixa()).
@@ -37,9 +58,7 @@ function apresentarProduto(produto, usuario, limiteFaixa) {
         descricao: produto.descricao,
         destaques: produto.destaques || [],
         imagem_url: produto.imagem_url,
-        categoria: produto.categoria
-            ? { id_categoria: produto.categoria.id_categoria, nome: produto.categoria.nome, slug: produto.categoria.slug }
-            : null,
+        ...separarCategorias(produto.categoria),
         marca: produto.marca
             ? { id_marca: produto.marca.id_marca, nome: produto.marca.nome, slug: produto.marca.slug }
             : null,
@@ -105,6 +124,7 @@ function lerFiltros(query, usuario) {
     return {
         termos,
         categorias: listaDoParametro(query.categoria),
+        subcategorias: listaDoParametro(query.subcategoria),
         marcas: listaDoParametro(query.marca),
         campanha: lerCampanha(query.campanha),
         disponibilidade: disponibilidadeFiltro,
@@ -131,6 +151,26 @@ function condicaoTaxonomia(valores, coluna, associacao) {
     return { [Op.or]: opcoes };
 }
 
+// ?categoria=: o produto da categoria ou de qualquer subcategoria dela (por id ou slug).
+function condicaoCategorias(valores) {
+    const ids = valores.filter((valor) => /^\d+$/.test(valor)).map(Number);
+    const slugs = valores.filter((valor) => !/^\d+$/.test(valor));
+    const opcoes = [];
+    if (ids.length) opcoes.push({ id_categoria: { [Op.in]: ids } }, { '$categoria.id_pai$': { [Op.in]: ids } });
+    if (slugs.length) opcoes.push({ '$categoria.slug$': { [Op.in]: slugs } }, { '$categoria.pai.slug$': { [Op.in]: slugs } });
+    return { [Op.or]: opcoes };
+}
+
+// ?subcategoria=: só produtos da subcategoria informada (segundo nível).
+function condicaoSubcategorias(valores) {
+    const ids = valores.filter((valor) => /^\d+$/.test(valor)).map(Number);
+    const slugs = valores.filter((valor) => !/^\d+$/.test(valor));
+    const opcoes = [];
+    if (ids.length) opcoes.push({ id_categoria: { [Op.in]: ids } });
+    if (slugs.length) opcoes.push({ '$categoria.slug$': { [Op.in]: slugs } });
+    return { [Op.and]: [{ [Op.or]: opcoes }, { '$categoria.id_pai$': { [Op.ne]: null } }] };
+}
+
 // Monta o WHERE. "ignorar" deixa um filtro de fora (usado nas contagens de /filtros).
 function montarWhere(filtros, ignorar = null) {
     const condicoes = [];
@@ -145,12 +185,16 @@ function montarWhere(filtros, ignorar = null) {
                 { sku: { [Op.like]: padrao } },
                 { descricao: { [Op.like]: padrao } },
                 { '$marca.nome$': { [Op.like]: padrao } },
-                { '$categoria.nome$': { [Op.like]: padrao } }
+                { '$categoria.nome$': { [Op.like]: padrao } },
+                { '$categoria.pai.nome$': { [Op.like]: padrao } }
             ]
         });
     }
     if (filtros.categorias.length && ignorar !== 'categoria') {
-        condicoes.push(condicaoTaxonomia(filtros.categorias, 'id_categoria', 'categoria'));
+        condicoes.push(condicaoCategorias(filtros.categorias));
+    }
+    if (filtros.subcategorias.length && ignorar !== 'categoria') {
+        condicoes.push(condicaoSubcategorias(filtros.subcategorias));
     }
     if (filtros.marcas.length && ignorar !== 'marca') {
         condicoes.push(condicaoTaxonomia(filtros.marcas, 'id_marca', 'marca'));
@@ -232,7 +276,7 @@ async function sugestoes(req, res) {
         return res.status(200).json({ produtos: [], categorias: [], marcas: [] });
     }
     const padrao = `%${escaparLike(busca)}%`;
-    const filtros = { termos, categorias: [], marcas: [], campanha: null, disponibilidade: null, incluirInativos: false };
+    const filtros = { termos, categorias: [], subcategorias: [], marcas: [], campanha: null, disponibilidade: null, incluirInativos: false };
 
     const [produtos, categorias, marcas] = await Promise.all([
         Produto.findAll({
@@ -278,7 +322,7 @@ async function filtrosDisponiveis(req, res) {
     const contarPor = async (associacao, chave) => {
         const linhas = await Produto.findAll({
             where: montarWhere(filtros, associacao),
-            include: INCLUDES.map((include) => ({ ...include, attributes: [] })),
+            include: INCLUDES_CONTAGEM,
             attributes: [
                 [sequelize.col(`${associacao}.${chave}`), chave],
                 [sequelize.col(`${associacao}.nome`), 'nome'],
@@ -294,13 +338,50 @@ async function filtrosDisponiveis(req, res) {
             .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
     };
 
+    // Árvore de categorias: cada principal traz o total (dela e das subcategorias) e a lista de subcategorias.
+    const contarCategorias = async () => {
+        const linhas = await Produto.findAll({
+            where: montarWhere(filtros, 'categoria'),
+            include: INCLUDES_CONTAGEM,
+            attributes: [
+                [sequelize.col('categoria.id_categoria'), 'id_categoria'],
+                [sequelize.col('categoria.nome'), 'nome'],
+                [sequelize.col('categoria.slug'), 'slug'],
+                [sequelize.col('categoria.id_pai'), 'id_pai'],
+                [sequelize.col('categoria->pai.nome'), 'pai_nome'],
+                [sequelize.col('categoria->pai.slug'), 'pai_slug'],
+                [sequelize.fn('COUNT', sequelize.col('Produto.id_produto')), 'total']
+            ],
+            group: ['categoria.id_categoria', 'categoria.nome', 'categoria.slug', 'categoria.id_pai', 'categoria->pai.nome', 'categoria->pai.slug'],
+            raw: true
+        });
+        const principais = new Map();
+        const principal = (id, nome, slug) => {
+            if (!principais.has(id)) principais.set(id, { id_categoria: id, nome, slug, total: 0, subcategorias: [] });
+            return principais.get(id);
+        };
+        for (const linha of linhas) {
+            if (linha.id_categoria === null) continue;
+            const total = Number(linha.total);
+            if (linha.id_pai === null) {
+                principal(linha.id_categoria, linha.nome, linha.slug).total += total;
+            } else {
+                const pai = principal(linha.id_pai, linha.pai_nome, linha.pai_slug);
+                pai.total += total;
+                pai.subcategorias.push({ id_categoria: linha.id_categoria, nome: linha.nome, slug: linha.slug, total });
+            }
+        }
+        const porNome = (a, b) => a.nome.localeCompare(b.nome, 'pt-BR');
+        return [...principais.values()].sort(porNome).map((item) => ({ ...item, subcategorias: item.subcategorias.sort(porNome) }));
+    };
+
     const somaDisponibilidade = (estado) => sequelize.literal(`SUM(CASE WHEN ${CONDICOES_DISPONIBILIDADE[estado]} THEN 1 ELSE 0 END)`);
     const [categorias, marcas, [totais]] = await Promise.all([
-        contarPor('categoria', 'id_categoria'),
+        contarCategorias(),
         contarPor('marca', 'id_marca'),
         Produto.findAll({
             where: montarWhere(filtros, 'disponibilidade'),
-            include: INCLUDES.map((include) => ({ ...include, attributes: [] })),
+            include: INCLUDES_CONTAGEM,
             attributes: [
                 [somaDisponibilidade('disponivel'), 'disponivel'],
                 [somaDisponibilidade('ultimas_unidades'), 'ultimas_unidades'],
@@ -601,5 +682,6 @@ module.exports = {
     listarMovimentacoes,
     desativar,
     enviarImagem,
-    apresentarProduto
+    apresentarProduto,
+    INCLUDES
 };

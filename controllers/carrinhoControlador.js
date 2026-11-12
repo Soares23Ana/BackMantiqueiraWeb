@@ -1,9 +1,9 @@
 const { Op } = require('sequelize');
-const { Carrinho, Favorito, Produto, Categoria, Marca } = require('../models');
+const { Carrinho, Favorito, Produto } = require('../models');
 const { ErroApi } = require('../lib/erros');
 const { lerPaginacao, montarPaginacao } = require('../lib/paginacao');
 const { disponibilidade, faixaEstoque, lerLimiteFaixa } = require('../servicos/estoque');
-const { apresentarProduto } = require('./produtoControlador');
+const { apresentarProduto, INCLUDES: INCLUDES_PRODUTO } = require('./produtoControlador');
 
 const MAXIMO_ITENS = 200;
 const MAXIMO_QUANTIDADE = 100000;
@@ -136,10 +136,7 @@ async function listarFavoritos(req, res) {
             as: 'produto',
             required: true,
             where: { ativo: true },
-            include: [
-                { model: Categoria, as: 'categoria', attributes: ['id_categoria', 'nome', 'slug'] },
-                { model: Marca, as: 'marca', attributes: ['id_marca', 'nome', 'slug'] }
-            ]
+            include: INCLUDES_PRODUTO
         }],
         order: [['criado_em', 'DESC'], ['id_produto', 'DESC']],
         limit: paginacao.limite,

@@ -1,8 +1,11 @@
+const fs = require('node:fs');
 const { Op } = require('sequelize');
+const config = require('../config/ambiente');
 const sequelize = require('../db/conn');
 const { Produto, Categoria, Marca } = require('../models');
 const { ErroApi } = require('../lib/erros');
-const { lerMatriz, normalizarNomeColuna } = require('../lib/planilha');
+const { lerMatriz, normalizarNomeColuna, decodificarArquivo } = require('../lib/planilha');
+const { lerCsvMatriz } = require('../lib/csv');
 const { gerarNomeExibicao, carregarDicionario } = require('../lib/nomeProduto');
 const { gerarSlug } = require('../lib/texto');
 const { validarDadosProduto } = require('../helpers/validacaoProduto');
@@ -10,18 +13,19 @@ const { alterarEstoque } = require('./estoque');
 
 // Mesmo formato do seeds/catalogo_inicial.csv. Só "sku" é obrigatória; colunas ausentes não são alteradas.
 const COLUNAS = [
-    'sku', 'nome', 'categoria', 'marca', 'descricao', 'destaques', 'imagem_url',
+    'sku', 'nome', 'categoria', 'subcategoria', 'marca', 'descricao', 'destaques', 'imagem_url',
     'ativo', 'estoque_minimo', 'multiplo_venda', 'preco', 'estoque'
 ];
 // Cabeçalhos do portfólio (CSV ou Excel), sem diferenciar maiúsculas nem acentos. "PRODUTO" é o nome do portfólio
 // (nome_erp): dele sai o nome de exibição, a menos que a planilha tenha a própria coluna "nome".
-const COLUNAS_ACEITAS = [...COLUNAS, 'nome_erp'];
+const COLUNAS_ACEITAS = [...COLUNAS, 'nome_erp', 'categoria_erp'];
 const APELIDOS = {
     codigo: 'sku',
     cod: 'sku',
     produto: 'nome_erp',
     fabricante: 'marca',
-    'categoria - cad. erp': 'categoria',
+    // A categoria do portfólio passa pelo mapa seeds/mapa_categorias.csv (categoria e subcategoria do site).
+    'categoria - cad. erp': 'categoria_erp',
     quantidade: 'estoque',
     saldo: 'estoque'
 };
@@ -83,7 +87,7 @@ function converterLinha(valores, cabecalho, dicionario) {
     }
 
     const nomesTaxonomia = {};
-    for (const coluna of ['categoria', 'marca']) {
+    for (const coluna of ['categoria', 'subcategoria', 'marca']) {
         if (!tem(coluna)) continue;
         if (valores[coluna].length > 100) {
             erros.push({ campo: coluna, mensagem: `O campo ${coluna} deve ter no máximo 100 caracteres.` });
@@ -91,6 +95,15 @@ function converterLinha(valores, cabecalho, dicionario) {
             erros.push({ campo: coluna, mensagem: `O campo ${coluna} precisa ter letras ou números.` });
         }
         nomesTaxonomia[coluna] = valores[coluna] || null;
+    }
+    if (tem('categoria_erp')) {
+        if (valores.categoria_erp.length > 255) {
+            erros.push({ campo: 'categoria_erp', mensagem: 'A categoria do portfólio deve ter no máximo 255 caracteres.' });
+        }
+        nomesTaxonomia.categoria_erp = valores.categoria_erp || null;
+    }
+    if (nomesTaxonomia.subcategoria && !nomesTaxonomia.categoria) {
+        erros.push({ campo: 'subcategoria', mensagem: 'A subcategoria exige a categoria.' });
     }
 
     let dados = {};
@@ -142,7 +155,65 @@ function iguais(campo, atual, novo) {
     return (atual ?? null) === (novo ?? null);
 }
 
-// Busca a categoria/marca pelo slug do nome e cria se não existir.
+/**
+ * Mapa da categoria do portfólio: seeds/mapa_categorias.csv (categoria_erp;categoria;subcategoria), sem diferenciar
+ * maiúsculas nem acentos. "origem" pode ser o texto do CSV (testes); sem ele, lê o arquivo configurado.
+ * Devolve { mapa: Map(categoria_erp normalizada => { categoria, subcategoria }), encontrado }.
+ */
+function carregarMapaCategorias(origem) {
+    let texto = origem;
+    if (texto === undefined) {
+        try {
+            texto = decodificarArquivo(fs.readFileSync(config.importacao.mapaCategorias));
+        } catch {
+            return { mapa: new Map(), encontrado: false };
+        }
+    }
+    const [cabecalho, ...linhas] = lerCsvMatriz(texto);
+    const mapa = new Map();
+    if (!cabecalho) return { mapa, encontrado: true };
+    const indice = (nome) => cabecalho.celulas.findIndex((celula) => normalizarNomeColuna(celula) === nome);
+    const [iErp, iCategoria, iSub] = [indice('categoria_erp'), indice('categoria'), indice('subcategoria')];
+    for (const { celulas } of linhas) {
+        const categoria = iCategoria >= 0 ? celulas[iCategoria] : '';
+        if (iErp >= 0 && celulas[iErp] && categoria) {
+            mapa.set(normalizarNomeColuna(celulas[iErp]), { categoria, subcategoria: (iSub >= 0 && celulas[iSub]) || null });
+        }
+    }
+    return { mapa, encontrado: true };
+}
+
+/**
+ * Categorias em dois níveis: acha a categoria pelo nome dentro do mesmo pai (principal: id_pai nulo) e cria se
+ * não existir. O slug é único no geral: em colisão tenta "slug-do-pai-slug" e depois um número.
+ */
+function criarResolvedorCategorias(existentes, transacao, contador) {
+    const chaveDe = (nome, idPai) => `${idPai || 0}|${gerarSlug(nome)}`;
+    const porChave = new Map(existentes.map((categoria) => [chaveDe(categoria.nome, categoria.id_pai), categoria]));
+    const slugs = new Set(existentes.map((categoria) => categoria.slug));
+    const porId = new Map(existentes.map((categoria) => [categoria.id_categoria, categoria]));
+    return async function resolver(nome, idPai = null) {
+        const chave = chaveDe(nome, idPai);
+        if (!porChave.has(chave)) {
+            const base = gerarSlug(nome);
+            const candidatos = [base];
+            if (idPai) candidatos.push(`${porId.get(idPai).slug}-${base}`.slice(0, 120));
+            let slug = candidatos.find((candidato) => !slugs.has(candidato));
+            for (let n = 2; !slug; n += 1) {
+                const tentativa = `${candidatos[candidatos.length - 1].slice(0, 115)}-${n}`;
+                if (!slugs.has(tentativa)) slug = tentativa;
+            }
+            const registro = await Categoria.create({ nome, slug, id_pai: idPai }, { transaction: transacao });
+            porChave.set(chave, registro);
+            porId.set(registro.id_categoria, registro);
+            slugs.add(slug);
+            contador.total += 1;
+        }
+        return porChave.get(chave).id_categoria;
+    };
+}
+
+// Busca a marca pelo slug do nome e cria se não existir.
 async function resolverTaxonomia(Modelo, cache, nome, transacao, contador) {
     if (!nome) return null;
     const slug = gerarSlug(nome);
@@ -169,7 +240,8 @@ async function importarCatalogo(entrada, {
     idUsuario = null,
     origem = 'importação',
     formato,
-    dicionario = carregarDicionario()
+    dicionario = carregarDicionario(),
+    mapaCategoriasOrigem
 } = {}) {
     const { linhas, formato: formatoLido } = await lerMatriz(entrada, { formato });
     const csv = montarTabela(linhas);
@@ -212,6 +284,12 @@ async function importarCatalogo(entrada, {
         relatorio.avisos.push(`Colunas ignoradas: ${colunasIgnoradas.join(', ')}.`);
     }
     const pendentes = new Map();
+    const semMapa = new Map();
+    const contadorCategorias = { total: 0 };
+    const mapaCategorias = csv.cabecalho.includes('categoria_erp') ? carregarMapaCategorias(mapaCategoriasOrigem) : { mapa: new Map(), encontrado: true };
+    if (!mapaCategorias.encontrado) {
+        relatorio.avisos.push('Mapa de categorias não encontrado (seeds/mapa_categorias.csv): as categorias do portfólio ficaram sem mapa.');
+    }
     const registrarErros = (linha, sku, erros) => {
         relatorio.com_erro += 1;
         for (const erro of erros) {
@@ -256,15 +334,32 @@ async function importarCatalogo(entrada, {
             lock: transacao.LOCK.UPDATE
         });
         const porSku = new Map(existentes.map((produto) => [produto.sku.toUpperCase(), produto]));
-        const categorias = new Map((await Categoria.findAll({ transaction: transacao })).map((c) => [c.slug, c]));
+        const resolverCategoria = criarResolvedorCategorias(await Categoria.findAll({ transaction: transacao }), transacao, contadorCategorias);
         const marcas = new Map((await Marca.findAll({ transaction: transacao })).map((m) => [m.slug, m]));
-        const contadorCategorias = { total: 0 };
         const contadorMarcas = { total: 0 };
 
         for (const item of validas) {
             const dados = { ...item.dados };
-            if ('categoria' in item.nomesTaxonomia) {
-                dados.id_categoria = await resolverTaxonomia(Categoria, categorias, item.nomesTaxonomia.categoria, transacao, contadorCategorias);
+            // O produto aponta para a subcategoria quando houver, senão para a categoria.
+            const nomes = item.nomesTaxonomia;
+            if ('categoria' in nomes || 'subcategoria' in nomes) {
+                if (!nomes.categoria) {
+                    dados.id_categoria = null;
+                } else {
+                    const idCategoria = await resolverCategoria(nomes.categoria, null);
+                    dados.id_categoria = nomes.subcategoria ? await resolverCategoria(nomes.subcategoria, idCategoria) : idCategoria;
+                }
+            } else if (nomes.categoria_erp) {
+                const destino = mapaCategorias.mapa.get(normalizarNomeColuna(nomes.categoria_erp));
+                if (destino) {
+                    const idCategoria = await resolverCategoria(destino.categoria, null);
+                    dados.id_categoria = destino.subcategoria ? await resolverCategoria(destino.subcategoria, idCategoria) : idCategoria;
+                } else {
+                    // Sem mapa: o produto novo fica sem categoria (o existente mantém a atual) e nenhuma categoria é criada.
+                    const atual = semMapa.get(nomes.categoria_erp) || { categoria_erp: nomes.categoria_erp, ocorrencias: 0 };
+                    atual.ocorrencias += 1;
+                    semMapa.set(nomes.categoria_erp, atual);
+                }
             }
             if ('marca' in item.nomesTaxonomia) {
                 dados.id_marca = await resolverTaxonomia(Marca, marcas, item.nomesTaxonomia.marca, transacao, contadorMarcas);
@@ -347,6 +442,7 @@ async function importarCatalogo(entrada, {
         }
 
         relatorio.abreviacoes_pendentes = [...pendentes.values()].sort((a, b) => b.ocorrencias - a.ocorrencias || a.abreviacao.localeCompare(b.abreviacao));
+        relatorio.categorias_sem_mapa = [...semMapa.values()].sort((a, b) => b.ocorrencias - a.ocorrencias || a.categoria_erp.localeCompare(b.categoria_erp));
         relatorio.categorias_criadas = contadorCategorias.total;
         relatorio.marcas_criadas = contadorMarcas.total;
         if (simular) await transacao.rollback();

@@ -1,10 +1,10 @@
 const { Op } = require('sequelize');
 const sequelize = require('../db/conn');
-const { Campanha, CampanhaProduto, Produto, Categoria, Marca } = require('../models');
+const { Campanha, CampanhaProduto, Produto } = require('../models');
 const { ErroApi } = require('../lib/erros');
 const { lerDataHora } = require('../lib/datas');
 const { gerarSlug } = require('../lib/texto');
-const { apresentarProduto } = require('./produtoControlador');
+const { apresentarProduto, INCLUDES: INCLUDES_PRODUTO } = require('./produtoControlador');
 const { lerLimiteFaixa } = require('../servicos/estoque');
 const { registrarAuditoria, instantaneo } = require('../servicos/auditoria');
 
@@ -131,10 +131,7 @@ async function listarAtivas(req, res) {
             where: { ativo: true },
             required: false,
             through: { attributes: [] },
-            include: [
-                { model: Categoria, as: 'categoria', attributes: ['id_categoria', 'nome', 'slug'] },
-                { model: Marca, as: 'marca', attributes: ['id_marca', 'nome', 'slug'] }
-            ]
+            include: INCLUDES_PRODUTO
         }],
         order: [['fim_em', 'ASC'], ['id_campanha', 'ASC'], [{ model: Produto, as: 'produtos' }, 'nome', 'ASC']]
     });
