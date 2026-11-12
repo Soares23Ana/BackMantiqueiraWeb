@@ -22,6 +22,7 @@ Para ter banners, campanha, contatos e pedidos em todos os status no ambiente lo
 16. [Consultas externas (CEP e CNPJ)](#16-consultas-externas)
 17. [Carrinho e favoritos](#17-carrinho-e-favoritos)
 18. [Carrinhos abandonados](#18-carrinhos-abandonados-equipe)
+19. [Suporte: notas e auditoria](#19-suporte-notas-do-cliente-e-auditoria-equipe)
 
 ---
 
@@ -1185,3 +1186,52 @@ Um carrinho é **abandonado** quando tem itens, está parado há pelo menos N di
 `PATCH /carrinhos-abandonados/:id_cliente/contatado` com `{ "observacao": "Falei pelo WhatsApp." }` (opcional, até 500 caracteres) registra o contato (quem, quando e a observação). `200`: `{ "mensagem": "Contato registrado.", "contato": { "id_usuario": 7, "contatado_em": "...", "contatado_por": { "id_usuario": 1, "nome": "..." }, "observacao": "..." } }`. Erros: `422 VALIDACAO`, `404 CARRINHO_ABANDONADO_NAO_ENCONTRADO` (o cliente não tem carrinho abandonado agora), `400` (id inválido).
 
 `GET /painel/contadores` ganhou `carrinhos_abandonados`: quantos carrinhos abandonados **ainda estão sem contato** da equipe.
+
+---
+
+## 19. Suporte: notas do cliente e auditoria (equipe)
+
+### Notas por cliente
+Anotações internas da equipe sobre um cliente (o cliente não vê).
+
+| Método | Rota | Descrição |
+|---|---|---|
+| GET | `/clientes/:id/notas` | Notas do cliente, da mais recente para a mais antiga (`?pagina=&limite=`, padrão 50) |
+| POST | `/clientes/:id/notas` | Cria `{ "texto": "..." }` (1 a 1000 caracteres) |
+| DELETE | `/clientes/:id/notas/:id_nota` | Exclui; só o **autor** da nota ou quem tem `pode_gerenciar_equipe` |
+
+Nota: `{ "id_nota": 3, "texto": "Pediu retorno na segunda.", "autor": { "id_usuario": 2, "nome": "Equipe A" }, "criado_em": "...", "pode_excluir": true }`. `pode_excluir` já vem calculado para quem fez a requisição. `GET` responde `{ "notas": [...], "paginacao": { ... } }`; `POST` responde `201` com `{ "mensagem": "Nota registrada.", "nota": { ... } }`; `DELETE`, `{ "mensagem": "Nota excluída." }`. Erros: `422 VALIDACAO` (texto vazio, acima de 1000 ou campo a mais), `404` (cliente ou nota inexistente), `403 ACESSO_NEGADO` (excluir nota de outra pessoa sem a permissão), `400` (id inválido).
+
+### GET /auditoria
+Trilha de quem alterou o quê. Filtros: `entidade`, `id_entidade`, `id_usuario`, `de` e `ate` (`AAAA-MM-DD`, inclusive, horário de Brasília), `pagina` e `limite` (padrão 50, máximo 200). Do mais recente para o mais antigo.
+```json
+{
+  "registros": [
+    {
+      "id_auditoria": 41,
+      "usuario": { "id_usuario": 2, "nome": "Equipe A" },
+      "acao": "produto.editar",
+      "entidade": "produto",
+      "id_entidade": "15",
+      "resumo": { "alteracoes": { "nome": { "antes": "Produto antigo", "depois": "Produto novo" } } },
+      "criado_em": "2026-10-26T23:41:10.000Z"
+    }
+  ],
+  "paginacao": { "total": 1, "pagina": 1, "limite": 50, "total_paginas": 1 }
+}
+```
+`resumo` traz só os campos que mudaram (`alteracoes`: `{ campo: { antes, depois } }`); na criação, `depois`; na exclusão, `antes`; `detalhe` guarda informações extras seguras (observação do ajuste, motivo do cancelamento). **Nunca há senha, hash ou token** (nem o valor da senha temporária: só `"credencial_redefinida": true`) e **nenhum preço**. Textos longos são cortados em 200 caracteres. O registro nunca derruba a operação: se a gravação da trilha falhar, a ação continua e o erro vai só para o log.
+
+| `entidade` | `id_entidade` | `acao` |
+|---|---|---|
+| `produto` | id | `produto.criar`, `produto.editar`, `produto.ativar`, `produto.desativar`, `produto.estoque` (traz a `observacao` em `detalhe`) |
+| `cliente` | id | `cliente.editar`, `cliente.bloquear`, `cliente.desbloquear`, `cliente.senha_temporaria` |
+| `pedido` | id | `pedido.status`, `pedido.cancelar` (motivo em `detalhe`) |
+| `banner` | id | `banner.criar`, `banner.editar`, `banner.excluir`, `banner.reordenar` |
+| `popup` | `popup` | `popup.salvar`, `popup.ativar`, `popup.desativar`, `popup.imagem`, `popup.excluir` |
+| `bloco_cms` | chave | `bloco.salvar`, `bloco.ativar`, `bloco.desativar`, `bloco.excluir` |
+| `campanha` | id | `campanha.criar`, `campanha.editar`, `campanha.excluir` |
+| `configuracao` | chave | `configuracao.editar` |
+| `usuario` (contas da equipe) | id | `equipe.criar`, `equipe.editar` |
+
+Erros: `400 FILTRO_INVALIDO` (data fora do formato, `id_usuario` inválido, `ate` antes de `de`), `400 PAGINACAO_INVALIDA`.

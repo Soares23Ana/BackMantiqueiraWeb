@@ -18,9 +18,13 @@ const Evento = require('./Evento');
 const Carrinho = require('./Carrinho');
 const Favorito = require('./Favorito');
 const CarrinhoContato = require('./CarrinhoContato');
+const NotaCliente = require('./NotaCliente');
+const Auditoria = require('./Auditoria');
 
 Usuario.hasOne(Carrinho, { foreignKey: 'id_usuario', as: 'carrinho' });
 Carrinho.belongsTo(Usuario, { foreignKey: 'id_usuario', as: 'usuario' });
+NotaCliente.belongsTo(Usuario, { foreignKey: 'id_autor', as: 'autor' });
+Auditoria.belongsTo(Usuario, { foreignKey: 'id_usuario', as: 'usuario' });
 CarrinhoContato.belongsTo(Usuario, { foreignKey: 'id_funcionario', as: 'funcionario' });
 Favorito.belongsTo(Produto, { foreignKey: 'id_produto', as: 'produto' });
 Produto.hasMany(Favorito, { foreignKey: 'id_produto', as: 'favoritos' });
@@ -152,5 +156,7 @@ module.exports = {
     Evento,
     Carrinho,
     Favorito,
-    CarrinhoContato
+    CarrinhoContato,
+    NotaCliente,
+    Auditoria
 };

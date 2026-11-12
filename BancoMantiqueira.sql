@@ -10,6 +10,21 @@ USE mantiqueira_db;
 
 SET FOREIGN_KEY_CHECKS = 0;
 
+CREATE TABLE `auditoria` (
+  `id_auditoria` bigint NOT NULL AUTO_INCREMENT,
+  `id_usuario` int DEFAULT NULL,
+  `acao` varchar(60) NOT NULL,
+  `entidade` varchar(40) NOT NULL,
+  `id_entidade` varchar(60) DEFAULT NULL,
+  `resumo` json DEFAULT NULL,
+  `criado_em` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id_auditoria`),
+  KEY `idx_auditoria_entidade` (`entidade`,`id_entidade`),
+  KEY `idx_auditoria_usuario` (`id_usuario`),
+  KEY `idx_auditoria_data` (`criado_em`),
+  CONSTRAINT `fk_auditoria_usuario` FOREIGN KEY (`id_usuario`) REFERENCES `usuarios` (`id_usuario`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
 CREATE TABLE `blocos_cms` (
   `id_bloco` int NOT NULL AUTO_INCREMENT,
   `chave` varchar(60) NOT NULL,
@@ -212,6 +227,19 @@ CREATE TABLE `movimentacoes_estoque` (
   CONSTRAINT `fk_movimentacoes_usuario` FOREIGN KEY (`id_usuario`) REFERENCES `usuarios` (`id_usuario`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
+CREATE TABLE `notas_cliente` (
+  `id_nota` int NOT NULL AUTO_INCREMENT,
+  `id_cliente` int NOT NULL,
+  `texto` varchar(1000) NOT NULL,
+  `id_autor` int DEFAULT NULL,
+  `criado_em` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id_nota`),
+  KEY `idx_notas_cliente_data` (`id_cliente`,`criado_em`),
+  KEY `fk_notas_cliente_autor` (`id_autor`),
+  CONSTRAINT `fk_notas_cliente_autor` FOREIGN KEY (`id_autor`) REFERENCES `usuarios` (`id_usuario`) ON DELETE SET NULL,
+  CONSTRAINT `fk_notas_cliente_cliente` FOREIGN KEY (`id_cliente`) REFERENCES `usuarios` (`id_usuario`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
 CREATE TABLE `pedido_historico` (
   `id_historico` int NOT NULL AUTO_INCREMENT,
   `id_pedido` int NOT NULL,
@@ -361,4 +389,5 @@ INSERT INTO schema_migrations (versao, nome, checksum) VALUES
 ('016', 'evento_visita', '61dfa380947d92eef6a533e02de9768bdae1f895acff50a4736f3667cb2bb7d6'),
 ('017', 'sincronizacao_catalogo', '3cde303d21dda3461605c1cd5c4a4afc37797a0ba42e18244b8fb8f4de422669'),
 ('018', 'carrinho_favoritos', '98ab7144d64ee3f4b7fd26028f597581f88b623418725a2394e17f7fff927b39'),
-('019', 'carrinho_contatos', '8fd4b73a8237f289aba7c605bc534596704dd46e68d5280fbaa07fe4f6f3d461');
+('019', 'carrinho_contatos', '8fd4b73a8237f289aba7c605bc534596704dd46e68d5280fbaa07fe4f6f3d461'),
+('020', 'suporte_notas_auditoria', '253f198e45a064a310ab3c5280cc08e965ec2b2b422723a5ea7be0c9783f2427');

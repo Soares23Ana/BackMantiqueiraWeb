@@ -1,6 +1,7 @@
 const { Configuracao } = require('../models');
 const { ErroApi } = require('../lib/erros');
 const { somenteDigitos } = require('../lib/cnpj');
+const { registrarAuditoria } = require('./auditoria');
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -111,7 +112,18 @@ async function atualizar(chave, valor, idUsuario) {
             throw new ErroApi(422, 'VALIDACAO', `${chave} ${erro.message}.`, [{ campo: 'valor', mensagem: `${chave} ${erro.message}.` }]);
         }
     }
+    const anterior = await Configuracao.findByPk(chave);
     await Configuracao.upsert({ chave, valor: normalizado, publica: definicao.publica, id_usuario: idUsuario });
+    if (idUsuario) {
+        await registrarAuditoria({
+            usuario: { id: idUsuario },
+            acao: 'configuracao.editar',
+            entidade: 'configuracao',
+            idEntidade: chave,
+            antes: { valor: anterior ? anterior.valor : null },
+            depois: { valor: normalizado }
+        });
+    }
     return { chave, valor: valorEfetivo(chave, { valor: normalizado }) };
 }
 

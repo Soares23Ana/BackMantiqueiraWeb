@@ -329,3 +329,7 @@ A API consulta serviços públicos com o `fetch` nativo do Node (sem dependênci
 
 ### Carrinhos abandonados
 - Calculados na hora a partir de `carrinhos` (`servicos/carrinhosAbandonados.js`): itens, `atualizado_em` mais antigo que `carrinho_abandonado_dias` e nenhum pedido do cliente depois dessa data. Não há job nem tabela de "abandonos": o contato fica em `carrinho_contatos` (migration 019) e vale enquanto for posterior à última atualização do carrinho. O contador do painel conta só os que ainda não tiveram contato.
+
+### Suporte: notas e auditoria
+- `notas_cliente` e `auditoria` (migration 020). A auditoria é gravada por `registrarAuditoria` (`servicos/auditoria.js`), chamado **depois** que a operação principal conclui. O helper captura qualquer erro (só vai para o log), remove chaves com `senha`, `password`, `hash`, `token`, `segredo`, `secret` ou `authorization` em qualquer nível, corta textos em 200 caracteres e não grava quando nada mudou. Preço de produto fica de fora dos campos auditados.
+- Para auditar uma nova ação: tire um `instantaneo(registro, CAMPOS)` antes e depois e chame `registrarAuditoria({ usuario, acao, entidade, idEntidade, antes, depois, detalhe })`.

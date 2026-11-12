@@ -6,6 +6,10 @@ const { lerDataHora } = require('../lib/datas');
 const { gerarSlug } = require('../lib/texto');
 const { apresentarProduto } = require('./produtoControlador');
 const { lerLimiteFaixa } = require('../servicos/estoque');
+const { registrarAuditoria, instantaneo } = require('../servicos/auditoria');
+
+const CAMPOS_AUDITORIA = ['titulo', 'slug', 'selo', 'inicio_em', 'fim_em'];
+const idsDosProdutos = (campanha) => (campanha.produtos || []).map((produto) => produto.id_produto).sort((a, b) => a - b);
 
 const SITUACOES = ['agendada', 'ativa', 'encerrada'];
 const ATRIBUTOS_PRODUTO_EQUIPE = ['id_produto', 'sku', 'nome', 'imagem_url', 'ativo'];
@@ -186,13 +190,19 @@ async function criar(req, res) {
         );
         return campanha.id_campanha;
     });
-    return res.status(201).json({ mensagem: 'Campanha criada.', campanha: apresentarParaEquipe(await carregar(id)) });
+    const criada = await carregar(id);
+    await registrarAuditoria({
+        usuario: req.usuario, acao: 'campanha.criar', entidade: 'campanha', idEntidade: id,
+        depois: { ...instantaneo(criada, CAMPOS_AUDITORIA), produtos: idsDosProdutos(criada) }
+    });
+    return res.status(201).json({ mensagem: 'Campanha criada.', campanha: apresentarParaEquipe(criada) });
 }
 
 // PATCH /campanhas/:id (equipe). "produtos", quando enviado, substitui a lista inteira.
 // Para encerrar antes do previsto, envie fim_em com a data/hora atual.
 async function atualizar(req, res) {
     const { dados, idsProdutos } = validar(req.body, { parcial: true });
+    const anterior = await carregar(Number(req.params.id) || 0);
     await sequelize.transaction(async (transacao) => {
         const campanha = await Campanha.findByPk(Number(req.params.id) || 0, { transaction: transacao, lock: transacao.LOCK.UPDATE });
         if (!campanha) throw new ErroApi(404, 'NAO_ENCONTRADO', 'Campanha não encontrada.');
@@ -211,13 +221,24 @@ async function atualizar(req, res) {
             );
         }
     });
-    return res.status(200).json({ mensagem: 'Campanha atualizada.', campanha: apresentarParaEquipe(await carregar(Number(req.params.id))) });
+    const atualizada = await carregar(Number(req.params.id));
+    await registrarAuditoria({
+        usuario: req.usuario, acao: 'campanha.editar', entidade: 'campanha', idEntidade: atualizada.id_campanha,
+        antes: { ...instantaneo(anterior, CAMPOS_AUDITORIA), produtos: idsDosProdutos(anterior) },
+        depois: { ...instantaneo(atualizada, CAMPOS_AUDITORIA), produtos: idsDosProdutos(atualizada) }
+    });
+    return res.status(200).json({ mensagem: 'Campanha atualizada.', campanha: apresentarParaEquipe(atualizada) });
 }
 
 // DELETE /campanhas/:id (equipe)
 async function excluir(req, res) {
+    const campanha = await carregar(Number(req.params.id) || 0);
     const excluidas = await Campanha.destroy({ where: { id_campanha: Number(req.params.id) || 0 } });
     if (!excluidas) throw new ErroApi(404, 'NAO_ENCONTRADO', 'Campanha não encontrada.');
+    await registrarAuditoria({
+        usuario: req.usuario, acao: 'campanha.excluir', entidade: 'campanha', idEntidade: campanha.id_campanha,
+        antes: { ...instantaneo(campanha, CAMPOS_AUDITORIA), produtos: idsDosProdutos(campanha) }
+    });
     return res.status(200).json({ mensagem: 'Campanha excluída.' });
 }
 

@@ -8,6 +8,9 @@ const { validarUsuarioEquipe } = require('../helpers/validacaoUsuario');
 const { CUSTO_BCRYPT } = require('./usuarioControlador');
 const { agoraParaTrocaDeSenha } = require('../models/Usuario');
 const { cnpjParaResposta } = require('../lib/apresentacao');
+const { registrarAuditoria, instantaneo } = require('../servicos/auditoria');
+
+const CAMPOS_AUDITORIA = ['nome', 'email', 'cargo', 'telefone', 'pode_gerenciar_equipe', 'ativo'];
 
 const ATRIBUTOS = [
     'id_usuario', 'nome', 'email', 'tipo', 'pode_gerenciar_equipe', 'cargo', 'telefone',
@@ -35,6 +38,13 @@ async function criar(req, res) {
         emailDuplicado(erro);
     }
     const criado = await Usuario.findByPk(usuario.id_usuario, { attributes: ATRIBUTOS });
+    await registrarAuditoria({
+        usuario: req.usuario,
+        acao: 'equipe.criar',
+        entidade: 'usuario',
+        idEntidade: criado.id_usuario,
+        depois: instantaneo(criado, CAMPOS_AUDITORIA)
+    });
     return res.status(201).json({ mensagem: 'Usuário da equipe criado.', usuario: apresentar(criado) });
 }
 
@@ -85,6 +95,8 @@ async function atualizar(req, res) {
         dados.senha_alterada_em = agoraParaTrocaDeSenha();
     }
 
+    let antes = null;
+    const senhaRedefinida = Boolean(dados.senha);
     const idUsuario = await sequelize.transaction(async (transacao) => {
         const usuario = await Usuario.findByPk(req.params.id, { transaction: transacao, lock: transacao.LOCK.UPDATE });
         if (!usuario) {
@@ -117,6 +129,7 @@ async function atualizar(req, res) {
             }
         }
 
+        antes = instantaneo(usuario, CAMPOS_AUDITORIA);
         try {
             await usuario.update(dados, { transaction: transacao });
         } catch (erro) {
@@ -126,6 +139,16 @@ async function atualizar(req, res) {
     });
 
     const atualizado = await Usuario.findByPk(idUsuario, { attributes: ATRIBUTOS });
+    // A senha nunca vai para a trilha: só o aviso de que foi redefinida.
+    await registrarAuditoria({
+        usuario: req.usuario,
+        acao: 'equipe.editar',
+        entidade: 'usuario',
+        idEntidade: idUsuario,
+        antes,
+        depois: instantaneo(atualizado, CAMPOS_AUDITORIA),
+        ...(senhaRedefinida && { detalhe: { credencial_redefinida: true } })
+    });
     return res.status(200).json({ mensagem: 'Usuário atualizado.', usuario: apresentar(atualizado) });
 }
 

@@ -9,6 +9,9 @@ const bcrypt = require('bcrypt');
 const { ErroApi } = require('../lib/erros');
 const { CUSTO_BCRYPT } = require('./usuarioControlador');
 const { agoraParaTrocaDeSenha } = require('../models/Usuario');
+const { registrarAuditoria, instantaneo } = require('../servicos/auditoria');
+
+const CAMPOS_AUDITORIA_CLIENTE = ['razao_social', 'cnpj', 'telefone', 'ativo'];
 
 const CAMPOS_ENDERECO = [
     'cep',
@@ -309,6 +312,7 @@ async function atualizarCliente(req, res) {
         return res.status(400).json({ mensagem: resultadoEnderecos.erro });
     }
 
+    let antes = null;
     try {
         const cliente = await sequelize.transaction(async (transacao) => {
             const registro = await Usuario.findOne({
@@ -317,6 +321,7 @@ async function atualizarCliente(req, res) {
                 lock: transacao.LOCK.UPDATE
             });
             if (!registro) return null;
+            antes = instantaneo(registro, CAMPOS_AUDITORIA_CLIENTE);
 
             if (Object.keys(dadosCliente).length > 0) {
                 await registro.update(dadosCliente, { transaction: transacao });
@@ -373,6 +378,29 @@ async function atualizarCliente(req, res) {
             attributes: ['id_usuario', 'nome', 'razao_social', 'cnpj', 'email', 'telefone', 'ativo'],
             include: [{ model: Endereco, as: 'enderecos', attributes: { exclude: ['id_usuario'] } }]
         });
+        const depois = instantaneo(clienteAtualizado, CAMPOS_AUDITORIA_CLIENTE);
+        const { ativo: ativoAntes, ...demaisAntes } = antes;
+        const { ativo: ativoDepois, ...demaisDepois } = depois;
+        // Bloquear/desbloquear é uma ação própria; o restante (dados e endereços) é edição.
+        if (ativoAntes !== ativoDepois) {
+            await registrarAuditoria({
+                usuario: req.usuario,
+                acao: ativoDepois ? 'cliente.desbloquear' : 'cliente.bloquear',
+                entidade: 'cliente',
+                idEntidade: idCliente,
+                antes: { ativo: ativoAntes },
+                depois: { ativo: ativoDepois }
+            });
+        }
+        await registrarAuditoria({
+            usuario: req.usuario,
+            acao: 'cliente.editar',
+            entidade: 'cliente',
+            idEntidade: idCliente,
+            antes: demaisAntes,
+            depois: demaisDepois,
+            ...(resultadoEnderecos && { detalhe: { enderecos_enviados: resultadoEnderecos.enderecos.length } })
+        });
         return res.status(200).json({
             mensagem: 'Dados operacionais do cliente atualizados.',
             cliente: apresentarCliente(clienteAtualizado)
@@ -411,6 +439,14 @@ async function definirSenhaTemporaria(req, res) {
     }
     await cliente.update({ senha: await bcrypt.hash(corpo.senha, CUSTO_BCRYPT), senha_alterada_em: agoraParaTrocaDeSenha() });
     logger.info('Senha temporária definida para cliente.', { id_cliente: idCliente, por: req.usuario.id });
+    // A trilha registra só que a senha foi redefinida, nunca o valor nem o hash.
+    await registrarAuditoria({
+        usuario: req.usuario,
+        acao: 'cliente.senha_temporaria',
+        entidade: 'cliente',
+        idEntidade: idCliente,
+        detalhe: { credencial_redefinida: true }
+    });
     return res.status(200).json({
         mensagem: 'Senha temporária definida. Informe-a ao cliente e oriente a troca em "Minha conta".'
     });

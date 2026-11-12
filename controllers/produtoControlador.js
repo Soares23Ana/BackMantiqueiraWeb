@@ -11,11 +11,16 @@ const { escaparLike, termosDeBusca } = require('../lib/texto');
 const { validarDadosProduto } = require('../helpers/validacaoProduto');
 const { alterarEstoque, disponibilidade, faixaEstoque, lerLimiteFaixa } = require('../servicos/estoque');
 const { registrarEvento } = require('../servicos/eventos');
+const { registrarAuditoria, instantaneo } = require('../servicos/auditoria');
 
 const PASTA_UPLOADS = path.join(__dirname, '..', 'publico', 'uploads');
 const DISPONIBILIDADES = ['disponivel', 'ultimas_unidades', 'indisponivel', 'em_estoque'];
 const ORDENACOES_PUBLICAS = ['relevancia', 'nome', 'nome_desc', 'recentes'];
 const ORDENACOES_EQUIPE = [...ORDENACOES_PUBLICAS, 'estoque', 'estoque_desc'];
+
+// Campos do produto que vão para a auditoria (sem preço).
+const CAMPOS_AUDITORIA = ['sku', 'nome', 'descricao', 'destaques', 'imagem_url', 'id_categoria', 'id_marca', 'id_fornecedor',
+    'estoque_minimo', 'multiplo_venda', 'ativo'];
 
 const INCLUDES = [
     { model: Categoria, as: 'categoria', attributes: ['id_categoria', 'nome', 'slug'] },
@@ -370,6 +375,13 @@ async function cadastrar(req, res) {
             return novo;
         });
         const completo = await buscarProduto(produto.id_produto);
+        await registrarAuditoria({
+            usuario: req.usuario,
+            acao: 'produto.criar',
+            entidade: 'produto',
+            idEntidade: produto.id_produto,
+            depois: { ...instantaneo(completo, CAMPOS_AUDITORIA), quantidade_estoque: completo.quantidade_estoque }
+        });
         return res.status(201).json({
             mensagem: 'Produto cadastrado com sucesso.',
             id_produto: produto.id_produto,
@@ -385,6 +397,7 @@ function atualizar({ parcial }) {
     return async (req, res) => {
         const dados = validarDadosProduto(req.body, { parcial });
         let idProduto;
+        let antes;
         try {
             await sequelize.transaction(async (transacao) => {
                 const produto = await buscarProduto(req.params.id, { transaction: transacao, lock: transacao.LOCK.UPDATE });
@@ -406,6 +419,7 @@ function atualizar({ parcial }) {
                     ativo: true,
                     ...dados
                 };
+                antes = instantaneo(produto, CAMPOS_AUDITORIA);
                 await produto.update(valores, { transaction: transacao });
                 idProduto = produto.id_produto;
             });
@@ -413,6 +427,16 @@ function atualizar({ parcial }) {
             tratarErroDeGravacao(erro);
         }
         const produto = await buscarProduto(idProduto);
+        const depois = instantaneo(produto, CAMPOS_AUDITORIA);
+        const soAtivo = antes.ativo !== depois.ativo && Object.keys(depois).every((campo) => campo === 'ativo' || JSON.stringify(antes[campo]) === JSON.stringify(depois[campo]));
+        await registrarAuditoria({
+            usuario: req.usuario,
+            acao: soAtivo ? (depois.ativo ? 'produto.ativar' : 'produto.desativar') : 'produto.editar',
+            entidade: 'produto',
+            idEntidade: idProduto,
+            antes,
+            depois
+        });
         return res.status(200).json({ mensagem: 'Produto atualizado.', produto: apresentarProduto(produto, req.usuario, await lerLimiteFaixa()) });
     };
 }
@@ -462,6 +486,17 @@ async function ajustarEstoque(req, res) {
         return { produto, movimentacao };
     });
 
+    if (resultado.movimentacao) {
+        await registrarAuditoria({
+            usuario: req.usuario,
+            acao: 'produto.estoque',
+            entidade: 'produto',
+            idEntidade: resultado.produto.id_produto,
+            antes: { quantidade_estoque: resultado.movimentacao.estoque_anterior },
+            depois: { quantidade_estoque: resultado.movimentacao.estoque_novo },
+            detalhe: { observacao }
+        });
+    }
     return res.status(200).json({
         mensagem: resultado.movimentacao ? 'Estoque atualizado.' : 'O estoque já estava com esse valor.',
         produto: apresentarProduto(resultado.produto, req.usuario, await lerLimiteFaixa()),
@@ -494,6 +529,14 @@ async function desativar(req, res) {
     }
     if (produto.ativo) {
         await produto.update({ ativo: false });
+        await registrarAuditoria({
+            usuario: req.usuario,
+            acao: 'produto.desativar',
+            entidade: 'produto',
+            idEntidade: produto.id_produto,
+            antes: { ativo: true },
+            depois: { ativo: false }
+        });
     }
     return res.status(200).json({ mensagem: 'Produto desativado.', produto: apresentarProduto(produto, req.usuario, await lerLimiteFaixa()) });
 }
@@ -523,6 +566,14 @@ async function enviarImagem(req, res) {
         await removerArquivo(req.file.path);
         throw erro;
     }
+    await registrarAuditoria({
+        usuario: req.usuario,
+        acao: 'produto.editar',
+        entidade: 'produto',
+        idEntidade: produto.id_produto,
+        antes: { imagem_url: anterior },
+        depois: { imagem_url: produto.imagem_url }
+    });
     // Só apaga arquivos gerados pelo upload (nome UUID); imagens do front (/img/...) não ficam no servidor.
     // O padrão estrito impede que um imagem_url com ".." apague arquivos fora da pasta de uploads.
     const upload = anterior && anterior.match(/^\/arquivos\/uploads\/([0-9a-f-]{36}\.(?:jpg|png|webp|gif))$/);

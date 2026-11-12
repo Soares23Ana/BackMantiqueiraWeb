@@ -9,6 +9,12 @@ const { ehEquipe } = require('../lib/perfis');
 const { gerarSlug } = require('../lib/texto');
 const { lerDataHora } = require('../lib/datas');
 const { validarDestino, resolverDestinos } = require('../servicos/destinos');
+const { registrarAuditoria, instantaneo } = require('../servicos/auditoria');
+
+const CAMPOS_BANNER = ['titulo', 'tipo_destino', 'id_destino', 'link', 'imagem_url', 'ordem', 'ativo', 'inicio_em', 'fim_em'];
+// Bloco de conteúdo na trilha: o pop-up traz também imagem, destino e janela (guardados em "dados").
+const snapBloco = (bloco) => (bloco ? { titulo: bloco.titulo, conteudo: bloco.conteudo, ativo: bloco.ativo, ...(bloco.dados || {}) } : null);
+const auditoriaBloco = (chave) => (chave === 'popup' ? { entidade: 'popup', prefixo: 'popup' } : { entidade: 'bloco_cms', prefixo: 'bloco' });
 
 const PASTA_UPLOADS = path.join(__dirname, '..', 'publico', 'uploads');
 
@@ -121,6 +127,10 @@ async function salvarBanner(req, res) {
         // Sem ordem informada, o banner novo vai para o fim da fila.
         const ordem = dados.ordem ?? ((await Banner.max('ordem')) || 0) + 1;
         const banner = await Banner.create({ ...dados, ordem, imagem_url: `/arquivos/uploads/${req.file.filename}` });
+        await registrarAuditoria({
+            usuario: req.usuario, acao: 'banner.criar', entidade: 'banner', idEntidade: banner.id_banner,
+            depois: instantaneo(banner, CAMPOS_BANNER)
+        });
         return res.status(201).json({ mensagem: 'Banner salvo com sucesso.', banner: (await apresentarBanners([banner]))[0] });
     } catch (erro) {
         await removerArquivo(req.file.path);
@@ -149,6 +159,7 @@ async function atualizarBanner(req, res) {
         throw new ErroApi(422, 'VALIDACAO', erros[0].mensagem, erros);
     }
     const imagemAnterior = banner.imagem_url;
+    const antes = instantaneo(banner, CAMPOS_BANNER);
     if (req.file) dados.imagem_url = `/arquivos/uploads/${req.file.filename}`;
     try {
         await banner.update(dados);
@@ -157,6 +168,10 @@ async function atualizarBanner(req, res) {
         throw erro;
     }
     if (req.file) await removerUploadDoBanner(imagemAnterior);
+    await registrarAuditoria({
+        usuario: req.usuario, acao: 'banner.editar', entidade: 'banner', idEntidade: banner.id_banner,
+        antes, depois: instantaneo(banner, CAMPOS_BANNER)
+    });
     return res.status(200).json({ mensagem: 'Banner atualizado.', banner: (await apresentarBanners([banner]))[0] });
 }
 
@@ -168,6 +183,10 @@ async function excluirBanner(req, res) {
     }
     await banner.destroy();
     await removerUploadDoBanner(banner.imagem_url);
+    await registrarAuditoria({
+        usuario: req.usuario, acao: 'banner.excluir', entidade: 'banner', idEntidade: banner.id_banner,
+        antes: instantaneo(banner, CAMPOS_BANNER)
+    });
     return res.status(200).json({ mensagem: 'Banner excluído.' });
 }
 
@@ -189,6 +208,7 @@ async function reordenarBanners(req, res) {
             await Banner.update({ ordem: indice + 1 }, { where: { id_banner: id }, transaction: transacao });
         }
     });
+    await registrarAuditoria({ usuario: req.usuario, acao: 'banner.reordenar', entidade: 'banner', detalhe: { ids } });
     return listarTodosBanners(req, res);
 }
 
@@ -282,6 +302,10 @@ async function salvarPopup(req, res) {
     const valores = await validarPopup(req.body || {}, existente && existente.dados);
     await BlocoCms.upsert({ chave: CHAVE_POPUP, ...valores });
     const bloco = await BlocoCms.findOne({ where: { chave: CHAVE_POPUP } });
+    await registrarAuditoria({
+        usuario: req.usuario, acao: 'popup.salvar', entidade: 'popup', idEntidade: CHAVE_POPUP,
+        ...(existente ? { antes: snapBloco(existente) } : {}), depois: snapBloco(bloco)
+    });
     return res.status(200).json({ mensagem: 'Bloco de conteúdo salvo.', bloco: await apresentarBloco(bloco) });
 }
 
@@ -305,6 +329,10 @@ async function enviarImagemBloco(req, res) {
         throw erro;
     }
     await removerUploadDoBanner(anterior);
+    await registrarAuditoria({
+        usuario: req.usuario, acao: 'popup.imagem', entidade: 'popup', idEntidade: CHAVE_POPUP,
+        antes: { imagem_url: anterior || null }, depois: { imagem_url: bloco.dados.imagem_url }
+    });
     return res.status(200).json({ mensagem: 'Imagem atualizada.', bloco: await apresentarBloco(bloco) });
 }
 
@@ -340,6 +368,7 @@ async function salvarBloco(req, res) {
     }
     if (erros.length > 0) throw new ErroApi(422, 'VALIDACAO', erros[0].mensagem, erros);
 
+    const existente = await BlocoCms.findOne({ where: { chave } });
     await BlocoCms.upsert({
         chave,
         titulo: corpo.titulo ? corpo.titulo.trim() : null,
@@ -348,6 +377,10 @@ async function salvarBloco(req, res) {
     });
     // No MySQL o upsert não devolve o registro completo (id, atualizado_em); lê de novo.
     const bloco = await BlocoCms.findOne({ where: { chave } });
+    await registrarAuditoria({
+        usuario: req.usuario, acao: 'bloco.salvar', entidade: 'bloco_cms', idEntidade: chave,
+        ...(existente ? { antes: snapBloco(existente) } : {}), depois: snapBloco(bloco)
+    });
     return res.status(200).json({ mensagem: 'Bloco de conteúdo salvo.', bloco: await apresentarBloco(bloco) });
 }
 
@@ -366,7 +399,13 @@ async function alterarAtivoBloco(req, res) {
     if (!bloco) {
         throw new ErroApi(404, 'NAO_ENCONTRADO', 'Bloco de conteúdo não encontrado.');
     }
+    const ativoAntes = bloco.ativo;
     await bloco.update({ ativo: corpo.ativo });
+    const { entidade, prefixo } = auditoriaBloco(bloco.chave);
+    await registrarAuditoria({
+        usuario: req.usuario, acao: `${prefixo}.${corpo.ativo ? 'ativar' : 'desativar'}`, entidade, idEntidade: bloco.chave,
+        antes: { ativo: ativoAntes }, depois: { ativo: corpo.ativo }
+    });
     return res.status(200).json({ mensagem: corpo.ativo ? 'Bloco ativado.' : 'Bloco desativado.', bloco: await apresentarBloco(bloco) });
 }
 
@@ -377,6 +416,10 @@ async function excluirBloco(req, res) {
     }
     await bloco.destroy();
     await removerUploadDoBanner(bloco.dados && bloco.dados.imagem_url);
+    const { entidade, prefixo } = auditoriaBloco(bloco.chave);
+    await registrarAuditoria({
+        usuario: req.usuario, acao: `${prefixo}.excluir`, entidade, idEntidade: bloco.chave, antes: snapBloco(bloco)
+    });
     return res.status(200).json({ mensagem: 'Bloco de conteúdo excluído.' });
 }
 

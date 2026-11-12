@@ -4,6 +4,7 @@ const { Produto, Pedido, ItemPedido, Endereco, PedidoHistorico, Carrinho } = req
 const logger = require('../lib/logger');
 const { ErroApi } = require('../lib/erros');
 const { alterarEstoque, disponibilidade } = require('./estoque');
+const { registrarAuditoria } = require('./auditoria');
 
 // Fluxo operacional: cada status só avança para o próximo.
 const PROXIMO_STATUS = {
@@ -274,6 +275,7 @@ async function bloquearPedido(idPedido, transacao) {
  * Registra quem mudou (id_funcionario e histórico) e a data de entrega ao entregar.
  */
 async function avancarStatus(idPedido, novoStatus, usuario, observacao = null) {
+    let statusAnterior = null;
     const pedido = await sequelize.transaction(async (transacao) => {
         const atual = await bloquearPedido(idPedido, transacao);
         const anterior = atual.status;
@@ -288,7 +290,17 @@ async function avancarStatus(idPedido, novoStatus, usuario, observacao = null) {
             data_entrega: novoStatus === 'Entregue' ? new Date() : atual.data_entrega
         }, { transaction: transacao });
         await registrarHistorico(atual, anterior, { idUsuario: usuario.id, observacao, transacao });
+        statusAnterior = anterior;
         return atual;
+    });
+    await registrarAuditoria({
+        usuario,
+        acao: 'pedido.status',
+        entidade: 'pedido',
+        idEntidade: pedido.id_pedido,
+        antes: { status: statusAnterior },
+        depois: { status: pedido.status },
+        ...(observacao && { detalhe: { observacao } })
     });
     notificar(pedido);
     return pedido;
@@ -299,6 +311,7 @@ async function avancarStatus(idPedido, novoStatus, usuario, observacao = null) {
  * Cliente: só o próprio pedido e só em "Aguardando Separação". Equipe: até "Em Separação".
  */
 async function cancelarPedido(idPedido, usuario, motivo) {
+    let statusAnterior = null;
     const pedido = await sequelize.transaction(async (transacao) => {
         const atual = await bloquearPedido(idPedido, transacao);
         if (usuario.tipo === 'cliente' && Number(atual.id_cliente) !== Number(usuario.id)) {
@@ -338,7 +351,17 @@ async function cancelarPedido(idPedido, usuario, motivo) {
             ...(usuario.tipo !== 'cliente' && { id_funcionario: usuario.id })
         }, { transaction: transacao });
         await registrarHistorico(atual, anterior, { idUsuario: usuario.id, observacao: motivo, transacao });
+        statusAnterior = anterior;
         return atual;
+    });
+    await registrarAuditoria({
+        usuario,
+        acao: 'pedido.cancelar',
+        entidade: 'pedido',
+        idEntidade: pedido.id_pedido,
+        antes: { status: statusAnterior },
+        depois: { status: 'Cancelado' },
+        detalhe: { motivo }
     });
     notificar(pedido);
     return pedido;
