@@ -9,7 +9,7 @@ Detalhes de configuração e operação da API. O passo a passo para rodar o pro
 4. [Servidor](#4-servidor)
 5. [Testes automatizados](#5-testes-automatizados)
 6. [CORS](#6-cors)
-7. [Importação de catálogo (CSV)](#7-importação-de-catálogo-csv)
+7. [Importação de catálogo (planilhas .xlsx e CSV)](#7-importação-de-catálogo-planilhas-xlsx-e-csv)
 8. [Jobs agendados](#8-jobs-agendados)
 9. [Saúde](#9-saúde)
 10. [Primeiro acesso em produção](#10-primeiro-acesso-em-produção)
@@ -163,11 +163,31 @@ CORS_ORIGINS=https://mantiqueira.exemplo.com.br,http://192.168.0.10:5173
 
 ---
 
-## 7. Importação de catálogo (CSV)
+## 7. Importação de catálogo (planilhas .xlsx e CSV)
 
 O mesmo formato serve para o upload (`POST /produtos/importar`, ver [API.md](API.md#5-importação-de-catálogo)), para os [jobs](#8-jobs-agendados) e para o `seed:catalogo`.
 
-**Formato**: o mesmo do `seeds/catalogo_inicial.csv`. Separador `;` (ou `,`), cabeçalho na primeira linha, UTF-8 ou Windows-1252 (o padrão do Excel). Só `sku` é obrigatória; **colunas ausentes não são alteradas**.
+**Arquivos aceitos: `.xlsx` ou CSV.** O Excel é lido pela biblioteca `read-excel-file` (nunca o pacote `xlsx` do npm, que tem vulnerabilidades altas sem correção) e **só a primeira aba** é usada. `.xls`, `.xlsm` e `.xlsb` são recusados: "Salve o arquivo como .xlsx ou CSV." O upload confere a extensão **e** a assinatura do arquivo (um `.xlsx` começa com `PK`); arquivo corrompido ou que não é planilha dá `422 PLANILHA_INVALIDA` e fica registrado como falha em `sincronizacoes_log`. Limites: 5 MB e 20.000 linhas.
+
+**Leitura da planilha:** o cabeçalho é a primeira linha não vazia e as linhas totalmente vazias são ignoradas. Cada célula do Excel vira o mesmo texto aparado do CSV, para reaproveitar a validação linha a linha, a simulação e o relatório: número inteiro vira texto sem `.0` nem notação científica (o código `1391` vira `"1391"`); datas viram `AAAA-MM-DD HH:MM:SS` no horário de São Paulo; fórmulas usam o valor já calculado pelo Excel; célula com erro (`#N/D`, `#REF!`...) faz a linha ir para `relatorio.erros` sem derrubar a importação.
+
+**Formato**: o do `seeds/catalogo_inicial.csv` ou o do portfólio. CSV com separador `;` (ou `,`), cabeçalho na primeira linha, UTF-8 ou Windows-1252 (o padrão do Excel). Só `sku` é obrigatória; **colunas ausentes não são alteradas**.
+
+**Cabeçalhos do portfólio** (sem diferenciar maiúsculas nem acentos; o formato atual continua valendo):
+
+| Cabeçalho | Vira |
+|---|---|
+| `CÓDIGO`, `codigo`, `cod` | `sku` |
+| `PRODUTO` | `nome_erp` (nome original do portfólio; dele sai o `nome` de exibição) |
+| `FABRICANTE` | `marca` (criada se não existir) |
+| `CATEGORIA - Cad. ERP`, `categoria` | `categoria` |
+| `estoque`, `quantidade`, `saldo` | `estoque` |
+
+Qualquer outra coluna (por exemplo `CÓDIGO DE BARRAS`) é **ignorada, sem erro**, e listada em `relatorio.colunas_ignoradas`.
+
+**Nome de exibição:** o original fica em `produtos.nome_erp` e o `nome` é gerado pelo dicionário editável `config/abreviacoes.json` (`SAB.` → Sabonete, `SH` → Shampoo, `LOC.HID.` → Loção Hidratante...), com capitalização de título (preposições em minúsculas), unidades e `C/8` mantidos e o `*` final removido. As abreviações **ambíguas** (`ED.`, `RP.`, `P.`, `PRES.`, `CHUP.`, `AP.`, listadas em `ambiguas` no JSON) e qualquer outra abreviação terminada em ponto que não esteja no dicionário **não são expandidas**: vão para `relatorio.abreviacoes_pendentes` para a equipe decidir e acrescentar ao dicionário (o arquivo é relido quando muda, sem reiniciar). Se a planilha já trouxer a coluna `nome`, ele não é alterado pela geração. Num produto existente, o `nome` só é trocado se ainda for igual ao gerado a partir do `nome_erp` anterior (ninguém o editou à mão); o `nome_erp` sempre acompanha a planilha.
+
+**Códigos só com dígitos:** `GET /produtos/:id` procura o número primeiro como id e, não havendo produto com esse id, como SKU.
 
 | Coluna | Conteúdo |
 |---|---|
@@ -181,11 +201,13 @@ O mesmo formato serve para o upload (`POST /produtos/importar`, ver [API.md](API
 | `estoque_minimo`, `multiplo_venda` | Inteiros |
 | `preco` | Opcional; nunca aparece para clientes |
 | `estoque` | Quantidade atual; vazio mantém o estoque. Mudanças viram movimentações `importacao` |
+| `nome_erp` | Nome original do portfólio (vem de `PRODUTO`) |
 
 - Cada linha é validada separadamente: as boas são gravadas e as com problema voltam em `relatorio.erros` (`linha`, `sku`, `campo`, `mensagem`).
 - `status`: `sucesso`, `parcial` (algumas linhas rejeitadas) ou `falha` (arquivo ilegível ou todas as linhas com erro).
 - **Proteção:** a carga completa só desativa produtos ausentes quando o arquivo não tem nenhum erro; um arquivo vazio ou truncado não esvazia o catálogo.
 - Cada importação (upload ou job) fica em `sincronizacoes_log`, consultável em `GET /produtos/importacoes`.
+- O relatório traz também `formato` (`csv` ou `xlsx`), `abreviacoes_pendentes`, `categorias_sem_mapa` e `colunas_ignoradas`.
 
 **Arquivos de exemplo** para demonstração ficam em `importacao/exemplos/` (fora das pastas lidas pelos jobs):
 - `catalogo_exemplo.csv`: o catálogo completo com 1 produto novo e 4 alterações, seguro para a carga completa.
@@ -201,14 +223,14 @@ Fuso `America/Sao_Paulo`. A API lê arquivos colocados em `importacao/entrada/` 
 
 | Job | Quando | Arquivos | O que faz |
 |---|---|---|---|
-| `catalogo` | De hora em hora | `catalogo*.csv` | Carga incremental: cria e atualiza, **sem desativar** os ausentes |
-| `carga-completa` | Meia-noite | `carga_completa*.csv` | Importa tudo e desativa produtos ausentes (só se o arquivo não tiver erro) |
-| `estoque` | A cada 30 min | `estoque*.csv` | Aplica só `sku` e `estoque` (outras colunas são ignoradas) |
+| `catalogo` | De hora em hora | `catalogo*.csv` ou `.xlsx` | Carga incremental: cria e atualiza, **sem desativar** os ausentes |
+| `carga-completa` | Meia-noite | `carga_completa*.csv` ou `.xlsx` | Importa tudo e desativa produtos ausentes (só se o arquivo não tiver erro) |
+| `estoque` | A cada 30 min | `estoque*.csv` ou `.xlsx` | Aplica só `sku` e `estoque` (outras colunas são ignoradas) |
 | `limpeza-eventos` | 3h | — | Apaga eventos de uso com mais de 12 meses |
 
 Os arquivos são preparados e colocados na pasta pela própria equipe. Os horários dos três primeiros vêm das variáveis `JOB_CATALOGO_CRON`, `JOB_CARGA_COMPLETA_CRON` e `JOB_ESTOQUE_CRON` (cron de 5 campos, fuso de São Paulo; padrões `0 * * * *`, `0 0 * * *` e `*/30 * * * *`). Uma expressão inválida impede a API de subir, com a mensagem apontando a variável.
 
-- **Arquivos sendo copiados:** os jobs ignoram arquivos modificados nos últimos 60 segundos (podem estar no meio da cópia); eles ficam na entrada e são lidos na execução seguinte, e aparecem com `"status": "ignorado"` no `ultimo_resultado` do job. Mesmo assim, o recomendado é **gravar com a extensão `.tmp` e renomear para `.csv` ao terminar** (ex.: copiar `estoque_20261026_1430.tmp` e depois renomear para `estoque_20261026_1430.csv`): só arquivos `.csv` são lidos, e renomear dentro da mesma pasta é instantâneo, então o job nunca pega um arquivo pela metade.
+- **Arquivos sendo copiados:** os jobs ignoram arquivos modificados nos últimos 60 segundos (podem estar no meio da cópia); eles ficam na entrada e são lidos na execução seguinte, e aparecem com `"status": "ignorado"` no `ultimo_resultado` do job. Mesmo assim, o recomendado é **gravar com a extensão `.tmp` e renomear para `.csv` ou `.xlsx` ao terminar** (ex.: copiar `estoque_20261026_1430.tmp` e depois renomear para `estoque_20261026_1430.csv`): só arquivos `.csv` e `.xlsx` são lidos, e renomear dentro da mesma pasta é instantâneo, então o job nunca pega um arquivo pela metade.
 - Os arquivos são processados em ordem alfabética (use data/hora no nome, ex.: `estoque_20261026_1430.csv`) e depois movidos para `processados/` ou `rejeitados/`, com um `.relatorio.json` ao lado.
 - Cada execução fica em `sincronizacoes_log` (tipos `catalogo`, `carga_completa` e `estoque`).
 - **Saúde dos jobs:** `/saude/detalhado` mostra por job a última execução, status, duração, próxima execução e falhas seguidas. O status geral vira `degradado` se um job falhar 2 vezes seguidas ou não rodar por mais de 2 intervalos (o intervalo é calculado da expressão cron).

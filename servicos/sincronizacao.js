@@ -1,6 +1,5 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
-const { isUtf8 } = require('node:buffer');
 const { Op } = require('sequelize');
 const config = require('../config/ambiente');
 const { SincronizacaoLog } = require('../models');
@@ -8,6 +7,7 @@ const logger = require('../lib/logger');
 const { ErroApi } = require('../lib/erros');
 const { executarComTrava } = require('../lib/travaMysql');
 const { importarCatalogo } = require('./importadorCatalogo');
+const { decodificarArquivo, formatoDoNome, FORMATOS_ANTIGOS, LIMITE_BYTES, MENSAGEM_ANTIGO } = require('../lib/planilha');
 
 // Importações (upload ou job) nunca rodam ao mesmo tempo, nem em instâncias diferentes da API.
 const TRAVA_IMPORTACAO = 'mantiqueira:importacao';
@@ -17,11 +17,6 @@ const TRAVA_IMPORTACAO = 'mantiqueira:importacao';
 const PREFIXOS = { catalogo: 'catalogo', carga_completa: 'carga_completa', estoque: 'estoque' };
 // Arquivo modificado há menos tempo que isso pode ainda estar sendo copiado: fica para a próxima execução.
 const IDADE_MINIMA_MS = 60 * 1000;
-
-// O Excel costuma salvar CSV em Windows-1252; se não for UTF-8 válido, lê como Latin-1.
-function decodificarArquivo(buffer) {
-    return isUtf8(buffer) ? buffer.toString('utf8') : buffer.toString('latin1');
-}
 
 function statusDoRelatorio(relatorio) {
     if (relatorio.linhas > 0 && relatorio.com_erro === relatorio.linhas) return 'falha';
@@ -33,11 +28,12 @@ function statusDoRelatorio(relatorio) {
  * tipo: importacao_manual | catalogo | carga_completa | estoque. Devolve { log, relatorio }.
  * Erros do arquivo (CSV ilegível, sem coluna sku) ficam registrados como "falha" e são relançados.
  */
-async function executarImportacao({ conteudo, tipo, origem, simular = false, idUsuario = null }) {
+async function executarImportacao({ conteudo, formato, tipo, origem, simular = false, idUsuario = null }) {
     const inicio = Date.now();
     const log = await SincronizacaoLog.create({ tipo, origem: origem.slice(0, 255), simulado: simular, id_usuario: idUsuario });
     try {
         const relatorio = await importarCatalogo(conteudo, {
+            formato,
             simular,
             desativarAusentes: tipo === 'carga_completa',
             somenteEstoque: tipo === 'estoque',
@@ -69,10 +65,13 @@ async function executarImportacao({ conteudo, tipo, origem, simular = false, idU
     }
 }
 
-// Upload pela API: espera até 15 s se outra importação estiver rodando.
+// Upload pela API (.csv ou .xlsx): espera até 15 s se outra importação estiver rodando.
+// O arquivo ilegível vira 422 já com a falha registrada em sincronizacoes_log.
 async function importarUpload({ buffer, nomeArquivo, simular, cargaCompleta, idUsuario }) {
+    const formato = formatoDoNome(nomeArquivo);
     const { executado, resultado } = await executarComTrava(TRAVA_IMPORTACAO, () => executarImportacao({
-        conteudo: decodificarArquivo(buffer),
+        conteudo: buffer,
+        formato,
         tipo: cargaCompleta ? 'carga_completa' : 'importacao_manual',
         origem: `upload: ${nomeArquivo}`,
         simular,
@@ -106,8 +105,9 @@ async function processarPasta(tipo, pastaBase = config.importacao.pasta) {
     const entrada = path.join(pastaBase, 'entrada');
     await fs.mkdir(entrada, { recursive: true });
     const prefixo = PREFIXOS[tipo];
+    const extensoesLidas = ['.csv', '.xlsx', ...FORMATOS_ANTIGOS];
     const arquivos = (await fs.readdir(entrada))
-        .filter((nome) => nome.toLowerCase().startsWith(prefixo) && nome.toLowerCase().endsWith('.csv'))
+        .filter((nome) => nome.toLowerCase().startsWith(prefixo) && extensoesLidas.includes(path.extname(nome).toLowerCase()))
         .sort();
 
     const resultados = [];
@@ -121,9 +121,19 @@ async function processarPasta(tipo, pastaBase = config.importacao.pasta) {
             continue;
         }
         let resumo;
+        // .xls, .xlsm e .xlsb não são lidos: o arquivo vai para rejeitados com o aviso para salvar como .xlsx ou CSV.
+        if (FORMATOS_ANTIGOS.includes(path.extname(nome).toLowerCase()) || (await fs.stat(caminho)).size > LIMITE_BYTES) {
+            const motivo = FORMATOS_ANTIGOS.includes(path.extname(nome).toLowerCase()) ? MENSAGEM_ANTIGO : 'O arquivo deve ter no máximo 5 MB.';
+            await mover(caminho, path.join(pastaBase, 'rejeitados'), { erro: motivo });
+            resumo = { arquivo: nome, status: 'falha', destino: 'rejeitados', erro: motivo };
+            logger.warn('Arquivo de importação rejeitado.', { tipo, ...resumo });
+            resultados.push(resumo);
+            continue;
+        }
         try {
             const { log, relatorio } = await executarImportacao({
-                conteudo: decodificarArquivo(await fs.readFile(caminho)),
+                conteudo: await fs.readFile(caminho),
+                formato: formatoDoNome(nome),
                 tipo,
                 origem: `arquivo: ${nome}`
             });

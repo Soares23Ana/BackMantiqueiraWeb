@@ -287,6 +287,7 @@ CREATE TABLE `produtos` (
   `id_categoria` int DEFAULT NULL,
   `id_marca` int DEFAULT NULL,
   `nome` varchar(150) NOT NULL,
+  `nome_erp` varchar(255) DEFAULT NULL,
   `descricao` text,
   `destaques` json DEFAULT NULL,
   `imagem_url` varchar(2048) DEFAULT NULL,
@@ -390,4 +391,5 @@ INSERT INTO schema_migrations (versao, nome, checksum) VALUES
 ('017', 'sincronizacao_catalogo', '3cde303d21dda3461605c1cd5c4a4afc37797a0ba42e18244b8fb8f4de422669'),
 ('018', 'carrinho_favoritos', '98ab7144d64ee3f4b7fd26028f597581f88b623418725a2394e17f7fff927b39'),
 ('019', 'carrinho_contatos', '8fd4b73a8237f289aba7c605bc534596704dd46e68d5280fbaa07fe4f6f3d461'),
-('020', 'suporte_notas_auditoria', '253f198e45a064a310ab3c5280cc08e965ec2b2b422723a5ea7be0c9783f2427');
+('020', 'suporte_notas_auditoria', '253f198e45a064a310ab3c5280cc08e965ec2b2b422723a5ea7be0c9783f2427'),
+('021', 'produto_nome_erp', 'db573e0e0f6e4549876a5dff4733e44b9fd54a076f791f0c852d20880820fed7');

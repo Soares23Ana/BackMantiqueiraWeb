@@ -28,6 +28,11 @@ const Produto = sequelize.define('Produto', {
         type: DataTypes.STRING(150),
         allowNull: false
     },
+    // Nome original do portfólio; o "nome" de exibição é gerado dele na importação (e pode ser editado à mão).
+    nome_erp: {
+        type: DataTypes.STRING(255),
+        allowNull: true
+    },
     descricao: {
         type: DataTypes.TEXT,
         allowNull: true

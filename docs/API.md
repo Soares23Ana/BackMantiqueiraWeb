@@ -383,16 +383,16 @@ Erros: `409 SLUG_DUPLICADO`; exclusão com produtos: `409 EM_USO` (use `PATCH { 
 
 | Método | Rota | Perfil | Descrição |
 |---|---|---|---|
-| POST | `/produtos/importar` | equipe | Importa CSV (multipart, campo `arquivo`) |
+| POST | `/produtos/importar` | equipe | Importa planilha `.xlsx` ou CSV (multipart, campo `arquivo`) |
 | GET | `/produtos/importacoes` | equipe | Histórico (uploads e jobs) |
 | GET | `/produtos/importacoes/:id` | equipe | Detalhe com o relatório de erros |
 
-O formato do CSV e as colunas estão no [guia técnico](GUIA_TECNICO.md#7-importação-de-catálogo-csv), e os jobs em [Jobs agendados](GUIA_TECNICO.md#8-jobs-agendados). Exemplos prontos em `importacao/exemplos/`.
+O formato das planilhas e as colunas estão no [guia técnico](GUIA_TECNICO.md#7-importação-de-catálogo-planilhas-xlsx-e-csv), e os jobs em [Jobs agendados](GUIA_TECNICO.md#8-jobs-agendados). Exemplos prontos em `importacao/exemplos/`.
 
-**Arquivos na pasta `importacao/entrada/` (jobs):** arquivos modificados nos últimos 60 segundos são ignorados (podem estar sendo copiados) e lidos na execução seguinte; no `ultimo_resultado` do job (em `/saude/detalhado`) aparecem com `"status": "ignorado"`. Recomendado: grave o arquivo como `.tmp` e renomeie para `.csv` ao terminar a cópia; só `.csv` é lido. O upload (`POST /produtos/importar`) não tem essa espera.
+**Arquivos na pasta `importacao/entrada/` (jobs):** arquivos modificados nos últimos 60 segundos são ignorados (podem estar sendo copiados) e lidos na execução seguinte; no `ultimo_resultado` do job (em `/saude/detalhado`) aparecem com `"status": "ignorado"`. Recomendado: grave o arquivo como `.tmp` e renomeie para `.csv` ou `.xlsx` ao terminar a cópia; só `.csv` e `.xlsx` são lidos (um `.xls`, `.xlsm` ou `.xlsb` com o nome de um job vai para `rejeitados/` com o aviso para salvar como `.xlsx` ou CSV). O upload (`POST /produtos/importar`) não tem essa espera.
 
 ### POST /produtos/importar
-`multipart/form-data`: `arquivo` (.csv, até 5 MB). Query: `simular=true` (não grava), `carga_completa=true` (desativa produtos ausentes, só se o arquivo não tiver erros).
+`multipart/form-data`: `arquivo` (**`.xlsx` ou `.csv`**, até 5 MB e 20.000 linhas). Do `.xlsx` só a **primeira aba** é lida. Query: `simular=true` (não grava), `carga_completa=true` (desativa produtos ausentes, só se o arquivo não tiver erros).
 ```json
 {
   "mensagem": "Simulação concluída. Nada foi gravado.",
@@ -401,12 +401,20 @@ O formato do CSV e as colunas estão no [guia técnico](GUIA_TECNICO.md#7-import
   "relatorio": {
     "simulado": true, "linhas": 2, "criados": 0, "atualizados": 1, "inalterados": 0, "desativados": 0,
     "com_erro": 1, "categorias_criadas": 0, "marcas_criadas": 0, "movimentacoes_estoque": 1,
+    "formato": "xlsx",
+    "abreviacoes_pendentes": [{ "abreviacao": "ED.", "ocorrencias": 3, "exemplo": "ESM. ED. LIMITADA RISQUE 8ML" }],
+    "categorias_sem_mapa": [],
+    "colunas_ignoradas": ["CÓDIGO DE BARRAS"],
     "erros": [{ "linha": 3, "sku": "SKU-XYZ", "campo": "nome", "mensagem": "Produto novo exige o nome." }],
-    "avisos": []
+    "avisos": ["Colunas ignoradas: CÓDIGO DE BARRAS."]
   }
 }
 ```
-`status`: `sucesso`, `parcial` ou `falha`. Erros: `422 VALIDACAO` (sem arquivo ou não é .csv), `422 CSV_INVALIDO` (ilegível ou sem coluna `sku`), `409 IMPORTACAO_EM_ANDAMENTO`.
+`status`: `sucesso`, `parcial` ou `falha`. O relatório tem também `abreviacoes_pendentes` (abreviações do nome do produto que a importação **não** expandiu, por serem ambíguas), `categorias_sem_mapa` e `colunas_ignoradas` (colunas não reconhecidas, como o código de barras: ignoradas sem erro).
+
+A planilha pode ser o portfólio da empresa (`CÓDIGO`, `PRODUTO`, `FABRICANTE`, `CATEGORIA - Cad. ERP`...) ou o formato atual do CSV; os cabeçalhos aceitos estão no [guia técnico](GUIA_TECNICO.md#7-importação-de-catálogo-planilhas-xlsx-e-csv). Linha com célula de erro do Excel (`#N/D`, `#REF!`) vira linha com erro no relatório (`"Célula com erro (#N/D)."`) e as demais entram.
+
+Erros: `422 VALIDACAO` (sem arquivo; extensão diferente de `.csv`/`.xlsx`; `.xls`, `.xlsm` e `.xlsb`: "Salve o arquivo como .xlsx ou CSV."), `422 PLANILHA_INVALIDA` ("Arquivo de planilha inválido.": `.xlsx` corrompido, que não é planilha ou cujo conteúdo não começa com a assinatura de `.xlsx`; a falha fica registrada em `sincronizacoes_log`), `422 CSV_INVALIDO` (ilegível ou sem coluna `sku`/`código`), `422 LIMITE_DE_LINHAS` (mais de 20.000 linhas), `422 ARQUIVO_MUITO_GRANDE` (mais de 5 MB), `409 IMPORTACAO_EM_ANDAMENTO`.
 
 ### GET /produtos/importacoes
 `?tipo=importacao_manual|catalogo|carga_completa|estoque&pagina=&limite=`. Cada item: `id_sincronizacao`, `tipo`, `origem`, `simulado`, `status`, `linhas`, `criados`, `atualizados`, `inalterados`, `desativados`, `com_erro`, `movimentacoes_estoque`, `mensagem`, `iniciado_em`, `finalizado_em`, `duracao_ms`, `usuario` (`null` nos jobs). O detalhe (`/:id`) inclui `relatorio: { erros, avisos }`.

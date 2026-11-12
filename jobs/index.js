@@ -20,19 +20,19 @@ const DEFINICOES = [
     {
         nome: 'catalogo',
         expressao: config.jobs.cron.catalogo,
-        descricao: 'De hora em hora: importa importacao/entrada/catalogo*.csv, sem desativar produtos ausentes.',
+        descricao: 'De hora em hora: importa importacao/entrada/catalogo*.csv (ou .xlsx), sem desativar produtos ausentes.',
         executar: () => processarPastaComTrava('catalogo')
     },
     {
         nome: 'carga-completa',
         expressao: config.jobs.cron.cargaCompleta,
-        descricao: 'Meia-noite: importa importacao/entrada/carga_completa*.csv e desativa os produtos ausentes (só se o arquivo não tiver erro).',
+        descricao: 'Meia-noite: importa importacao/entrada/carga_completa*.csv (ou .xlsx) e desativa os produtos ausentes (só se o arquivo não tiver erro).',
         executar: () => processarPastaComTrava('carga_completa')
     },
     {
         nome: 'estoque',
         expressao: config.jobs.cron.estoque,
-        descricao: 'A cada 30 min: importa importacao/entrada/estoque*.csv, só as colunas sku e estoque.',
+        descricao: 'A cada 30 min: importa importacao/entrada/estoque*.csv (ou .xlsx), só as colunas sku e estoque.',
         executar: () => processarPastaComTrava('estoque')
     },
     {

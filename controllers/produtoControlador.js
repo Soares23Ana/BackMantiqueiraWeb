@@ -50,6 +50,7 @@ function apresentarProduto(produto, usuario, limiteFaixa) {
     if (ehEquipe(usuario)) {
         Object.assign(dados, {
             estoque: produto.quantidade_estoque,
+            nome_erp: produto.nome_erp,
             preco: produto.preco === null ? null : Number(produto.preco),
             estoque_minimo: produto.estoque_minimo,
             ativo: produto.ativo,
@@ -316,10 +317,15 @@ async function filtrosDisponiveis(req, res) {
     return res.status(200).json({ categorias, marcas, disponibilidade: disponibilidadeContagem });
 }
 
-// Aceita o id numérico ou o SKU.
+// Aceita o id numérico ou o SKU. SKU só com dígitos (o código do portfólio, ex.: 1391) também é aceito: o número é
+// procurado primeiro como id e, se não houver produto com esse id, como SKU.
 async function buscarProduto(idOuSku, opcoes = {}) {
-    const where = /^\d+$/.test(String(idOuSku)) ? { id_produto: Number(idOuSku) } : { sku: String(idOuSku) };
-    return Produto.findOne({ where, include: INCLUDES, ...opcoes });
+    const valor = String(idOuSku);
+    if (/^\d+$/.test(valor)) {
+        const porId = await Produto.findOne({ where: { id_produto: Number(valor) }, include: INCLUDES, ...opcoes });
+        if (porId) return porId;
+    }
+    return Produto.findOne({ where: { sku: valor }, include: INCLUDES, ...opcoes });
 }
 
 // GET /produtos/:id (id ou SKU). Produto desativado só aparece para a equipe.

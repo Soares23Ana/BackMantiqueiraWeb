@@ -2,7 +2,8 @@ const { Op } = require('sequelize');
 const sequelize = require('../db/conn');
 const { Produto, Categoria, Marca } = require('../models');
 const { ErroApi } = require('../lib/erros');
-const { lerCsv } = require('../lib/csv');
+const { lerMatriz, normalizarNomeColuna } = require('../lib/planilha');
+const { gerarNomeExibicao, carregarDicionario } = require('../lib/nomeProduto');
 const { gerarSlug } = require('../lib/texto');
 const { validarDadosProduto } = require('../helpers/validacaoProduto');
 const { alterarEstoque } = require('./estoque');
@@ -12,22 +13,49 @@ const COLUNAS = [
     'sku', 'nome', 'categoria', 'marca', 'descricao', 'destaques', 'imagem_url',
     'ativo', 'estoque_minimo', 'multiplo_venda', 'preco', 'estoque'
 ];
+// Cabeçalhos do portfólio (CSV ou Excel), sem diferenciar maiúsculas nem acentos. "PRODUTO" é o nome do portfólio
+// (nome_erp): dele sai o nome de exibição, a menos que a planilha tenha a própria coluna "nome".
+const COLUNAS_ACEITAS = [...COLUNAS, 'nome_erp'];
+const APELIDOS = {
+    codigo: 'sku',
+    cod: 'sku',
+    produto: 'nome_erp',
+    fabricante: 'marca',
+    'categoria - cad. erp': 'categoria',
+    quantidade: 'estoque',
+    saldo: 'estoque'
+};
 const VERDADEIRO = ['sim', 's', 'true', '1', 'ativo'];
 const FALSO = ['nao', 'não', 'n', 'false', '0', 'inativo'];
 const MAXIMO_ERROS = 500;
 const CAMPOS_COMPARADOS = [
-    'nome', 'descricao', 'destaques', 'imagem_url', 'id_categoria', 'id_marca',
+    'nome', 'nome_erp', 'descricao', 'destaques', 'imagem_url', 'id_categoria', 'id_marca',
     'preco', 'estoque_minimo', 'multiplo_venda', 'ativo'
 ];
 
 // Converte os textos de uma linha do CSV nos tipos esperados por validarDadosProduto.
-function converterLinha(valores, cabecalho) {
+function converterLinha(valores, cabecalho, dicionario) {
     const erros = [];
     const corpo = {};
     const tem = (coluna) => cabecalho.includes(coluna);
 
     corpo.sku = valores.sku;
     if (tem('nome')) corpo.nome = valores.nome;
+    // Nome do portfólio: guarda o original e, sem coluna "nome", gera o nome de exibição dele.
+    let nomeErp;
+    let nomeGerado = false;
+    let pendentes = [];
+    if (tem('nome_erp')) {
+        nomeErp = valores.nome_erp || null;
+        if (nomeErp && nomeErp.length > 255) {
+            erros.push({ campo: 'nome_erp', mensagem: 'O nome do portfólio deve ter no máximo 255 caracteres.' });
+        } else if (nomeErp && !tem('nome')) {
+            const gerado = gerarNomeExibicao(nomeErp, dicionario);
+            corpo.nome = gerado.nome;
+            nomeGerado = true;
+            pendentes = gerado.pendentes;
+        }
+    }
     if (tem('descricao')) corpo.descricao = valores.descricao || null;
     if (tem('destaques')) {
         corpo.destaques = valores.destaques
@@ -72,7 +100,40 @@ function converterLinha(valores, cabecalho) {
         if (!(erro instanceof ErroApi)) throw erro;
         erros.push(...erro.detalhes);
     }
-    return { dados, estoque, nomesTaxonomia, erros };
+    return { dados, estoque, nomesTaxonomia, nomeErp, nomeGerado, pendentes, erros };
+}
+
+/**
+ * Transforma a matriz lida (CSV ou Excel) em tabela: o cabeçalho é a primeira linha não vazia; os nomes das colunas
+ * passam pelos apelidos (CÓDIGO => sku, FABRICANTE => marca...) e as colunas desconhecidas são ignoradas.
+ * Devolve { cabecalho (nomes canônicos), registros, colunasIgnoradas (nomes como vieram na planilha) }.
+ */
+function montarTabela(linhas) {
+    const [cabecalhoLinha, ...dados] = linhas;
+    if (!cabecalhoLinha) return { cabecalho: [], registros: [], colunasIgnoradas: [] };
+    const canonicas = [];
+    const colunasIgnoradas = [];
+    const usadas = new Set();
+    cabecalhoLinha.celulas.forEach((original) => {
+        const normalizado = normalizarNomeColuna(original);
+        const canonica = COLUNAS_ACEITAS.includes(normalizado) ? normalizado : (APELIDOS[normalizado] || null);
+        if (!canonica || usadas.has(canonica)) {
+            canonicas.push(null);
+            if (original.trim() && !colunasIgnoradas.includes(original.trim())) colunasIgnoradas.push(original.trim());
+            return;
+        }
+        usadas.add(canonica);
+        canonicas.push(canonica);
+    });
+    const cabecalho = canonicas.filter(Boolean);
+    const registros = dados.map((linha) => ({
+        linha: linha.linha,
+        // Mais células preenchidas que colunas no cabeçalho.
+        excedente: linha.celulas.slice(cabecalhoLinha.celulas.length).some((celula) => celula !== ''),
+        valores: Object.fromEntries(cabecalho.map((coluna) => [coluna, linha.celulas[canonicas.indexOf(coluna)] ?? ''])),
+        errosCelula: (linha.erros || []).map((item) => ({ campo: canonicas[item.coluna] || null, erro: item.erro }))
+    }));
+    return { cabecalho, registros, colunasIgnoradas };
 }
 
 function iguais(campo, atual, novo) {
@@ -101,22 +162,20 @@ async function resolverTaxonomia(Modelo, cache, nome, transacao, contador) {
  * - somenteEstoque: aplica só as colunas sku e estoque (job de estoque); as demais são ignoradas.
  * - Mudanças de estoque geram movimentações do tipo "importacao".
  */
-async function importarCatalogo(conteudo, {
+async function importarCatalogo(entrada, {
     simular = false,
     desativarAusentes = false,
     somenteEstoque = false,
     idUsuario = null,
-    origem = 'importação'
+    origem = 'importação',
+    formato,
+    dicionario = carregarDicionario()
 } = {}) {
-    let csv;
-    try {
-        csv = lerCsv(conteudo);
-    } catch (erro) {
-        throw new ErroApi(422, 'CSV_INVALIDO', `Não foi possível ler o CSV: ${erro.message}`);
-    }
+    const { linhas, formato: formatoLido } = await lerMatriz(entrada, { formato });
+    const csv = montarTabela(linhas);
     const { registros } = csv;
     if (!csv.cabecalho.includes('sku')) {
-        throw new ErroApi(422, 'CSV_INVALIDO', 'O CSV precisa de uma coluna "sku".');
+        throw new ErroApi(422, 'CSV_INVALIDO', 'O arquivo precisa de uma coluna "sku" (ou "código").');
     }
     if (somenteEstoque && !csv.cabecalho.includes('estoque')) {
         throw new ErroApi(422, 'CSV_INVALIDO', 'O arquivo de estoque precisa de uma coluna "estoque".');
@@ -127,6 +186,7 @@ async function importarCatalogo(conteudo, {
 
     const relatorio = {
         simulado: simular,
+        formato: formatoLido,
         linhas: registros.length,
         criados: 0,
         atualizados: 0,
@@ -136,15 +196,22 @@ async function importarCatalogo(conteudo, {
         categorias_criadas: 0,
         marcas_criadas: 0,
         movimentacoes_estoque: 0,
+        abreviacoes_pendentes: [],
+        categorias_sem_mapa: [],
+        colunas_ignoradas: [],
         erros: [],
         avisos: []
     };
-    // Colunas desconhecidas ou fora do uso atual (ex.: "nome" no job de estoque).
-    const colunasIgnoradas = csv.cabecalho.filter((coluna) =>
-        coluna && !(cabecalho.includes(coluna) && COLUNAS.includes(coluna)));
+    // Colunas desconhecidas (ex.: "CÓDIGO DE BARRAS") ou fora do uso atual (ex.: "nome" no job de estoque): ignoradas, sem erro.
+    const colunasIgnoradas = [
+        ...csv.colunasIgnoradas,
+        ...csv.cabecalho.filter((coluna) => !cabecalho.includes(coluna))
+    ];
+    relatorio.colunas_ignoradas = colunasIgnoradas;
     if (colunasIgnoradas.length > 0) {
         relatorio.avisos.push(`Colunas ignoradas: ${colunasIgnoradas.join(', ')}.`);
     }
+    const pendentes = new Map();
     const registrarErros = (linha, sku, erros) => {
         relatorio.com_erro += 1;
         for (const erro of erros) {
@@ -157,7 +224,10 @@ async function importarCatalogo(conteudo, {
     const validas = [];
     for (const registro of registros) {
         const sku = registro.valores.sku;
-        const convertido = converterLinha(registro.valores, cabecalho);
+        const convertido = converterLinha(registro.valores, cabecalho, dicionario);
+        for (const { campo, erro } of registro.errosCelula) {
+            convertido.erros.push({ campo, mensagem: `Célula com erro (${erro}).` });
+        }
         if (registro.excedente) {
             convertido.erros.push({ campo: null, mensagem: 'A linha tem mais colunas que o cabeçalho.' });
         }
@@ -170,6 +240,11 @@ async function importarCatalogo(conteudo, {
             registrarErros(registro.linha, sku, convertido.erros);
         } else {
             validas.push({ linha: registro.linha, ...convertido });
+            for (const abreviacao of convertido.pendentes) {
+                const atual = pendentes.get(abreviacao) || { abreviacao, ocorrencias: 0, exemplo: convertido.nomeErp };
+                atual.ocorrencias += 1;
+                pendentes.set(abreviacao, atual);
+            }
         }
     }
 
@@ -206,11 +281,21 @@ async function importarCatalogo(conteudo, {
                     registrarErros(item.linha, dados.sku, [{ campo: 'nome', mensagem: 'Produto novo exige o nome.' }]);
                     continue;
                 }
-                produto = await Produto.create({ ...dados, quantidade_estoque: 0 }, { transaction: transacao });
+                produto = await Produto.create({
+                    ...dados,
+                    ...(item.nomeErp !== undefined && { nome_erp: item.nomeErp }),
+                    quantidade_estoque: 0
+                }, { transaction: transacao });
                 porSku.set(dados.sku.toUpperCase(), produto);
                 relatorio.criados += 1;
             } else {
                 const { sku, ...campos } = dados;
+                if (item.nomeErp !== undefined) campos.nome_erp = item.nomeErp;
+                // O nome de exibição gerado só substitui o atual se este ainda for o gerado do nome do portfólio anterior
+                // (ou seja, ninguém editou o nome à mão).
+                if (item.nomeGerado && !(produto.nome_erp && gerarNomeExibicao(produto.nome_erp, dicionario).nome === produto.nome)) {
+                    delete campos.nome;
+                }
                 const mudancas = Object.fromEntries(
                     Object.entries(campos).filter(([campo, valor]) =>
                         CAMPOS_COMPARADOS.includes(campo) && !iguais(campo, produto[campo], valor))
@@ -261,6 +346,7 @@ async function importarCatalogo(conteudo, {
             relatorio.desativados = ausentes.length;
         }
 
+        relatorio.abreviacoes_pendentes = [...pendentes.values()].sort((a, b) => b.ocorrencias - a.ocorrencias || a.abreviacao.localeCompare(b.abreviacao));
         relatorio.categorias_criadas = contadorCategorias.total;
         relatorio.marcas_criadas = contadorMarcas.total;
         if (simular) await transacao.rollback();

@@ -13,12 +13,13 @@ function lerBooleano(valor, campo) {
 }
 
 /**
- * POST /produtos/importar (multipart, campo "arquivo"). Mesmo formato do seeds/catalogo_inicial.csv.
+ * POST /produtos/importar (multipart, campo "arquivo": .csv ou .xlsx, só a primeira aba). Mesmo formato do
+ * seeds/catalogo_inicial.csv, ou a planilha do portfólio (CÓDIGO, PRODUTO, FABRICANTE, CATEGORIA - Cad. ERP).
  * simular=true mostra o resultado sem gravar; carga_completa=true também desativa produtos ausentes.
  */
 async function importar(req, res) {
     if (!req.file) {
-        throw new ErroApi(422, 'VALIDACAO', 'Envie o arquivo CSV no campo "arquivo".');
+        throw new ErroApi(422, 'VALIDACAO', 'Envie a planilha (.csv ou .xlsx) no campo "arquivo".');
     }
     const opcoes = { ...req.query, ...req.body };
     const { log, relatorio } = await importarUpload({
