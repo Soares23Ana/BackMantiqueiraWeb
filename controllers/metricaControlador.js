@@ -40,6 +40,38 @@ function lerLimite(valor, padrao = 10, maximo = 50) {
     return limite;
 }
 
+// Sessões únicas no período e média por dia (cada sessão conta uma vez por dia). Sem IP: só o id de sessão do navegador.
+async function resumirVisitantes(periodo) {
+    const [[total], porDia] = await Promise.all([
+        consultar(`SELECT COUNT(DISTINCT sessao) AS total FROM eventos
+                   WHERE tipo = 'visita' AND criado_em >= :inicio AND criado_em < :fim`, { inicio: periodo.inicio, fim: periodo.fim }),
+        consultar(`SELECT DATE_FORMAT(criado_em, '%Y-%m-%d') AS dia, COUNT(DISTINCT sessao) AS sessoes,
+                          COUNT(DISTINCT CASE WHEN id_usuario IS NOT NULL THEN sessao END) AS logados
+                   FROM eventos
+                   WHERE tipo = 'visita' AND criado_em >= :inicio AND criado_em < :fim
+                   GROUP BY dia`, { inicio: periodo.inicio, fim: periodo.fim })
+    ]);
+    const mapa = new Map(porDia.map((linha) => [linha.dia, linha]));
+    const dias = [];
+    for (let data = periodo.de; data <= periodo.ate;
+        data = new Date(Date.parse(`${data}T12:00:00Z`) + DIA).toISOString().slice(0, 10)) {
+        const linha = mapa.get(data);
+        dias.push({ data, sessoes: linha ? Number(linha.sessoes) : 0, clientes_logados: linha ? Number(linha.logados) : 0 });
+    }
+    const somaDiaria = dias.reduce((soma, dia) => soma + dia.sessoes, 0);
+    return {
+        total_sessoes: Number(total.total),
+        media_diaria: Math.round((somaDiaria / dias.length) * 10) / 10,
+        por_dia: dias
+    };
+}
+
+// GET /metricas/visitantes?de=&ate=
+async function visitantes(req, res) {
+    const periodo = lerPeriodo(req.query);
+    return res.status(200).json({ periodo: { de: periodo.de, ate: periodo.ate }, ...(await resumirVisitantes(periodo)) });
+}
+
 // GET /metricas/resumo?de=&ate=
 async function resumo(req, res) {
     const periodo = lerPeriodo(req.query);
@@ -58,8 +90,10 @@ async function resumo(req, res) {
     const eventos = Object.fromEntries(TIPOS_EVENTO.map((tipo) => [tipo, 0]));
     for (const linha of porTipo) eventos[linha.tipo] = Number(linha.total);
 
+    const { por_dia: _porDia, ...visitantesResumo } = await resumirVisitantes(periodo);
     return res.status(200).json({
         periodo: { de: periodo.de, ate: periodo.ate },
+        visitantes: visitantesResumo,
         pedidos: {
             total: Object.values(statusContados).reduce((soma, total) => soma + total, 0),
             por_status: statusContados
@@ -283,6 +317,6 @@ async function cicloPedido(req, res) {
 }
 
 module.exports = {
-    resumo, buscas, produtosMaisPedidos, clientesInativos,
+    resumo, visitantes, buscas, produtosMaisPedidos, clientesInativos,
     funil, produtosVistos, bannersCampanhas, pedidosPorDia, cicloPedido
 };

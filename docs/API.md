@@ -912,12 +912,13 @@ O front envia o que acontece na navegação. **A API não guarda IP.** Se houver
 | `checkout_iniciado` | — | Abriu o checkout |
 | `banner_clique` | `id_banner` | Clicou num banner |
 | `campanha_clique` | `id_campanha` | Clicou numa campanha |
+| `visita` | — (`sessao` **obrigatória**) | Abriu o site (uma vez por visita) |
 
 Todos aceitam `sessao` (opcional).
 ```json
 { "tipo": "carrinho_adicionar", "id_produto": 15, "quantidade": 6, "sessao": "a1b2c3d4e5f6" }
 ```
-`202`: `{ "registrado": true }`. Erros: `422 VALIDACAO` (tipo não aceito, campo faltando ou a mais), `429`.
+`202`: `{ "registrado": true }`. A `visita` é gravada no máximo **uma vez por sessão por dia** (horário de Brasília): repetições são ignoradas e respondem `202` com `{ "registrado": false }`. Erros: `422 VALIDACAO` (tipo não aceito, campo faltando ou a mais), `429`.
 
 **Registrados pelo próprio servidor** (o front não envia e a API recusa): `busca` e `busca_sem_resultado` (na `GET /produtos` com `busca`, só na 1ª página e não para a equipe) e `pedido_concluido` (no `POST /pedidos`).
 
@@ -926,7 +927,8 @@ Todas aceitam `de` e `ate` (`AAAA-MM-DD`, inclusive; padrão: últimos 30 dias a
 
 | Método | Rota | Descrição |
 |---|---|---|
-| GET | `/metricas/resumo` | Pedidos por status, unidades, clientes que compraram e contagem de eventos |
+| GET | `/metricas/resumo` | Visitantes, pedidos por status, unidades, clientes que compraram e contagem de eventos |
+| GET | `/metricas/visitantes` | Sessões únicas, média diária e visitas por dia |
 | GET | `/metricas/buscas?limite=10` | Termos mais buscados e buscas sem resultado |
 | GET | `/metricas/produtos-mais-pedidos?limite=10` | Ranking em unidades |
 | GET | `/metricas/clientes-inativos?dias=60&pagina=` | Clientes sem comprar há X dias |
@@ -944,6 +946,7 @@ Todas aceitam `de` e `ate` (`AAAA-MM-DD`, inclusive; padrão: últimos 30 dias a
 ```json
 {
   "periodo": { "de": "2026-09-27", "ate": "2026-10-26" },
+  "visitantes": { "total_sessoes": 120, "media_diaria": 5.3 },
   "pedidos": {
     "total": 1,
     "por_status": { "Aguardando Separação": 1, "Em Separação": 0, "Saiu para Entrega": 0, "Entregue": 0, "Cancelado": 0 }
@@ -952,8 +955,22 @@ Todas aceitam `de` e `ate` (`AAAA-MM-DD`, inclusive; padrão: últimos 30 dias a
   "clientes_que_compraram": 1,
   "eventos": {
     "busca": 2, "busca_sem_resultado": 1, "produto_visto": 1, "carrinho_adicionar": 1,
-    "checkout_iniciado": 1, "pedido_concluido": 1, "banner_clique": 1, "campanha_clique": 1
+    "checkout_iniciado": 1, "pedido_concluido": 1, "banner_clique": 1, "campanha_clique": 1, "visita": 160
   }
+}
+```
+
+`GET /metricas/visitantes`: `total_sessoes` conta as sessões únicas do período; `media_diaria` é a soma das sessões de cada dia dividida pelos dias do período (1 casa); `por_dia` traz um item por dia (horário de Brasília), com os dias sem visita zerados. `clientes_logados` conta as sessões do dia que tinham usuário logado na visita. Não há IP: só o identificador de sessão enviado no evento `visita`.
+```json
+{
+  "periodo": { "de": "2026-10-24", "ate": "2026-10-26" },
+  "total_sessoes": 3,
+  "media_diaria": 1.3,
+  "por_dia": [
+    { "data": "2026-10-24", "sessoes": 0, "clientes_logados": 0 },
+    { "data": "2026-10-25", "sessoes": 1, "clientes_logados": 0 },
+    { "data": "2026-10-26", "sessoes": 3, "clientes_logados": 1 }
+  ]
 }
 ```
 

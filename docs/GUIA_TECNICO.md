@@ -312,3 +312,6 @@ A API consulta serviços públicos com o `fetch` nativo do Node (sem dependênci
 - `servicos/destinos.js` é o mecanismo de destino (`tipo_destino`, `id_destino`, `link`) compartilhado por banners e pop-up: valida se o alvo existe e resolve o link interno no formato das rotas do site.
 - Banners guardam `tipo_destino` e `id_destino` (migration 015); `servicos/destinos.js` resolve o link em lote para a lista inteira. O alvo não tem chave estrangeira (um destino excluído só deixa o `link` resolvido `null`).
 - Campanhas têm `slug` único (migration 015), gerado do título na criação. `GET /produtos?campanha={slug}` usa uma subconsulta com o período da campanha, então só campanhas ativas listam produtos.
+
+### Visitantes
+- O evento `visita` (migration 016) usa a coluna `dia_visita` e o índice único `(sessao, dia_visita)` para gravar no máximo uma visita por sessão por dia, mesmo com requisições simultâneas; a repetição é ignorada (`registrado: false`). Nenhum IP é guardado. As métricas de visitantes contam sessões únicas por dia (horário de Brasília).

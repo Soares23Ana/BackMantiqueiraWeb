@@ -1,4 +1,5 @@
 const { Op } = require('sequelize');
+const { UniqueConstraintError } = require('sequelize');
 const { Evento } = require('../models');
 const logger = require('../lib/logger');
 const { ErroApi } = require('../lib/erros');
@@ -9,7 +10,9 @@ const CAMPOS_POR_TIPO = {
     carrinho_adicionar: { obrigatorios: ['id_produto'], opcionais: ['quantidade'] },
     checkout_iniciado: { obrigatorios: [], opcionais: [] },
     banner_clique: { obrigatorios: ['id_banner'], opcionais: [] },
-    campanha_clique: { obrigatorios: ['id_campanha'], opcionais: [] }
+    campanha_clique: { obrigatorios: ['id_campanha'], opcionais: [] },
+    // A visita só vale com a sessão, para contar sessões únicas.
+    visita: { obrigatorios: [], opcionais: [], sessaoObrigatoria: true }
 };
 const SESSAO_VALIDA = /^[A-Za-z0-9_-]{8,64}$/;
 const MESES_RETENCAO = 12;
@@ -22,6 +25,26 @@ async function registrarEvento(dados) {
         await Evento.create(dados);
     } catch (erro) {
         logger.warn('Não foi possível registrar o evento.', { tipo: dados.tipo, erro: erro.message });
+    }
+}
+
+function hojeEmSaoPaulo() {
+    return new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
+/**
+ * Registra uma visita, no máximo uma por sessão por dia (horário de Brasília): repetições são ignoradas.
+ * Devolve true se gravou e false se já havia visita da sessão hoje. Nunca derruba a requisição.
+ */
+async function registrarVisita(dados) {
+    try {
+        await Evento.create({ ...dados, tipo: 'visita', dia_visita: hojeEmSaoPaulo() });
+        return true;
+    } catch (erro) {
+        if (!(erro instanceof UniqueConstraintError)) {
+            logger.warn('Não foi possível registrar a visita.', { erro: erro.message });
+        }
+        return false;
     }
 }
 
@@ -52,6 +75,9 @@ function validarEventoDoFront(corpo) {
             dados[campo] = corpo[campo];
         }
     }
+    if (definicao.sessaoObrigatoria && corpo.sessao === undefined) {
+        erros.push({ campo: 'sessao', mensagem: `sessao é obrigatória para ${corpo.tipo}.` });
+    }
     if (corpo.sessao !== undefined) {
         if (typeof corpo.sessao !== 'string' || !SESSAO_VALIDA.test(corpo.sessao)) {
             erros.push({ campo: 'sessao', mensagem: 'sessao deve ter de 8 a 64 letras, números, "-" ou "_".' });
@@ -76,4 +102,4 @@ async function limparEventosAntigos({ tamanhoLote = 5000 } = {}) {
     return { removidos: total, anteriores_a: limite.toISOString() };
 }
 
-module.exports = { registrarEvento, validarEventoDoFront, limparEventosAntigos, CAMPOS_POR_TIPO };
+module.exports = { registrarEvento, registrarVisita, validarEventoDoFront, limparEventosAntigos, CAMPOS_POR_TIPO };

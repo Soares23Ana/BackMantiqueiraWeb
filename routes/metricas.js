@@ -8,6 +8,7 @@ const router = express.Router();
 router.use(autenticarToken, exigirEquipe);
 
 router.get('/resumo', metricaControlador.resumo);
+router.get('/visitantes', metricaControlador.visitantes);
 router.get('/buscas', metricaControlador.buscas);
 router.get('/produtos-mais-pedidos', metricaControlador.produtosMaisPedidos);
 router.get('/clientes-inativos', metricaControlador.clientesInativos);

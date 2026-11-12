@@ -109,7 +109,7 @@ CREATE TABLE `enderecos` (
 
 CREATE TABLE `eventos` (
   `id_evento` bigint NOT NULL AUTO_INCREMENT,
-  `tipo` enum('busca','busca_sem_resultado','produto_visto','carrinho_adicionar','checkout_iniciado','pedido_concluido','banner_clique','campanha_clique') NOT NULL,
+  `tipo` enum('busca','busca_sem_resultado','produto_visto','carrinho_adicionar','checkout_iniciado','pedido_concluido','banner_clique','campanha_clique','visita') NOT NULL,
   `id_usuario` int DEFAULT NULL,
   `sessao` varchar(64) DEFAULT NULL,
   `termo` varchar(100) DEFAULT NULL,
@@ -119,8 +119,10 @@ CREATE TABLE `eventos` (
   `id_pedido` int DEFAULT NULL,
   `id_banner` int DEFAULT NULL,
   `id_campanha` int DEFAULT NULL,
+  `dia_visita` date DEFAULT NULL,
   `criado_em` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id_evento`),
+  UNIQUE KEY `uk_eventos_visita_dia` (`sessao`,`dia_visita`),
   KEY `idx_eventos_tipo_data` (`tipo`,`criado_em`),
   KEY `idx_eventos_data` (`criado_em`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
@@ -320,4 +322,5 @@ INSERT INTO schema_migrations (versao, nome, checksum) VALUES
 ('012', 'senha_alterada_em', 'eb3b1c6617b4f579775cbef86417acbecd6c01b44d29b897a94d1a9d04dc9a15'),
 ('013', 'cnpj_alfanumerico', 'aa76bf87806aa13ab184fa5f02825f6b870a290980f784b20d482476fcaef128'),
 ('014', 'popup_cms', 'f2477a282641c24ee184c0df42066b88efdc1d734e32ab968956ad0187842a6b'),
-('015', 'banner_destino_campanha_slug', '78a93b3760453b651e364281c07a74180f4b23181d7db5f409c9f0720db0e323');
+('015', 'banner_destino_campanha_slug', '78a93b3760453b651e364281c07a74180f4b23181d7db5f409c9f0720db0e323'),
+('016', 'evento_visita', '61dfa380947d92eef6a533e02de9768bdae1f895acff50a4736f3667cb2bb7d6');

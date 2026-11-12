@@ -3,7 +3,7 @@ const sequelize = require('../db/conn');
 
 const TIPOS_EVENTO = [
     'busca', 'busca_sem_resultado', 'produto_visto', 'carrinho_adicionar',
-    'checkout_iniciado', 'pedido_concluido', 'banner_clique', 'campanha_clique'
+    'checkout_iniciado', 'pedido_concluido', 'banner_clique', 'campanha_clique', 'visita'
 ];
 
 // Evento de uso para métricas. Sem IP; id_usuario só para quem está logado.
@@ -26,6 +26,8 @@ const Evento = sequelize.define('Evento', {
     id_pedido: { type: DataTypes.INTEGER, allowNull: true },
     id_banner: { type: DataTypes.INTEGER, allowNull: true },
     id_campanha: { type: DataTypes.INTEGER, allowNull: true },
+    // Só nas visitas: o dia (Brasília). O índice único (sessao, dia_visita) limita a uma visita por sessão por dia.
+    dia_visita: { type: DataTypes.DATEONLY, allowNull: true },
     criado_em: {
         type: DataTypes.DATE,
         allowNull: false,
