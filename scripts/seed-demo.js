@@ -87,9 +87,15 @@ async function semearPedidos(log) {
     const usuarioEquipe = { id: equipe.id_usuario, tipo: 'equipe' };
 
     for (const definicao of PEDIDOS) {
-        const itens = definicao.itens.map(([sku, quantidade]) => ({ id_produto: produtos.get(sku), quantidade }));
-        if (itens.some((item) => !item.id_produto)) {
-            log(`pedidos: "${definicao.status}" pulado. Rode antes "npm run seed:catalogo".`);
+        // Produto que não existir no catálogo é pulado com aviso; o pedido segue com os demais itens.
+        const faltando = definicao.itens.filter(([sku]) => !produtos.has(sku)).map(([sku]) => sku);
+        const itens = definicao.itens.filter(([sku]) => produtos.has(sku))
+            .map(([sku, quantidade]) => ({ id_produto: produtos.get(sku), quantidade }));
+        if (faltando.length > 0) {
+            log(`pedidos: "${definicao.status}" sem os SKUs ${faltando.join(', ')} (não estão no catálogo; rode "npm run seed:catalogo").`);
+        }
+        if (itens.length === 0) {
+            log(`pedidos: "${definicao.status}" pulado (nenhum item no catálogo).`);
             continue;
         }
         const { pedido, repetido } = await servicoPedidos.criarPedido(cliente.id_usuario, { itens },

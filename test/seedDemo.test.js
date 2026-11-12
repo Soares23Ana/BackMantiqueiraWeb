@@ -76,6 +76,25 @@ describe('seed:demo', () => {
             movimentacoes: await contar('movimentacoes_estoque'), estoque: await estoques() }, antes);
     });
 
+    test('SKU que não está no catálogo é pulado com aviso, sem falhar', async () => {
+        const mensagens = [];
+        const { PEDIDOS: lista } = require('../scripts/seed-demo');
+        const original = lista[0].itens;
+        const { Produto } = require('../models');
+        lista[0].itens = [...original, ['SKU-INEXISTENTE', 1]];
+        // Chave nova: o pedido ainda não existe, então o aviso aparece de verdade.
+        const chaveOriginal = lista[0].chave;
+        lista[0].chave = 'seed-demo-aguardando-aviso';
+        try {
+            await semearDemo({ log: (m) => mensagens.push(m) });
+        } finally {
+            lista[0].itens = original;
+            lista[0].chave = chaveOriginal;
+        }
+        assert.ok(mensagens.some((m) => /SKU-INEXISTENTE/.test(m)));
+        assert.ok(await Produto.count() > 0);
+    });
+
     test('sem os usuários do seed:dev, pula os pedidos sem falhar', async () => {
         const mensagens = [];
         await sequelize.query("UPDATE usuarios SET cnpj = NULL WHERE tipo = 'cliente'");
