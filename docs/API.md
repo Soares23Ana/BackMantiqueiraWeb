@@ -637,7 +637,7 @@ O estoque de todos os itens volta na mesma transação, com movimentação do ti
   "produtos_mais_solicitados": [ { "id_produto": 15, "nome": "...", "quantidade_solicitada": 12 } ],
   "carrinho_atual": {
     "itens": [ { "id_produto": 15, "sku": "SKU-115", "nome": "...", "quantidade": 2 } ],
-    "total_unidades": 2, "ultimo_movimento_em": "...", "dias_parado": 5, "abandonado": true, "contatado_em": null
+    "total_unidades": 2, "ultimo_movimento_em": "...", "minutos_parado": 7200, "dias_parado": 5, "abandonado": true, "contatado_em": null
   },
   "ultimo_evento_em": "2026-10-26T23:41:10.000Z"
 }
@@ -815,7 +815,7 @@ Fora da janela de datas, ou com `ativo: false`, ou sem pop-up salvo: `{ "popup":
 | `horario_atendimento` | sim | texto até 200 caracteres |
 | `aviso_topo` | sim | texto até 200 caracteres |
 | `meta_reposicao` | não | inteiro de 1 a 1.000.000 (padrão 50) |
-| `carrinho_abandonado_dias` | não | inteiro de 1 a 365 (padrão 3): dias parado para um carrinho com itens ser abandonado |
+| `carrinho_abandonado_minutos` | não | inteiro de 1 a 525600 (padrão 30): minutos parado para um carrinho com itens ser abandonado |
 | `estoque_faixa_alta` | não | inteiro de 1 a 10000 (padrão 50): acima dele o produto disponível aparece como "Mais de N disponíveis" |
 
 Erros: `422 VALIDACAO`, `404` (chave desconhecida).
@@ -1201,22 +1201,23 @@ Um produto desativado depois de entrar no carrinho continua na lista com `ativo:
 
 ## 18. Carrinhos abandonados (equipe)
 
-Um carrinho é **abandonado** quando tem itens, está parado há pelo menos N dias (configuração `carrinho_abandonado_dias`, inteiro de 1 a 365, padrão **3**) e o cliente (ativo) **não fez pedido depois da última atualização** do carrinho. Não há envio de e-mail nem valores em reais: a equipe fala com o cliente por conta própria (o `link_whatsapp` já vem com uma mensagem pronta).
+Um carrinho é **abandonado** quando tem itens, está parado há pelo menos N minutos (configuração `carrinho_abandonado_minutos`, inteiro de 1 a 525600, padrão **30**) e o cliente (ativo) **não fez pedido depois da última atualização** do carrinho. Não há envio de e-mail nem valores em reais: a equipe fala com o cliente por conta própria (o `link_whatsapp` já vem com uma mensagem pronta).
 
 | Método | Rota | Descrição |
 |---|---|---|
 | GET | `/carrinhos-abandonados` | Lista paginada, do mais recente para o mais antigo |
 | PATCH | `/carrinhos-abandonados/:id_cliente/contatado` | Registra que a equipe entrou em contato |
 
-`GET /carrinhos-abandonados`: `pagina`, `limite` (padrão 20, máximo 100) e filtros `dias` (1 a 365; substitui a configuração nesta consulta), `busca` (nome, razão social, e-mail ou CNPJ) e `contatado=true|false`. "Contatado" significa que há um contato registrado **depois** da última atualização do carrinho: se o cliente mexer no carrinho e abandoná-lo de novo, ele volta a ficar sem contato.
+`GET /carrinhos-abandonados`: `pagina`, `limite` (padrão 20, máximo 100) e filtros `minutos` (1 a 525600) ou `dias` (1 a 365, equivale a `dias × 1440` minutos); os dois substituem a configuração nesta consulta, e `minutos` vale mais que `dias`, `busca` (nome, razão social, e-mail ou CNPJ) e `contatado=true|false`. "Contatado" significa que há um contato registrado **depois** da última atualização do carrinho: se o cliente mexer no carrinho e abandoná-lo de novo, ele volta a ficar sem contato.
 ```json
 {
-  "dias": 3,
+  "minutos": 30,
   "carrinhos": [
     {
       "id_carrinho": 4,
       "cliente": { "id_usuario": 7, "cnpj": "11.222.333/0001-81", "nome_exibicao": "Mercado Antigo Ltda", "telefone": "35999991234", "email": "compras@mercado.com.br" },
       "ultimo_movimento_em": "2026-11-02T18:00:00.000Z",
+      "minutos_parado": 14401,
       "dias_parado": 10,
       "total_unidades": 5,
       "itens": [{ "id_produto": 15, "sku": "SKU-115", "nome": "Anti-séptico bucal Colgate Plax ...", "quantidade": 2 }],

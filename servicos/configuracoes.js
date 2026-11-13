@@ -41,14 +41,14 @@ const DEFINICOES = {
             return String(numero);
         }
     },
-    carrinho_abandonado_dias: {
-        descricao: 'Dias parado para um carrinho com itens ser considerado abandonado.',
+    carrinho_abandonado_minutos: {
+        descricao: 'Minutos parado para um carrinho com itens ser considerado abandonado (padrão 30).',
         publica: false,
-        padrao: '3',
+        padrao: '30',
         validar: (valor) => {
             const numero = Number(valor);
-            if (typeof valor === 'boolean' || !Number.isSafeInteger(numero) || numero < 1 || numero > 365) {
-                throw new Error('deve ser um número inteiro entre 1 e 365');
+            if (typeof valor === 'boolean' || !Number.isSafeInteger(numero) || numero < 1 || numero > 525600) {
+                throw new Error('deve ser um número inteiro de minutos entre 1 e 525.600 (1 ano)');
             }
             return String(numero);
         }

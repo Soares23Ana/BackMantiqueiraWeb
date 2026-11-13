@@ -37,10 +37,12 @@ after(async () => {
     await sequelize.close();
 });
 
-const guardar = async (usuario, itens, diasAtras) => {
+const MINUTO = 60000;
+// Guarda o carrinho e recua a última atualização em dias e/ou minutos (mais 1 minuto de folga).
+const guardar = async (usuario, itens, diasAtras, minutosAtras = 0) => {
     await request(app).put('/api/v1/carrinho').set('Authorization', usuario.auth).send({ itens }).expect(200);
     await sequelize.query('UPDATE carrinhos SET atualizado_em = ? WHERE id_usuario = ?',
-        { replacements: [new Date(Date.now() - diasAtras * DIA - 60000), usuario.usuario.id_usuario] });
+        { replacements: [new Date(Date.now() - diasAtras * DIA - minutosAtras * MINUTO - MINUTO), usuario.usuario.id_usuario] });
 };
 const listar = (query = '', auth = equipe.auth) => request(app).get(`/api/v1/carrinhos-abandonados${query}`).set('Authorization', auth);
 const ids = (resposta) => resposta.body.carrinhos.map((x) => x.cliente.nome_exibicao);
@@ -48,7 +50,7 @@ const ids = (resposta) => resposta.body.carrinhos.map((x) => x.cliente.nome_exib
 describe('carrinhos abandonados', () => {
     test('preparação: carrinhos com idades diferentes', async () => {
         await guardar(c.antigo, [{ id_produto: p.a, quantidade: 2 }, { id_produto: p.b, quantidade: 3 }], 10);
-        await guardar(c.recente, [{ id_produto: p.a, quantidade: 1 }], 1);
+        await guardar(c.recente, [{ id_produto: p.a, quantidade: 1 }], 0, 10);
         await guardar(c.semFone, [{ id_produto: p.b, quantidade: 4 }], 5);
         await guardar(c.vazio, [], 20);
         await guardar(c.comPedido, [{ id_produto: p.a, quantidade: 1 }], 8);
@@ -64,9 +66,9 @@ describe('carrinhos abandonados', () => {
         await request(app).patch(`/api/v1/carrinhos-abandonados/${c.antigo.usuario.id_usuario}/contatado`).set('Authorization', cliente.auth).expect(403);
     });
 
-    test('lista o abandonado (parado há 3 dias ou mais, com itens, sem pedido depois), do mais recente ao mais antigo', async () => {
+    test('lista o abandonado (parado há 30 minutos ou mais, com itens, sem pedido depois), do mais recente ao mais antigo', async () => {
         const resposta = await listar().expect(200);
-        assert.equal(resposta.body.dias, 3);
+        assert.equal(resposta.body.minutos, 30);
         assert.deepEqual(ids(resposta), ['Mercado SemFone Ltda', 'Mercado Antigo Ltda']);
         assert.deepEqual(resposta.body.paginacao, { total: 2, pagina: 1, limite: 20, total_paginas: 1 });
 
@@ -76,6 +78,7 @@ describe('carrinhos abandonados', () => {
         assert.equal(antigo.cliente.telefone, '35999991234');
         assert.equal(antigo.cliente.email, c.antigo.usuario.email);
         assert.equal(antigo.dias_parado, 10);
+        assert.equal(antigo.minutos_parado, 10 * 24 * 60 + 1);
         assert.equal(antigo.total_unidades, 5);
         assert.deepEqual(antigo.itens, [
             { id_produto: p.a, sku: 'AB-A', nome: 'Produto A', quantidade: 2 },
@@ -99,23 +102,35 @@ describe('carrinhos abandonados', () => {
         assert.equal(linkWhatsapp('123', 'X'), null);
     });
 
-    test('filtros dias, busca e paginação', async () => {
+    test('filtros minutos, dias, busca e paginação', async () => {
         assert.deepEqual(ids(await listar('?dias=7').expect(200)), ['Mercado Antigo Ltda']);
-        assert.deepEqual(ids(await listar('?dias=1').expect(200)), ['Mercado Recente Ltda', 'Mercado SemFone Ltda', 'Mercado Antigo Ltda']);
+        assert.deepEqual(ids(await listar('?dias=1').expect(200)), ['Mercado SemFone Ltda', 'Mercado Antigo Ltda']);
+        // O carrinho recente está parado há 11 minutos: entra com um corte menor e fica de fora com o padrão (30).
+        assert.deepEqual(ids(await listar('?minutos=5').expect(200)), ['Mercado Recente Ltda', 'Mercado SemFone Ltda', 'Mercado Antigo Ltda']);
+        assert.deepEqual(ids(await listar('?minutos=30').expect(200)), ['Mercado SemFone Ltda', 'Mercado Antigo Ltda']);
+        // "minutos" vale mais que "dias" quando os dois vêm.
+        assert.deepEqual(ids(await listar('?dias=7&minutos=5').expect(200)), ['Mercado Recente Ltda', 'Mercado SemFone Ltda', 'Mercado Antigo Ltda']);
         assert.deepEqual(ids(await listar('?busca=antigo').expect(200)), ['Mercado Antigo Ltda']);
         assert.deepEqual(ids(await listar('?busca=11.222.333').expect(200)), ['Mercado Antigo Ltda']);
         assert.deepEqual(ids(await listar('?busca=zzz').expect(200)), []);
         const pagina = await listar('?limite=1&pagina=2').expect(200);
         assert.deepEqual(ids(pagina), ['Mercado Antigo Ltda']);
         assert.equal(pagina.body.paginacao.total_paginas, 2);
-        for (const query of ['?dias=0', '?dias=abc', '?contatado=talvez', '?limite=0']) await listar(query).expect(400);
+        for (const query of ['?dias=0', '?dias=abc', '?minutos=0', '?minutos=abc', '?minutos=525601', '?contatado=talvez', '?limite=0']) await listar(query).expect(400);
     });
 
-    test('a configuração carrinho_abandonado_dias muda o corte', async () => {
-        const url = '/api/v1/configuracoes/carrinho_abandonado_dias';
-        for (const invalido of [0, 400, 'x', 1.5]) await request(app).put(url).set('Authorization', equipe.auth).send({ valor: invalido }).expect(422);
-        await request(app).put(url).set('Authorization', equipe.auth).send({ valor: 7 }).expect(200);
+    test('a configuração carrinho_abandonado_minutos muda o corte (padrão 30)', async () => {
+        const url = '/api/v1/configuracoes/carrinho_abandonado_minutos';
+        const configs = (await request(app).get('/api/v1/configuracoes').set('Authorization', equipe.auth).expect(200)).body.configuracoes;
+        assert.equal(configs.find((x) => x.chave === 'carrinho_abandonado_minutos').valor, '30');
+        for (const invalido of [0, 525601, 'x', 1.5, true]) await request(app).put(url).set('Authorization', equipe.auth).send({ valor: invalido }).expect(422);
+        // 7 dias (10.080 minutos): só o de 10 dias continua abandonado.
+        await request(app).put(url).set('Authorization', equipe.auth).send({ valor: 7 * 24 * 60 }).expect(200);
         assert.deepEqual(ids(await listar().expect(200)), ['Mercado Antigo Ltda']);
+        assert.equal((await listar().expect(200)).body.minutos, 7 * 24 * 60);
+        // 5 minutos: o carrinho de 11 minutos também entra.
+        await request(app).put(url).set('Authorization', equipe.auth).send({ valor: 5 }).expect(200);
+        assert.equal((await listar().expect(200)).body.carrinhos.length, 3);
         await request(app).put(url).set('Authorization', equipe.auth).send({ valor: null }).expect(200);
         assert.equal((await listar().expect(200)).body.carrinhos.length, 2);
     });
@@ -161,6 +176,17 @@ describe('carrinhos abandonados', () => {
         const resposta = await listar('?contatado=false').expect(200);
         assert.ok(ids(resposta).includes('Mercado Antigo Ltda'));
         assert.equal(resposta.body.carrinhos.find((x) => x.cliente.nome_exibicao === 'Mercado Antigo Ltda').total_unidades, 9);
+    });
+
+    test('o corte padrão é de 30 minutos: 40 minutos abandona, 20 minutos ainda não', async () => {
+        await guardar(c.recente, [{ id_produto: p.a, quantidade: 1 }], 0, 20);
+        assert.ok(!ids(await listar().expect(200)).includes('Mercado Recente Ltda'));
+        await guardar(c.recente, [{ id_produto: p.a, quantidade: 1 }], 0, 40);
+        const resposta = await listar().expect(200);
+        assert.ok(ids(resposta).includes('Mercado Recente Ltda'));
+        const recente = resposta.body.carrinhos.find((x) => x.cliente.nome_exibicao === 'Mercado Recente Ltda');
+        assert.ok(recente.minutos_parado >= 41 && recente.minutos_parado <= 43);
+        assert.equal(recente.dias_parado, 0);
     });
 
     test('cliente desativado não aparece', async () => {

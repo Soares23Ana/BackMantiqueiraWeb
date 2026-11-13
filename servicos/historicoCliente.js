@@ -3,7 +3,8 @@ const sequelize = require('../db/conn');
 const { Produto, Carrinho, Evento } = require('../models');
 const configuracoes = require('./configuracoes');
 
-const DIA = 24 * 60 * 60 * 1000;
+const MINUTO = 60 * 1000;
+const DIA = 24 * 60 * MINUTO;
 
 // Eventos de uso do cliente que entram no histórico (a visita anônima não: ela não é do cliente).
 const EVENTOS_DO_CLIENTE = ['produto_visto', 'carrinho_adicionar', 'checkout_iniciado', 'pedido_concluido'];
@@ -41,8 +42,8 @@ const FONTES = `
     FROM carrinhos c WHERE c.id_usuario = :id AND JSON_LENGTH(c.itens) > 0
 
     UNION ALL
-    SELECT 'carrinho', 'carrinho_abandonado', DATE_ADD(c.atualizado_em, INTERVAL :diasAbandono DAY), c.id_carrinho,
-           NULL, NULL, :diasAbandono, NULL
+    SELECT 'carrinho', 'carrinho_abandonado', DATE_ADD(c.atualizado_em, INTERVAL :minutosAbandono MINUTE), c.id_carrinho,
+           NULL, NULL, :minutosAbandono, NULL
     FROM carrinhos c
     WHERE c.id_usuario = :id AND JSON_LENGTH(c.itens) > 0 AND c.atualizado_em <= :corteAbandono
       AND NOT EXISTS (SELECT 1 FROM pedidos p WHERE p.id_cliente = c.id_usuario AND p.data_pedido > c.atualizado_em)
@@ -61,6 +62,14 @@ const FONTES = `
     FROM notas_cliente n LEFT JOIN usuarios a ON a.id_usuario = n.id_autor WHERE n.id_cliente = :id`;
 
 const plural = (n, singular, pluralTexto) => `${n} ${Number(n) === 1 ? singular : pluralTexto}`;
+
+// Tempo parado em texto curto: 30 minutos, 2 horas, 3 dias (usa a maior unidade que divide certo).
+function textoTempo(minutos) {
+    const n = Number(minutos);
+    if (n % 1440 === 0) return plural(n / 1440, 'dia', 'dias');
+    if (n % 60 === 0) return plural(n / 60, 'hora', 'horas');
+    return plural(n, 'minuto', 'minutos');
+}
 
 // Texto final de uma entrada do histórico.
 function montarEntrada(linha) {
@@ -100,7 +109,7 @@ function montarEntrada(linha) {
             return {
                 ...base,
                 titulo: 'Carrinho abandonado',
-                detalhe: `Parado há ${plural(linha.n, 'dia', 'dias')} ou mais, sem pedido.`,
+                detalhe: `Parado há ${textoTempo(linha.n)} ou mais, sem pedido.`,
                 referencia: { tipo: 'carrinho', id: linha.ref }
             };
         case 'carrinho_contato':
@@ -144,12 +153,12 @@ function montarEntrada(linha) {
  * Filtros: tipo (um dos TIPOS_FILTRO), de e ate (datas já convertidas em Date; ate é exclusivo).
  */
 async function listarHistorico(idCliente, { tipo, de, ate, limite, offset }) {
-    const dias = await configuracoes.obterNumero('carrinho_abandonado_dias');
+    const minutos = await configuracoes.obterNumero('carrinho_abandonado_minutos');
     const replacements = {
         id: idCliente,
         eventos: EVENTOS_DO_CLIENTE,
-        diasAbandono: dias,
-        corteAbandono: new Date(Date.now() - dias * DIA)
+        minutosAbandono: minutos,
+        corteAbandono: new Date(Date.now() - minutos * MINUTO)
     };
     const filtros = [];
     if (tipo) {
@@ -181,7 +190,7 @@ async function listarHistorico(idCliente, { tipo, de, ate, limite, offset }) {
 async function obterCarrinhoAtual(idCliente) {
     const carrinho = await Carrinho.findOne({ where: { id_usuario: idCliente } });
     if (!carrinho || carrinho.itens.length === 0) return null;
-    const dias = await configuracoes.obterNumero('carrinho_abandonado_dias');
+    const minutos = await configuracoes.obterNumero('carrinho_abandonado_minutos');
     const produtos = await Produto.findAll({
         where: { id_produto: { [Op.in]: carrinho.itens.map((item) => item.id_produto) } },
         attributes: ['id_produto', 'sku', 'nome']
@@ -191,6 +200,7 @@ async function obterCarrinhoAtual(idCliente) {
         'SELECT COUNT(*) AS pedidos FROM pedidos WHERE id_cliente = :id AND data_pedido > :atualizado',
         { replacements: { id: idCliente, atualizado: carrinho.atualizado_em }, type: QueryTypes.SELECT }
     );
+    const minutosParado = Math.floor((Date.now() - carrinho.atualizado_em.getTime()) / MINUTO);
     const diasParado = Math.floor((Date.now() - carrinho.atualizado_em.getTime()) / DIA);
     const [contato] = await sequelize.query(
         'SELECT MAX(criado_em) AS contatado_em FROM carrinho_contatos WHERE id_usuario = :id AND criado_em >= :atualizado',
@@ -205,8 +215,9 @@ async function obterCarrinhoAtual(idCliente) {
         })),
         total_unidades: carrinho.itens.reduce((soma, item) => soma + item.quantidade, 0),
         ultimo_movimento_em: carrinho.atualizado_em,
+        minutos_parado: minutosParado,
         dias_parado: diasParado,
-        abandonado: diasParado >= dias && Number(pedidos) === 0,
+        abandonado: minutosParado >= minutos && Number(pedidos) === 0,
         contatado_em: contato.contatado_em
     };
 }

@@ -5,16 +5,17 @@ const { somenteDigitos, normalizarCnpj } = require('../lib/cnpj');
 const { apresentarCliente } = require('../lib/apresentacao');
 const configuracoes = require('./configuracoes');
 
-const DIA = 24 * 60 * 60 * 1000;
+const MINUTO = 60 * 1000;
+const DIA = 24 * 60 * MINUTO;
 
 /**
- * Carrinho abandonado: tem itens, está parado há pelo menos N dias (configuração "carrinho_abandonado_dias",
- * padrão 3) e o cliente (ativo) não fez pedido depois da última atualização do carrinho.
+ * Carrinho abandonado: tem itens, está parado há pelo menos N minutos (configuração "carrinho_abandonado_minutos",
+ * padrão 30) e o cliente (ativo) não fez pedido depois da última atualização do carrinho.
  * "Contatado": a equipe registrou um contato depois da última atualização do carrinho (um carrinho mexido de novo
  * e abandonado outra vez volta a ficar sem contato).
  */
-function montarCondicoes({ dias, busca, contatado }) {
-    const replacements = { corte: new Date(Date.now() - dias * DIA) };
+function montarCondicoes({ minutos, busca, contatado }) {
+    const replacements = { corte: new Date(Date.now() - minutos * MINUTO) };
     const condicoes = [
         'JSON_LENGTH(c.itens) > 0',
         'c.atualizado_em <= :corte',
@@ -39,13 +40,13 @@ function montarCondicoes({ dias, busca, contatado }) {
 
 const FROM = 'FROM carrinhos c JOIN usuarios u ON u.id_usuario = c.id_usuario';
 
-async function diasDeCorte(dias) {
-    return dias || configuracoes.obterNumero('carrinho_abandonado_dias');
+async function minutosDeCorte(minutos) {
+    return minutos || configuracoes.obterNumero('carrinho_abandonado_minutos');
 }
 
 // Quantidade de carrinhos abandonados (usada no contador do painel).
-async function contarAbandonados({ dias, busca, contatado } = {}) {
-    const { where, replacements } = montarCondicoes({ dias: await diasDeCorte(dias), busca, contatado });
+async function contarAbandonados({ minutos, busca, contatado } = {}) {
+    const { where, replacements } = montarCondicoes({ minutos: await minutosDeCorte(minutos), busca, contatado });
     const [linha] = await sequelize.query(`SELECT COUNT(*) AS total ${FROM} WHERE ${where}`, { replacements, type: QueryTypes.SELECT });
     return Number(linha.total);
 }
@@ -82,11 +83,11 @@ async function contatosRecentes(carrinhos) {
 
 /**
  * Lista paginada de carrinhos abandonados, do mais recente para o mais antigo.
- * Filtros: dias (substitui a configuração), busca (nome, razão social, e-mail, CNPJ) e contatado (true|false).
+ * Filtros: minutos (substitui a configuração), busca (nome, razão social, e-mail, CNPJ) e contatado (true|false).
  */
-async function listarAbandonados({ dias, busca, contatado, limite, offset }) {
-    const diasUsados = await diasDeCorte(dias);
-    const { where, replacements } = montarCondicoes({ dias: diasUsados, busca, contatado });
+async function listarAbandonados({ minutos, busca, contatado, limite, offset }) {
+    const minutosUsados = await minutosDeCorte(minutos);
+    const { where, replacements } = montarCondicoes({ minutos: minutosUsados, busca, contatado });
     const [linhas, total] = await Promise.all([
         sequelize.query(`
             SELECT c.id_carrinho, c.id_usuario, c.itens, c.atualizado_em,
@@ -128,6 +129,7 @@ async function listarAbandonados({ dias, busca, contatado, limite, offset }) {
                     email: cliente.email
                 },
                 ultimo_movimento_em: carrinho.atualizado_em,
+                minutos_parado: Math.floor((agora - new Date(carrinho.atualizado_em).getTime()) / MINUTO),
                 dias_parado: Math.floor((agora - new Date(carrinho.atualizado_em).getTime()) / DIA),
                 total_unidades: carrinho.itens.reduce((soma, item) => soma + item.quantidade, 0),
                 itens: carrinho.itens
@@ -144,13 +146,13 @@ async function listarAbandonados({ dias, busca, contatado, limite, offset }) {
             };
         }),
         total: Number(total[0].total),
-        dias: diasUsados
+        minutos: minutosUsados
     };
 }
 
-// O cliente tem um carrinho abandonado agora (pela configuração de dias)?
+// O cliente tem um carrinho abandonado agora (pela configuração de minutos)?
 async function temCarrinhoAbandonado(idCliente) {
-    const { where, replacements } = montarCondicoes({ dias: await diasDeCorte() });
+    const { where, replacements } = montarCondicoes({ minutos: await minutosDeCorte() });
     const [linha] = await sequelize.query(
         `SELECT COUNT(*) AS total ${FROM} WHERE ${where} AND c.id_usuario = :idCliente`,
         { replacements: { ...replacements, idCliente }, type: QueryTypes.SELECT }

@@ -3,14 +3,22 @@ const { ErroApi } = require('../lib/erros');
 const { lerPaginacao, montarPaginacao } = require('../lib/paginacao');
 const { listarAbandonados, temCarrinhoAbandonado } = require('../servicos/carrinhosAbandonados');
 
-// GET /carrinhos-abandonados (equipe). Filtros: dias (1 a 365), busca e contatado=true|false.
+// GET /carrinhos-abandonados (equipe). Filtros: minutos (1 a 525600) ou dias (1 a 365), busca e contatado=true|false.
 async function listar(req, res) {
     const paginacao = lerPaginacao(req.query, { limitePadrao: 20, limiteMaximo: 100 });
-    let dias;
+    let minutos;
     if (req.query.dias !== undefined) {
-        dias = Number(req.query.dias);
+        const dias = Number(req.query.dias);
         if (!Number.isSafeInteger(dias) || dias < 1 || dias > 365) {
             throw new ErroApi(400, 'FILTRO_INVALIDO', 'dias deve ser um inteiro de 1 a 365.');
+        }
+        minutos = dias * 24 * 60;
+    }
+    // "minutos" tem prioridade sobre "dias" quando os dois vêm.
+    if (req.query.minutos !== undefined) {
+        minutos = Number(req.query.minutos);
+        if (!Number.isSafeInteger(minutos) || minutos < 1 || minutos > 525600) {
+            throw new ErroApi(400, 'FILTRO_INVALIDO', 'minutos deve ser um inteiro de 1 a 525600.');
         }
     }
     const busca = typeof req.query.busca === 'string' ? req.query.busca.trim() : '';
@@ -24,9 +32,9 @@ async function listar(req, res) {
         }
         contatado = req.query.contatado === 'true';
     }
-    const resultado = await listarAbandonados({ dias, busca, contatado, limite: paginacao.limite, offset: paginacao.offset });
+    const resultado = await listarAbandonados({ minutos, busca, contatado, limite: paginacao.limite, offset: paginacao.offset });
     return res.status(200).json({
-        dias: resultado.dias,
+        minutos: resultado.minutos,
         carrinhos: resultado.carrinhos,
         paginacao: montarPaginacao(resultado.total, paginacao)
     });
