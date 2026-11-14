@@ -42,7 +42,7 @@ function validarAmbiente(env) {
 
     const nomeBanco = teste
         ? env.DB_NAME_TEST || 'mantiqueira_test'
-        : env.DB_NAME || 'mantiqueira_db';
+        : env.DB_NAME || 'mantiqueira_final';
     if (!/^\w{1,64}$/.test(nomeBanco)) {
         erros.push('O nome do banco deve conter apenas letras, números e _.');
     }

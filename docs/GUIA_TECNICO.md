@@ -31,7 +31,7 @@ Copie o `.env.example` para `.env`. A API **valida as variáveis ao iniciar** e 
 | Variável | Regra |
 |---|---|
 | `JWT_SECRET` | Sempre. Pelo menos 32 caracteres, diferente do valor de exemplo e de cada ambiente. |
-| `DB_HOST`, `DB_USER`, `DB_PASSWORD`, `DB_NAME` | Obrigatórias em produção. Em desenvolvimento, o padrão é `localhost`, `root`, senha vazia e `mantiqueira_db`. |
+| `DB_HOST`, `DB_USER`, `DB_PASSWORD`, `DB_NAME` | Obrigatórias em produção. Em desenvolvimento, o padrão é `localhost`, `root`, senha vazia e `mantiqueira_final`. |
 
 Para gerar um `JWT_SECRET`:
 ```bash
