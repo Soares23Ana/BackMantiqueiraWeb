@@ -19,6 +19,7 @@ Detalhes de configuração e operação da API. O passo a passo para rodar o pro
 14. [Fotos enviadas (uploads)](#14-fotos-enviadas-uploads)
 15. [Cópia de imagem a partir de um link](#15-cópia-de-imagem-a-partir-de-um-link)
 16. [Envio em massa de fotos por ZIP](#16-envio-em-massa-de-fotos-por-zip)
+17. [Dados pessoais e privacidade (LGPD)](#17-dados-pessoais-e-privacidade-lgpd)
 
 ---
 
@@ -460,3 +461,43 @@ Como o servidor faz a chamada, a rota só pode alcançar a internet pública. O 
 - **Memória:** o ZIP é gravado em disco (pasta oculta `.lote` dentro de `UPLOADS_DIR`, e não em `/tmp`, que em algumas distribuições é memória) e apagado ao fim da requisição; sobras de uma queda (arquivos com mais de 1 hora em `.lote`) são removidas na subida da API e no início de cada lote. A pasta e os demais arquivos ocultos nunca são servidos, contados, copiados pelo `uploads:mover` nem incluídos no backup. O diretório do ZIP é lido sem carregar o arquivo; cada imagem é descompactada e tratada uma por vez (`lib/zip.js`).
 - **Relatório (200):** `total_arquivos`, `aplicadas`, `ignoradas_ja_tem_imagem`, `sem_produto`, `formato_invalido`, `grande_demais`, `duplicadas`, `falhas` (nomes), `arquivos_ignorados_do_sistema` e `listas_cortadas`. Cada lista de nomes tem no máximo 200 itens; se passar, `listas_cortadas` diz quais. Uma imagem com problema não derruba as outras.
 - Usa o mesmo limitador das rotas de importação: o limite global por IP de `/api/v1` (as rotas de importação não têm limitador próprio).
+
+---
+
+## 17. Dados pessoais e privacidade (LGPD)
+
+Esta seção descreve o que a API guarda e as medidas adotadas. Ela **não afirma conformidade total** com a LGPD: várias decisões dependem da empresa (veja [Pendências para uso real](#pendências-para-uso-real-pela-empresa)).
+
+### Dados guardados e finalidade
+
+| Dado | Onde fica | Finalidade |
+|---|---|---|
+| Nome, razão social, e-mail, CNPJ e telefone | `usuarios` | Cadastro e contato comercial |
+| Endereços de entrega | `enderecos` | Entrega dos pedidos |
+| Senha | `usuarios`, **somente o hash bcrypt** (a senha em si nunca é guardada) | Login |
+| Pedidos, carrinho e favoritos | `pedidos`, `itens_pedido`, `carrinhos`, `favoritos` | Compra, histórico e "repetir pedido" |
+| Eventos de navegação | `eventos` | Métricas: identificador de sessão anônimo, termo buscado, produto visto; `id_usuario` só se a pessoa estiver logada. **Não há IP nem user-agent.** |
+| Auditoria | `auditoria` | Quem fez o quê, com os campos alterados. Chaves de senha, hash, token e segredo nunca entram |
+| Notas da equipe sobre clientes e registro de contato de carrinho abandonado | `notas_cliente`, `carrinho_contatos` | Atendimento: texto livre, autor e data |
+
+O CNPJ identifica pessoa jurídica, mas **e-mail, telefone e nome de contato podem ser dados de pessoas físicas**, e o texto livre das notas e das observações de contato também pode conter dados pessoais.
+
+### Medidas já existentes
+- **Senha:** bcrypt. A API nunca devolve o hash.
+- **Token JWT:** tem validade (8 h, ou `JWT_EXPIRES_IN`) e é conferido no banco a cada requisição: é recusado se o usuário foi desativado ou se a senha foi trocada depois da emissão do token.
+- **Acesso:** a lista, os detalhes, o histórico e as notas de clientes são só da equipe (`/clientes/...`). O cliente acessa apenas a própria conta (`/minha-conta`) e os próprios pedidos; o pedido de outro cliente aparece como inexistente. Eventos são gravados sem IP.
+- **Logs:** cada requisição registra apenas método, rota **sem query string**, status, duração e id do usuário, além do id da requisição. Não há corpo, senha nem IP.
+- **Segredos:** o `.env` fica fora do Git. Cabeçalhos de segurança com `helmet` e limites de requisição por IP (e por usuário em rotas específicas).
+- **HTTPS:** fica por conta da infraestrutura (proxy, balanceador); a API não termina TLS.
+
+### Direitos do titular: como funciona hoje
+- **Correção:** o cliente corrige nome, e-mail, telefone e endereços em `/minha-conta`. CNPJ e razão social só a equipe altera (`PUT /clientes/:id`).
+- **Desativação:** a equipe desativa um cliente com `PUT /clientes/:id` e `ativo=false`. O cliente deixa de entrar e o histórico de pedidos é preservado.
+- **Exclusão definitiva: não existe endpoint.** Se o titular pedir a eliminação dos dados, o procedimento é **manual**, feito por quem administra o banco, e **deve ser registrado** (quem pediu, quando, o que foi apagado ou anonimizado e por quem). Atenção aos pedidos, que têm valor de registro comercial, e às notas e à auditoria, que podem citar a pessoa.
+- **Acesso e portabilidade:** não há exportação automática dos dados do titular; também é uma consulta manual no banco.
+
+### Pendências para uso real pela empresa
+Decisões da empresa, não do código:
+1. Definir quem é o **responsável pelo tratamento** (e o contato do encarregado, se houver).
+2. Definir o **prazo de retenção** dos dados (clientes inativos, eventos, auditoria, notas) e como a limpeza será feita; hoje só os eventos têm limpeza automática (job `limpeza-eventos`, apaga o que tem mais de 12 meses).
+3. Publicar o texto da **política de privacidade** no site e, se couber, o aviso no cadastro.

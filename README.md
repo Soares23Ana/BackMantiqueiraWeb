@@ -39,11 +39,19 @@ npm run seed:dev        # usuários de teste
 npm run seed:demo       # banners, campanha, contatos e pedidos de demonstração
 npm run dev             # API em http://localhost:3000 (a API fica em /api/v1)
 npm test                # testes (usam o banco mantiqueira_test, apagado e recriado a cada execução)
+npm run uploads:mover   # copia as fotos de publico/uploads para a pasta definida em UPLOADS_DIR
+npm run backup:fotos    # gera um ZIP com a cópia de segurança das fotos enviadas
 ```
 
 Os seeds podem rodar várias vezes. O `seed:dev` e o `seed:demo` se recusam a rodar em produção ou contra o RDS.
 
 Em produção (ex.: AWS), não use os seeds de teste: crie o primeiro administrador com `npm run criar-admin`, como descrito em [Primeiro acesso em produção](docs/GUIA_TECNICO.md#10-primeiro-acesso-em-produção).
+
+## Fotos dos produtos
+* As fotos enviadas ficam na pasta definida por `UPLOADS_DIR` (em produção, fora do projeto).
+* O gestor troca a foto de um produto enviando o arquivo (`POST /produtos/:id/imagem`), colando o link da imagem (`POST /produtos/:id/imagem/link`, com proteção contra acesso à rede interna) ou enviando um ZIP com várias fotos nomeadas pelo SKU (`POST /produtos/imagens/lote`).
+* A cópia de segurança é gerada por `npm run backup:fotos`.
+* Detalhes nas seções [14](docs/GUIA_TECNICO.md#14-fotos-enviadas-uploads), [15](docs/GUIA_TECNICO.md#15-cópia-de-imagem-a-partir-de-um-link) e [16](docs/GUIA_TECNICO.md#16-envio-em-massa-de-fotos-por-zip) do guia técnico.
 
 ## Usuários de teste
 Criados pelo `seed:dev`, todos com a senha `Mantiqueira@2026`.
@@ -59,5 +67,5 @@ Criados pelo `seed:dev`, todos com a senha `Mantiqueira@2026`.
 
 ## Documentação
 * [`docs/API.md`](docs/API.md): contrato completo da API, com convenções, exemplos de requisição e resposta de cada endpoint e limitações conhecidas.
-* [`docs/GUIA_TECNICO.md`](docs/GUIA_TECNICO.md): variáveis opcionais, migrations, seeds, servidor, CORS, importação de CSV, jobs agendados e saúde.
+* [`docs/GUIA_TECNICO.md`](docs/GUIA_TECNICO.md): variáveis opcionais, migrations, seeds, servidor, CORS, importação de CSV, jobs agendados, saúde, fotos enviadas, backup das fotos e dados pessoais e privacidade (LGPD).
 * [`docs/MAPA_FRONT_API.md`](docs/MAPA_FRONT_API.md): cada tela do front, os endpoints que ela usa e o que o front precisa mudar.

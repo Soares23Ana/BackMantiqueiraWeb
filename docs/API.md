@@ -919,8 +919,11 @@ Roda um job na hora, com a mesma trava do MySQL do agendamento. `:nome`: `catalo
 18. Desativar uma categoria ou marca não esconde os produtos dela: ela some de `GET /categorias` / `GET /marcas`, mas os produtos continuam na vitrine e ela ainda aparece nas contagens de `GET /produtos/filtros`. Para tirar produtos da vitrine, desative os produtos.
 19. `DELETE /produtos/:id` apenas desativa; não existe exclusão definitiva de produto. Já a exclusão de banner é definitiva e apaga a imagem.
 
+**Dados pessoais**
+20. Não existe endpoint de exclusão definitiva de cliente. `PUT /clientes/:id` com `ativo=false` desativa a conta e preserva o histórico de pedidos. Se o titular pedir a eliminação dos dados, o procedimento é manual, feito por quem administra o banco, e deve ser registrado (veja o [guia técnico](GUIA_TECNICO.md#17-dados-pessoais-e-privacidade-lgpd)).
+
 **Ferramentas**
-20. Testando com `curl` no Windows, acentos no corpo da requisição podem chegar fora do UTF-8 (`"Em Separação"` dá `422`). Use Insomnia/Postman ou envie o corpo de um arquivo UTF-8 (`--data-binary @arquivo.json`). O navegador não tem esse problema.
+21. Testando com `curl` no Windows, acentos no corpo da requisição podem chegar fora do UTF-8 (`"Em Separação"` dá `422`). Use Insomnia/Postman ou envie o corpo de um arquivo UTF-8 (`--data-binary @arquivo.json`). O navegador não tem esse problema.
 
 ---
 
