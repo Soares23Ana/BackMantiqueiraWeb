@@ -17,6 +17,7 @@ Detalhes de configuração e operação da API. O passo a passo para rodar o pro
 12. [Riscos aceitos](#12-riscos-aceitos)
 13. [Regras de negócio](#13-regras-de-negócio)
 14. [Fotos enviadas (uploads)](#14-fotos-enviadas-uploads)
+15. [Cópia de imagem a partir de um link](#15-cópia-de-imagem-a-partir-de-um-link)
 
 ---
 
@@ -417,3 +418,30 @@ unzip -n /caminho/backups-fotos/fotos-20260101-030000.zip -d "$UPLOADS_DIR"
 (`-n` não sobrescreve arquivos que já existem.) Não é preciso reiniciar a API.
 
 > **Atenção:** o backup na mesma máquina e no mesmo disco **não protege contra a perda da máquina** (disco corrompido, instância apagada). Leve uma cópia para fora, por exemplo enviando o ZIP mais recente para um bucket S3 (`aws s3 cp`) ou baixando-o periodicamente.
+
+---
+
+## 15. Cópia de imagem a partir de um link
+
+`POST /api/v1/produtos/:id/imagem/link` (equipe) recebe `{ "url": "https://..." }`, baixa a imagem no servidor, valida e **guarda uma cópia** em `UPLOADS_DIR`, com a mesma substituição, auditoria e exclusão da imagem anterior do upload comum. É a rota que guarda uma cópia: o cadastro e a edição do produto continuam aceitando uma URL externa em `imagem_url` e apenas guardam o endereço, sem baixar nada. A lógica de gravar, atualizar `imagem_url`, auditar e apagar a anterior está em `servicos/imagemProduto.js`.
+
+### Segurança da rota (SSRF)
+Como o servidor faz a chamada, a rota só pode alcançar a internet pública. O código está em `servicos/baixarImagem.js`:
+- Só `http` e `https`, até 2048 caracteres, sem usuário e senha na URL.
+- O nome é resolvido pela opção `lookup` da própria conexão, então o endereço validado é exatamente o usado para conectar (não há segunda resolução; isso impede rebinding de DNS). IPs escritos na URL são conferidos antes de conectar.
+- Bloqueia loopback, redes privadas, link-local (inclusive `169.254.169.254`, dos metadados da AWS), CGNAT, multicast, reservados e não especificados, em IPv4 e IPv6, inclusive IPv4 embutido em IPv6 (`::ffff:127.0.0.1`, NAT64, 6to4). Se um nome resolver para qualquer endereço interno, a conexão é recusada.
+- No máximo 3 redirecionamentos, cada um revalidado. Tempo total de 10 s e no máximo 5 MB (o download é interrompido ao passar disso). Só `Content-Type` JPEG, PNG, WEBP ou GIF **e** assinatura do arquivo conferida; SVG é recusado.
+- Não envia cookies nem cabeçalhos de autenticação. O conteúdo e os detalhes da resposta remota nunca voltam para quem chamou; os erros são `422` com `URL_INVALIDA`, `URL_NAO_PERMITIDA`, `IMAGEM_INVALIDA`, `IMAGEM_MUITO_GRANDE` ou `IMAGEM_INACESSIVEL`.
+- Limite de 30 requisições por minuto por usuário. A auditoria guarda a URL de origem **sem a query string** (links assinados podem conter tokens).
+- Nos testes (`NODE_ENV=test`), e só neles, o loopback pode ser liberado para um servidor HTTP local; em qualquer outro ambiente isso é impossível.
+
+### Para a infraestrutura
+- Exija **IMDSv2** na instância EC2 (`HttpTokens=required`) com limite de saltos em 1 (`HttpPutResponseHopLimit=1`), como defesa extra caso alguma proteção falhe:
+  ```bash
+  aws ec2 modify-instance-metadata-options --instance-id <id> --http-tokens required --http-put-response-hop-limit 1 --http-endpoint enabled
+  ```
+- Testes manuais (logado como equipe, com um produto existente). Todos devem ser **recusados** com `422 URL_NAO_PERMITIDA`:
+  - `{ "url": "http://169.254.169.254/latest/meta-data/" }`
+  - `{ "url": "http://localhost:3000/saude" }`
+  - `{ "url": "http://127.0.0.1" }`
+  - E, para conferir o caminho feliz, uma imagem pública (`https://...jpg`) deve ser aceita e servida em `/arquivos/uploads/...`.

@@ -1,7 +1,9 @@
 const { Op, UniqueConstraintError, ForeignKeyConstraintError } = require('sequelize');
 const sequelize = require('../db/conn');
 const { Produto, Categoria, Marca, MovimentacaoEstoque, Usuario } = require('../models');
-const { removerArquivo, removerUploadPorUrl, urlDoUpload } = require('../lib/uploads');
+const { removerArquivo } = require('../lib/uploads');
+const { aplicarImagemProduto } = require('../servicos/imagemProduto');
+const { baixarImagem, urlParaAuditoria } = require('../servicos/baixarImagem');
 const { ErroApi } = require('../lib/erros');
 const { ehEquipe } = require('../lib/perfis');
 const { lerPaginacao, montarPaginacao } = require('../lib/paginacao');
@@ -635,23 +637,26 @@ async function enviarImagem(req, res) {
         await removerArquivo(req.file.path);
         throw new ErroApi(404, 'PRODUTO_NAO_ENCONTRADO', 'Produto não encontrado.');
     }
-    const anterior = produto.imagem_url;
-    try {
-        await produto.update({ imagem_url: urlDoUpload(req.file.filename) });
-    } catch (erro) {
-        await removerArquivo(req.file.path);
-        throw erro;
+    await aplicarImagemProduto({ produto, nomeArquivo: req.file.filename, usuario: req.usuario });
+    return res.status(200).json({ mensagem: 'Imagem atualizada.', produto: apresentarProduto(produto, req.usuario, await lerLimiteFaixa()) });
+}
+
+// POST /produtos/:id/imagem/link { url } (equipe). O servidor baixa a imagem, valida e guarda uma cópia em UPLOADS_DIR,
+// com a mesma substituição, auditoria e exclusão da imagem anterior do upload comum.
+async function enviarImagemPorLink(req, res) {
+    const produto = await buscarProduto(req.params.id);
+    if (!produto) {
+        throw new ErroApi(404, 'PRODUTO_NAO_ENCONTRADO', 'Produto não encontrado.');
     }
-    await registrarAuditoria({
+    const url = req.body && req.body.url;
+    const baixada = await baixarImagem(url);
+    await aplicarImagemProduto({
+        produto,
+        nomeArquivo: baixada.nomeArquivo,
         usuario: req.usuario,
-        acao: 'produto.editar',
-        entidade: 'produto',
-        idEntidade: produto.id_produto,
-        antes: { imagem_url: anterior },
-        depois: { imagem_url: produto.imagem_url }
+        // Só o endereço sem query string: links assinados podem conter tokens.
+        detalhe: { origem_url: urlParaAuditoria(url) }
     });
-    // Só apaga arquivos gerados pelo upload (nome UUID); imagens do front (/img/...) não ficam no servidor.
-    await removerUploadPorUrl(anterior);
     return res.status(200).json({ mensagem: 'Imagem atualizada.', produto: apresentarProduto(produto, req.usuario, await lerLimiteFaixa()) });
 }
 
@@ -667,6 +672,7 @@ module.exports = {
     listarMovimentacoes,
     desativar,
     enviarImagem,
+    enviarImagemPorLink,
     apresentarProduto,
     INCLUDES
 };

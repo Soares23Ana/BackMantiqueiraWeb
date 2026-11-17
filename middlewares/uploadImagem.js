@@ -1,6 +1,7 @@
 const fsPromises = require('node:fs/promises');
 const multer = require('multer');
 const logger = require('../lib/logger');
+const { assinaturaConfere, lerCabecalho, LIMITE_IMAGEM_BYTES } = require('../lib/imagem');
 const { PASTA_UPLOADS, EXTENSAO_POR_TIPO: extensoesPorTipo, garantirPasta, novoNomeDeUpload } = require('../lib/uploads');
 
 const armazenamento = multer.diskStorage({
@@ -14,7 +15,7 @@ const armazenamento = multer.diskStorage({
 
 const multerImagem = multer({
     storage: armazenamento,
-    limits: { fileSize: 5 * 1024 * 1024, files: 1 },
+    limits: { fileSize: LIMITE_IMAGEM_BYTES, files: 1 },
     fileFilter: (req, arquivo, callback) => {
         if (!extensoesPorTipo[arquivo.mimetype]) {
             return callback(new Error('Formato inválido. Envie uma imagem JPEG, PNG, WEBP ou GIF.'));
@@ -41,28 +42,9 @@ async function verificarConteudoImagem(req, res, next) {
     }
 
     try {
-        const arquivo = await fsPromises.open(req.file.path, 'r');
-        const cabecalho = Buffer.alloc(12);
-        let bytesLidos;
-        try {
-            ({ bytesRead: bytesLidos } = await arquivo.read(cabecalho, 0, cabecalho.length, 0));
-        } finally {
-            await arquivo.close();
-        }
-
         // Não confia apenas no MIME informado pelo cliente; confere a assinatura do arquivo.
-        const conteudoValido =
-            (req.file.mimetype === 'image/jpeg' &&
-                cabecalho[0] === 0xff && cabecalho[1] === 0xd8 && cabecalho[2] === 0xff) ||
-            (req.file.mimetype === 'image/png' &&
-                cabecalho.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) ||
-            (req.file.mimetype === 'image/gif' &&
-                ['GIF87a', 'GIF89a'].includes(cabecalho.toString('ascii', 0, 6))) ||
-            (req.file.mimetype === 'image/webp' &&
-                cabecalho.toString('ascii', 0, 4) === 'RIFF' &&
-                cabecalho.toString('ascii', 8, 12) === 'WEBP');
-
-        if (bytesLidos < 12 || !conteudoValido) {
+        const cabecalho = await lerCabecalho(req.file.path);
+        if (!assinaturaConfere(req.file.mimetype, cabecalho)) {
             await fsPromises.unlink(req.file.path);
             return res.status(400).json({ mensagem: 'O arquivo enviado não é uma imagem válida.' });
         }

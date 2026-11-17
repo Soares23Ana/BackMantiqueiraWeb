@@ -4,6 +4,7 @@ const produtoControlador = require('../controllers/produtoControlador');
 const autenticarToken = require('../middlewares/authMiddleware');
 const { autenticacaoOpcional } = require('../middlewares/authMiddleware');
 const { exigirEquipe } = require('../middlewares/roleMiddleware');
+const { limitadorImagemLink } = require('../middlewares/seguranca');
 const { receberImagem, verificarConteudoImagem } = require('../middlewares/uploadImagem');
 const { receberPlanilha } = require('../middlewares/uploadPlanilha');
 const importacaoControlador = require('../controllers/importacaoControlador');
@@ -27,6 +28,8 @@ router.put('/:id', ...gestao, produtoControlador.atualizarCompleto);
 router.patch('/:id', ...gestao, produtoControlador.atualizarParcial);
 router.delete('/:id', ...gestao, produtoControlador.desativar);
 router.post('/:id/imagem', ...gestao, receberImagem, verificarConteudoImagem, produtoControlador.enviarImagem);
+
+router.post('/:id/imagem/link', ...gestao, limitadorImagemLink, produtoControlador.enviarImagemPorLink);
 
 router.patch('/:id/estoque', ...gestao, produtoControlador.ajustarEstoque);
 router.get('/:id/movimentacoes', ...gestao, produtoControlador.listarMovimentacoes);

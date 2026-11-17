@@ -67,6 +67,16 @@ const limitadorCnpj = rateLimit({
     message: respostaLimite
 });
 
+// Cópia de imagem a partir de um link (POST /produtos/:id/imagem/link): por usuário, porque a rota faz chamadas externas.
+const limitadorImagemLink = rateLimit({
+    windowMs: 60 * 1000,
+    limit: 30,
+    keyGenerator: (req) => `usuario:${req.usuario.id ?? req.usuario.id_usuario}`,
+    standardHeaders: 'draft-8',
+    legacyHeaders: false,
+    message: respostaLimite
+});
+
 // Enquanto a primeira conexão com o banco não acontece, a API responde 503 em vez de erros genéricos.
 function exigirBanco(req, res, next) {
     if (estado.conectado) {
@@ -120,6 +130,6 @@ function tratarErros(erro, req, res, next) {
 }
 
 module.exports = {
-    limitadorGlobal, limitadorLogin, limitadorCadastro, limitadorEventos, limitadorCep, limitadorCnpj,
+    limitadorGlobal, limitadorLogin, limitadorCadastro, limitadorEventos, limitadorCep, limitadorCnpj, limitadorImagemLink,
     exigirBanco, rotaNaoEncontrada, tratarErros
 };
