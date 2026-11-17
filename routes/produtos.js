@@ -6,6 +6,7 @@ const { autenticacaoOpcional } = require('../middlewares/authMiddleware');
 const { exigirEquipe } = require('../middlewares/roleMiddleware');
 const { limitadorImagemLink } = require('../middlewares/seguranca');
 const { receberImagem, verificarConteudoImagem } = require('../middlewares/uploadImagem');
+const { receberZip } = require('../middlewares/uploadZip');
 const { receberPlanilha } = require('../middlewares/uploadPlanilha');
 const importacaoControlador = require('../controllers/importacaoControlador');
 
@@ -18,6 +19,8 @@ router.get('/filtros', autenticacaoOpcional, produtoControlador.filtrosDisponive
 
 // Importação de catálogo por planilha, .csv ou .xlsx (antes de "/:id" para "importacoes" não ser lido como id).
 router.post('/importar', ...gestao, receberPlanilha, importacaoControlador.importar);
+// Envio em massa de fotos por ZIP (antes de "/:id"). Mesmo limitador das rotas de importação: o global de /api/v1.
+router.post('/imagens/lote', ...gestao, receberZip, produtoControlador.enviarImagensEmLote);
 router.get('/importacoes', ...gestao, importacaoControlador.listar);
 router.get('/importacoes/:id', ...gestao, importacaoControlador.obter);
 

@@ -2,6 +2,7 @@ const { Op, UniqueConstraintError, ForeignKeyConstraintError } = require('sequel
 const sequelize = require('../db/conn');
 const { Produto, Categoria, Marca, MovimentacaoEstoque, Usuario } = require('../models');
 const { removerArquivo } = require('../lib/uploads');
+const { aplicarImagensEmLote } = require('../servicos/imagensEmLote');
 const { aplicarImagemProduto } = require('../servicos/imagemProduto');
 const { baixarImagem, urlParaAuditoria } = require('../servicos/baixarImagem');
 const { ErroApi } = require('../lib/erros');
@@ -641,6 +642,21 @@ async function enviarImagem(req, res) {
     return res.status(200).json({ mensagem: 'Imagem atualizada.', produto: apresentarProduto(produto, req.usuario, await lerLimiteFaixa()) });
 }
 
+// POST /produtos/imagens/lote (equipe, multipart: "arquivo" = .zip, "substituir" = sim|nao). O nome de cada foto, sem a
+// extensão, é o SKU do produto (ou um sku_antigo do catálogo inicial). Devolve o relatório do que foi aplicado e do que foi ignorado.
+async function enviarImagensEmLote(req, res) {
+    if (!req.file) {
+        throw new ErroApi(422, 'VALIDACAO', 'O arquivo .zip é obrigatório (campo "arquivo").');
+    }
+    const bruto = req.body && req.body.substituir;
+    const texto = bruto === undefined || bruto === '' ? 'nao' : String(bruto).trim().toLowerCase();
+    if (!['sim', 'nao'].includes(texto)) {
+        throw new ErroApi(422, 'VALIDACAO', 'substituir deve ser "sim" ou "nao".');
+    }
+    const relatorio = await aplicarImagensEmLote({ caminhoZip: req.file.path, substituir: texto === 'sim', usuario: req.usuario });
+    return res.status(200).json({ mensagem: 'Envio em lote concluído.', relatorio });
+}
+
 // POST /produtos/:id/imagem/link { url } (equipe). O servidor baixa a imagem, valida e guarda uma cópia em UPLOADS_DIR,
 // com a mesma substituição, auditoria e exclusão da imagem anterior do upload comum.
 async function enviarImagemPorLink(req, res) {
@@ -673,6 +689,7 @@ module.exports = {
     desativar,
     enviarImagem,
     enviarImagemPorLink,
+    enviarImagensEmLote,
     apresentarProduto,
     INCLUDES
 };
