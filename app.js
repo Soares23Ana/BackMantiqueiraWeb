@@ -4,6 +4,7 @@ const helmet = require('helmet');
 const compression = require('compression');
 const path = require('node:path');
 const config = require('./config/ambiente');
+const { PASTA_UPLOADS } = require('./lib/uploads');
 const { identificarRequisicao, padronizarErros } = require('./middlewares/requisicao');
 const {
     limitadorGlobal,
@@ -76,6 +77,8 @@ function criarApp() {
     app.use(padronizarErros);
     app.get('/saude/detalhado', autenticarToken, exigirEquipe, saudeControlador.verificarSaudeDetalhada);
     app.use(express.json({ limit: config.limiteJson }));
+    // Os nomes são UUID e o conteúdo nunca muda: cache longo. A mesma URL de sempre, agora lida de UPLOADS_DIR.
+    app.use('/arquivos/uploads', express.static(PASTA_UPLOADS, { maxAge: '30d', immutable: true, index: false }));
     app.use('/arquivos', express.static(path.join(__dirname, 'publico')));
 
     const api = express.Router();

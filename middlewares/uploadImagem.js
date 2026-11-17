@@ -1,24 +1,14 @@
-const fs = require('node:fs');
 const fsPromises = require('node:fs/promises');
-const path = require('node:path');
-const { randomUUID } = require('node:crypto');
 const multer = require('multer');
 const logger = require('../lib/logger');
-
-const pastaUploads = path.join(__dirname, '..', 'publico', 'uploads');
-fs.mkdirSync(pastaUploads, { recursive: true });
-
-const extensoesPorTipo = {
-    'image/jpeg': '.jpg',
-    'image/png': '.png',
-    'image/webp': '.webp',
-    'image/gif': '.gif'
-};
+const { PASTA_UPLOADS, EXTENSAO_POR_TIPO: extensoesPorTipo, garantirPasta, novoNomeDeUpload } = require('../lib/uploads');
 
 const armazenamento = multer.diskStorage({
-    destination: (req, arquivo, callback) => callback(null, pastaUploads),
+    destination: (req, arquivo, callback) => {
+        garantirPasta().then(() => callback(null, PASTA_UPLOADS), callback);
+    },
     filename: (req, arquivo, callback) => {
-        callback(null, `${randomUUID()}${extensoesPorTipo[arquivo.mimetype]}`);
+        callback(null, novoNomeDeUpload(arquivo.mimetype));
     }
 });
 

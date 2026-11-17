@@ -108,6 +108,14 @@ function validarAmbiente(env) {
         expressoes[nome] = valor;
     }
 
+    if (env.UPLOADS_DIR !== undefined && !env.UPLOADS_DIR.trim()) {
+        erros.push('UPLOADS_DIR não pode ficar em branco (remova a variável para usar publico/uploads).');
+    }
+    const manterBackups = inteiro(env.BACKUP_FOTOS_MANTER, 7);
+    if (!(manterBackups >= 1 && manterBackups <= 365)) {
+        erros.push('BACKUP_FOTOS_MANTER deve ser um inteiro entre 1 e 365.');
+    }
+
     const niveisLog = ['debug', 'info', 'warn', 'error', 'silent'];
     const nivelLog = env.LOG_LEVEL || (teste ? 'silent' : 'info');
     if (!niveisLog.includes(nivelLog)) {
@@ -145,6 +153,15 @@ function validarAmbiente(env) {
                 pasta: path.resolve(env.IMPORTACAO_DIR || path.join(__dirname, '..', 'importacao')),
                 // Mapa da coluna "CATEGORIA - Cad. ERP" do portfólio para categoria e subcategoria (CSV categoria_erp;categoria;subcategoria).
                 mapaCategorias: path.resolve(env.MAPA_CATEGORIAS || path.join(__dirname, '..', 'seeds', 'mapa_categorias.csv'))
+            },
+            uploads: {
+                // Pasta das fotos enviadas. Em produção, deve ficar fora do projeto para sobreviver às publicações.
+                dir: path.resolve(env.UPLOADS_DIR || path.join(__dirname, '..', 'publico', 'uploads')),
+                definido: Boolean(env.UPLOADS_DIR)
+            },
+            backupFotos: {
+                dir: path.resolve(env.BACKUP_DIR || path.join(__dirname, '..', '..', 'backups-fotos')),
+                manter: manterBackups
             },
             log: {
                 nivel: nivelLog,

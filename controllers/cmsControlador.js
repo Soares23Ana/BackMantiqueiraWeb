@@ -1,9 +1,7 @@
-const fs = require('node:fs/promises');
-const path = require('node:path');
 const { Op } = require('sequelize');
 const sequelize = require('../db/conn');
 const { Banner, BlocoCms } = require('../models');
-const logger = require('../lib/logger');
+const { removerArquivo, removerUploadPorUrl, urlDoUpload } = require('../lib/uploads');
 const { ErroApi } = require('../lib/erros');
 const { ehEquipe } = require('../lib/perfis');
 const { gerarSlug } = require('../lib/texto');
@@ -16,26 +14,8 @@ const CAMPOS_BANNER = ['titulo', 'tipo_destino', 'id_destino', 'link', 'imagem_u
 const snapBloco = (bloco) => (bloco ? { titulo: bloco.titulo, conteudo: bloco.conteudo, ativo: bloco.ativo, ...(bloco.dados || {}) } : null);
 const auditoriaBloco = (chave) => (chave === 'popup' ? { entidade: 'popup', prefixo: 'popup' } : { entidade: 'bloco_cms', prefixo: 'bloco' });
 
-const PASTA_UPLOADS = path.join(__dirname, '..', 'publico', 'uploads');
-
-async function removerArquivo(caminho) {
-    if (!caminho) {
-        return;
-    }
-    try {
-        await fs.unlink(caminho);
-    } catch (erro) {
-        if (erro.code !== 'ENOENT') {
-            logger.error('Erro ao remover upload não utilizado.', { erro });
-        }
-    }
-}
-
 // Só apaga arquivos gerados pelo upload (nome UUID), nunca caminhos arbitrários gravados no banco.
-async function removerUploadDoBanner(imagemUrl) {
-    const upload = imagemUrl && imagemUrl.match(/^\/arquivos\/uploads\/([0-9a-f-]{36}\.(?:jpg|png|webp|gif))$/);
-    if (upload) await removerArquivo(path.join(PASTA_UPLOADS, upload[1]));
-}
+const removerUploadDoBanner = removerUploadPorUrl;
 
 // Campos do banner vindos de JSON ou multipart (no multipart tudo chega como texto).
 // O destino (tipo_destino, id_destino, link) é validado por servicos/destinos.js; só "link" vale como tipo "link".
@@ -126,7 +106,7 @@ async function salvarBanner(req, res) {
     try {
         // Sem ordem informada, o banner novo vai para o fim da fila.
         const ordem = dados.ordem ?? ((await Banner.max('ordem')) || 0) + 1;
-        const banner = await Banner.create({ ...dados, ordem, imagem_url: `/arquivos/uploads/${req.file.filename}` });
+        const banner = await Banner.create({ ...dados, ordem, imagem_url: urlDoUpload(req.file.filename) });
         await registrarAuditoria({
             usuario: req.usuario, acao: 'banner.criar', entidade: 'banner', idEntidade: banner.id_banner,
             depois: instantaneo(banner, CAMPOS_BANNER)
@@ -160,7 +140,7 @@ async function atualizarBanner(req, res) {
     }
     const imagemAnterior = banner.imagem_url;
     const antes = instantaneo(banner, CAMPOS_BANNER);
-    if (req.file) dados.imagem_url = `/arquivos/uploads/${req.file.filename}`;
+    if (req.file) dados.imagem_url = urlDoUpload(req.file.filename);
     try {
         await banner.update(dados);
     } catch (erro) {
@@ -323,7 +303,7 @@ async function enviarImagemBloco(req, res) {
     }
     const anterior = bloco.dados && bloco.dados.imagem_url;
     try {
-        await bloco.update({ dados: { ...(bloco.dados || {}), imagem_url: `/arquivos/uploads/${req.file.filename}` } });
+        await bloco.update({ dados: { ...(bloco.dados || {}), imagem_url: urlDoUpload(req.file.filename) } });
     } catch (erro) {
         await removerArquivo(req.file.path);
         throw erro;

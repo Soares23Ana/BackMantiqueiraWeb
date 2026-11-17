@@ -16,6 +16,7 @@ Detalhes de configuração e operação da API. O passo a passo para rodar o pro
 11. [Serviços externos (CEP e CNPJ)](#11-serviços-externos-cep-e-cnpj)
 12. [Riscos aceitos](#12-riscos-aceitos)
 13. [Regras de negócio](#13-regras-de-negócio)
+14. [Fotos enviadas (uploads)](#14-fotos-enviadas-uploads)
 
 ---
 
@@ -52,6 +53,9 @@ node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"
 | `JOB_CATALOGO_CRON`, `JOB_CARGA_COMPLETA_CRON`, `JOB_ESTOQUE_CRON` | `0 * * * *`, `0 0 * * *`, `*/30 * * * *` | Horários dos jobs (cron de 5 campos); validados ao iniciar |
 | `IMPORTACAO_DIR` | `./importacao` | Pasta com `entrada/`, `processados/` e `rejeitados/` usada pelos jobs |
 | `MAPA_CATEGORIAS` | `./seeds/mapa_categorias.csv` | Mapa de `CATEGORIA - Cad. ERP` para categoria e subcategoria ([importação](#7-importação-de-catálogo-planilhas-xlsx-e-csv)) |
+| `UPLOADS_DIR` | `./publico/uploads` | Pasta das fotos enviadas; em produção, fora do projeto ([uploads](#14-fotos-enviadas-uploads)) |
+| `BACKUP_DIR` | `../backups-fotos` | Pasta dos ZIPs gerados por `npm run backup:fotos` |
+| `BACKUP_FOTOS_MANTER` | `7` | Quantas cópias de fotos manter (1 a 365) |
 | `LOG_LEVEL` | `info` (`silent` nos testes) | `debug`, `info`, `warn`, `error` ou `silent` |
 | `LOG_FORMAT` | `texto` em dev, `json` em produção | Formato dos logs |
 | `JSON_LIMIT` | `200kb` | Tamanho máximo do corpo JSON |
@@ -262,7 +266,7 @@ Os arquivos são preparados e colocados na pasta pela própria equipe. Os horár
 ## 9. Saúde
 
 - **`GET /saude`** (público, fora de `/api/v1`): só `status` e `banco`. Responde `200` com `{ "status": "ok", "banco": "conectado" }` ou `503` com `{ "status": "degradado", "banco": "indisponivel" }` quando o banco não responde. Fica fora do limite de requisições, para servir de health check do balanceador.
-- **`GET /saude/detalhado`** (equipe): versão da API, banco (latência e migrations pendentes), processo (data de início, uptime, memória, versão do Node), jobs (última e próxima execução, último resultado ou erro) e data da última sincronização de cada tipo.
+- **`GET /saude/detalhado`** (equipe): versão da API, banco (latência e migrations pendentes), processo (data de início, uptime, memória, versão do Node), jobs (última e próxima execução, último resultado ou erro), pasta de uploads (gravável e quantidade de arquivos) e data da última sincronização de cada tipo.
 
 Os exemplos de resposta estão em [API.md](API.md#12-saúde).
 
@@ -380,3 +384,36 @@ A API consulta serviços públicos com o `fetch` nativo do Node (sem dependênci
 ### Categorias em dois níveis
 - `categorias.id_pai` (migration 022) liga a subcategoria à categoria principal. O índice único `(chave_pai, nome)`, em que `chave_pai` é uma coluna gerada (`IFNULL(id_pai, 0)`), garante nome único dentro do mesmo pai, inclusive entre as principais; a migration renomeia (`" (2)"`) nomes repetidos que já existissem. A profundidade máxima (2) é validada na API (`taxonomiaControlador`).
 - O produto guarda só `id_categoria` (a subcategoria quando houver, senão a categoria); `categoria` e `subcategoria` das respostas saem do join com o pai. `GET /produtos?categoria=` também casa o pai (`$categoria.pai.slug$`).
+
+---
+
+## 14. Fotos enviadas (uploads)
+
+As fotos de produtos, banners e pop-up ficam numa única pasta, definida por **`UPLOADS_DIR`** (caminho absoluto ou relativo; a API resolve para absoluto). Sem a variável, vale `publico/uploads` (só para desenvolvimento). **Em produção, use uma pasta fora do projeto** (ex.: `/var/mantiqueira/uploads`), para as fotos não sumirem numa nova publicação do código. O banco continua guardando `/arquivos/uploads/<uuid>.<ext>`: as URLs não mudam. O caminho é montado só em `lib/uploads.js`.
+
+Na subida, a API cria a pasta, confirma que dá para gravar e registra um aviso no log se estiver em produção sem `UPLOADS_DIR` ou se a pasta acabou de ser criada vazia (sinal de disco novo ou caminho trocado). O `GET /saude/detalhado` mostra se a pasta é gravável e quantos arquivos ela tem (sem o caminho). As fotos são servidas com cache de 30 dias (`immutable`), porque o nome é UUID e o conteúdo nunca muda.
+
+### Mover as fotos já existentes
+```bash
+# 1. defina UPLOADS_DIR no .env (pasta fora do projeto)
+npm run uploads:mover -- --simular   # mostra o que seria copiado
+npm run uploads:mover                # copia publico/uploads para UPLOADS_DIR
+```
+Copia (não move), não sobrescreve arquivo que já existe e pode rodar várias vezes. Mostra copiados, já existentes e total. Depois de conferir, reinicie a API (`pm2 restart`) e, quando tudo estiver certo, apague `publico/uploads` à mão.
+
+### Cópia de segurança
+```bash
+npm run backup:fotos
+```
+Gera `fotos-AAAAMMDD-HHMMSS.zip` em `BACKUP_DIR` (padrão `../backups-fotos`, irmã do projeto) e mantém só as últimas `BACKUP_FOTOS_MANTER` cópias (padrão 7). Grava em fluxo, sem carregar o ZIP na memória, mostra a quantidade de arquivos e o tamanho e termina com código diferente de zero se falhar. Exemplo de agendamento diário às 3h (`crontab -e`, no usuário que roda a API):
+```cron
+0 3 * * * cd /caminho/da/api && /usr/bin/npm run backup:fotos >> /var/log/mantiqueira-backup.log 2>&1
+```
+
+### Restaurar
+```bash
+unzip -n /caminho/backups-fotos/fotos-20260101-030000.zip -d "$UPLOADS_DIR"
+```
+(`-n` não sobrescreve arquivos que já existem.) Não é preciso reiniciar a API.
+
+> **Atenção:** o backup na mesma máquina e no mesmo disco **não protege contra a perda da máquina** (disco corrompido, instância apagada). Leve uma cópia para fora, por exemplo enviando o ZIP mais recente para um bucket S3 (`aws s3 cp`) ou baixando-o periodicamente.

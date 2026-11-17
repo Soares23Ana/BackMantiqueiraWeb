@@ -4,6 +4,7 @@ const { verificarBanco } = require('../db/conexao');
 const { listarPendentes } = require('../db/migracoes');
 const { ultimaSincronizacao } = require('../servicos/sincronizacao');
 const { situacaoJobs } = require('../jobs');
+const { estadoPastaUploads } = require('../lib/uploads');
 
 const iniciadoEm = new Date();
 
@@ -42,8 +43,9 @@ async function verificarSaudeDetalhada(req, res) {
     }
     const memoria = process.memoryUsage();
     const jobs = situacaoJobs();
+    const uploads = await estadoPastaUploads();
     return res.status(bancoOk ? 200 : 503).json({
-        status: bancoOk && migracoesPendentes && migracoesPendentes.length === 0 && jobs.every((job) => job.situacao === 'ok') ? 'ok' : 'degradado',
+        status: bancoOk && uploads.gravavel && migracoesPendentes && migracoesPendentes.length === 0 && jobs.every((job) => job.situacao === 'ok') ? 'ok' : 'degradado',
         versao: version,
         banco: {
             status: bancoOk ? 'conectado' : 'indisponivel',
@@ -57,6 +59,7 @@ async function verificarSaudeDetalhada(req, res) {
             memoria_mb: Math.round(memoria.rss / 1024 / 1024)
         },
         jobs,
+        uploads,
         sincronizacoes: bancoOk ? {
             ultima: await dataUltimaSincronizacao(),
             ultima_catalogo: await dataUltimaSincronizacao('catalogo'),

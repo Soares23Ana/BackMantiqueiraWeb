@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const request = require('supertest');
-const { prepararApp, criarUsuario } = require('./ajuda');
+const { prepararApp, criarUsuario, config } = require('./ajuda');
 
 const CSV = fs.readFileSync(path.join(__dirname, 'fixtures', 'catalogo_legado.csv'), 'utf8');
 
@@ -350,7 +350,7 @@ describe('gestão de produtos', () => {
         assert.equal(falsa.body.sucesso, false);
 
         // Limpa o arquivo criado pelo teste.
-        const arquivo = path.join(__dirname, '..', 'publico', resposta.body.produto.imagem_url.replace('/arquivos/', ''));
+        const arquivo = path.join(config.uploads.dir, resposta.body.produto.imagem_url.replace('/arquivos/uploads/', ''));
         fs.unlinkSync(arquivo);
     });
 });

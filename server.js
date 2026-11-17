@@ -13,8 +13,13 @@ const { conectarComRetry, interromperConexao } = require('./db/conexao');
 const { aoEncerrar, instalarHandlers } = require('./lib/encerramento');
 const { criarApp } = require('./app');
 const { iniciarJobs, pararJobs } = require('./jobs');
+const { prepararPastaUploads } = require('./lib/uploads');
 
 instalarHandlers();
+
+prepararPastaUploads().catch((erro) => {
+    logger.error('Não foi possível preparar a pasta de uploads.', { erro: erro.message });
+});
 
 const app = criarApp();
 const servidor = app.listen(config.porta, () => {

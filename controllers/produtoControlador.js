@@ -1,9 +1,7 @@
-const fs = require('node:fs/promises');
-const path = require('node:path');
 const { Op, UniqueConstraintError, ForeignKeyConstraintError } = require('sequelize');
 const sequelize = require('../db/conn');
 const { Produto, Categoria, Marca, MovimentacaoEstoque, Usuario } = require('../models');
-const logger = require('../lib/logger');
+const { removerArquivo, removerUploadPorUrl, urlDoUpload } = require('../lib/uploads');
 const { ErroApi } = require('../lib/erros');
 const { ehEquipe } = require('../lib/perfis');
 const { lerPaginacao, montarPaginacao } = require('../lib/paginacao');
@@ -13,7 +11,6 @@ const { alterarEstoque, disponibilidade, faixaEstoque, lerLimiteFaixa } = requir
 const { registrarEvento } = require('../servicos/eventos');
 const { registrarAuditoria, instantaneo } = require('../servicos/auditoria');
 
-const PASTA_UPLOADS = path.join(__dirname, '..', 'publico', 'uploads');
 const DISPONIBILIDADES = ['disponivel', 'ultimas_unidades', 'indisponivel', 'em_estoque'];
 const ORDENACOES_PUBLICAS = ['relevancia', 'nome', 'nome_desc', 'recentes'];
 const ORDENACOES_EQUIPE = [...ORDENACOES_PUBLICAS, 'estoque', 'estoque_desc'];
@@ -628,14 +625,6 @@ async function desativar(req, res) {
     return res.status(200).json({ mensagem: 'Produto desativado.', produto: apresentarProduto(produto, req.usuario, await lerLimiteFaixa()) });
 }
 
-async function removerArquivo(caminho) {
-    try {
-        await fs.unlink(caminho);
-    } catch (erro) {
-        if (erro.code !== 'ENOENT') logger.error('Erro ao remover imagem de produto.', { erro });
-    }
-}
-
 // POST /produtos/:id/imagem (multipart, campo "imagem"). Substitui a imagem e apaga o upload anterior.
 async function enviarImagem(req, res) {
     if (!req.file) {
@@ -648,7 +637,7 @@ async function enviarImagem(req, res) {
     }
     const anterior = produto.imagem_url;
     try {
-        await produto.update({ imagem_url: `/arquivos/uploads/${req.file.filename}` });
+        await produto.update({ imagem_url: urlDoUpload(req.file.filename) });
     } catch (erro) {
         await removerArquivo(req.file.path);
         throw erro;
@@ -662,11 +651,7 @@ async function enviarImagem(req, res) {
         depois: { imagem_url: produto.imagem_url }
     });
     // Só apaga arquivos gerados pelo upload (nome UUID); imagens do front (/img/...) não ficam no servidor.
-    // O padrão estrito impede que um imagem_url com ".." apague arquivos fora da pasta de uploads.
-    const upload = anterior && anterior.match(/^\/arquivos\/uploads\/([0-9a-f-]{36}\.(?:jpg|png|webp|gif))$/);
-    if (upload) {
-        await removerArquivo(path.join(PASTA_UPLOADS, upload[1]));
-    }
+    await removerUploadPorUrl(anterior);
     return res.status(200).json({ mensagem: 'Imagem atualizada.', produto: apresentarProduto(produto, req.usuario, await lerLimiteFaixa()) });
 }
 

@@ -1,6 +1,21 @@
 // Preparação comum dos testes: usa sempre o banco mantiqueira_test, recriado do zero pelas migrations.
 process.env.NODE_ENV = 'test';
 
+// Fotos e backups dos testes vão para pastas temporárias, nunca para a pasta real de uploads.
+const fsTemp = require('node:fs');
+const osTemp = require('node:os');
+const pathTemp = require('node:path');
+const pastasTemporarias = [];
+for (const variavel of ['UPLOADS_DIR', 'BACKUP_DIR']) {
+    if (!process.env[variavel]) {
+        process.env[variavel] = fsTemp.mkdtempSync(pathTemp.join(osTemp.tmpdir(), `mantiqueira-${variavel.toLowerCase()}-`));
+        pastasTemporarias.push(process.env[variavel]);
+    }
+}
+process.on('exit', () => {
+    for (const pasta of pastasTemporarias) fsTemp.rmSync(pasta, { recursive: true, force: true });
+});
+
 // Os testes nunca acessam a internet: cada teste que precisa de um serviço externo simula o fetch.
 globalThis.fetch = async (url) => {
     throw new Error(`Acesso à internet bloqueado nos testes: ${url}`);

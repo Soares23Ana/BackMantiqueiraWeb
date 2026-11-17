@@ -11,7 +11,7 @@ const PNG = Buffer.from(
     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=',
     'base64'
 );
-const PASTA_UPLOADS = path.join(__dirname, '..', 'publico', 'uploads');
+const PASTA_UPLOADS = require('../config/ambiente').uploads.dir;
 
 let app;
 let sequelize;
@@ -410,6 +410,9 @@ describe('/saude/detalhado', () => {
         assert.equal(resposta.body.jobs.length, 4);
         assert.ok(resposta.body.sincronizacoes.ultima_carga_completa);
         assert.ok(resposta.body.sincronizacoes.ultima_estoque);
+        assert.equal(resposta.body.uploads.gravavel, true);
+        assert.equal(typeof resposta.body.uploads.arquivos, 'number');
+        assert.ok(!JSON.stringify(resposta.body).includes(PASTA_UPLOADS), 'o caminho do servidor não pode aparecer');
     });
 
     test('cliente recebe 403 e visitante 401, no formato padrão', async () => {

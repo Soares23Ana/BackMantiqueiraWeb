@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const request = require('supertest');
-const { prepararApp, criarUsuario } = require('./ajuda');
+const { prepararApp, criarUsuario, config } = require('./ajuda');
 
 const PNG = Buffer.from(
     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=',
@@ -95,7 +95,7 @@ describe('pop-up pelo painel (GET /cms/popup)', () => {
         assert.match(url, /^\/arquivos\/uploads\/[0-9a-f-]{36}\.png$/);
         await salvar({ titulo: 'Com imagem' }).expect(200);
         assert.equal((await publico()).imagem_url, url);
-        assert.ok(fs.existsSync(path.join(__dirname, '..', 'publico', url.replace('/arquivos/', ''))));
+        assert.ok(fs.existsSync(path.join(config.uploads.dir, url.replace('/arquivos/uploads/', ''))));
         // Rotas genéricas de blocos não expõem o pop-up ao público.
         const lista = await request(app).get('/api/v1/cms/blocos').expect(200);
         assert.ok(!lista.body.blocos.some((b) => b.chave === 'popup'));
@@ -105,7 +105,7 @@ describe('pop-up pelo painel (GET /cms/popup)', () => {
         await request(app).post('/api/v1/cms/blocos/outro/imagem').set('Authorization', equipe.auth)
             .attach('imagem', PNG, { filename: 'p.png', contentType: 'image/png' }).expect(404);
         await request(app).delete('/api/v1/cms/blocos/popup').set('Authorization', equipe.auth).expect(200);
-        assert.ok(!fs.existsSync(path.join(__dirname, '..', 'publico', url.replace('/arquivos/', ''))));
+        assert.ok(!fs.existsSync(path.join(config.uploads.dir, url.replace('/arquivos/uploads/', ''))));
         assert.equal(await publico(), null);
     });
 });
