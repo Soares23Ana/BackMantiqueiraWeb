@@ -117,9 +117,20 @@ O front **já está ligado à API** em quase tudo: `src/api/client.ts` envia o t
 |---|---|
 | Entrar | `POST /auth/login` `{ identificador, senha }` |
 | Sessão salva | `GET /auth/me` |
+| Esqueci a senha | Continua abrindo o WhatsApp da equipe (não chama a API); a recuperação é pelo link gerado pela equipe, na página [Redefinir senha](#redefinir-senha-pagesresetpasswordtsx-rota-nova-redefinir-senha) |
 
 - **Ligado:** tela única; a equipe vai para `/gestor`, o cliente para `/minha-conta` (ou para onde estava). `429 MUITAS_TENTATIVAS` tem mensagem própria. "Esqueci a senha" orienta a falar com a equipe.
 - **Mudar:** a regra de e-mail ou CNPJ. Hoje `Login.tsx` trata como e-mail qualquer texto com letra (`/[@a-z]/i`), então um **CNPJ alfanumérico** seria tratado como e-mail e perderia a máscara. A regra da API é só o `@`: com `@` é e-mail da equipe; sem `@` é CNPJ. Ver [CNPJ alfanumérico](#cnpj-alfanumérico).
+
+### Redefinir senha (`pages/ResetPassword.tsx`, rota nova `/redefinir-senha`)
+Página **pública**, aberta pelo link que a equipe manda por WhatsApp (`/redefinir-senha?token=...`).
+
+| Ação | Endpoint |
+|---|---|
+| Ao abrir: o link ainda vale? | `POST /auth/redefinir-senha/validar` `{ token }` → `{ valido }` |
+| Enviar a nova senha | `POST /auth/redefinir-senha` `{ token, nova_senha }` |
+
+- **Mudar (tela nova):** ler o `token` da query string, **tirá-lo do endereço** (`history.replaceState`) e guardá-lo só em memória; o token vai no corpo do POST, nunca na URL da API. Com `valido: false`, mostrar "Link inválido ou expirado. Peça um novo link à equipe." (com o botão do WhatsApp). Com `valido: true`, formulário com nova senha e confirmação (8 a 72 caracteres; `422 VALIDACAO` traz o erro em `detalhes`, campo `nova_senha`, e o link continua valendo). Em `200`, mostrar a mensagem e levar a `/login`: **não há login automático**. `422 TOKEN_INVALIDO` (link usou/venceu no meio do caminho) mostra a mesma mensagem de link inválido; `429 MUITAS_TENTATIVAS`, mensagem de tentar mais tarde. A API não diz o nome da pessoa, então a tela não mostra nome.
 
 ### Cadastro (`pages/Register.tsx`, `components/AddressFields.tsx`)
 | Usa hoje | Endpoint |
@@ -247,9 +258,11 @@ Todas as rotas exigem token da **equipe** (`RequireRole` no front). A tela Equip
 | Ativar/desativar | `PUT /clientes/:id` `{ ativo }` |
 | Detalhes e edição | `GET /clientes/:id/detalhes`, `PUT /clientes/:id` |
 | Senha temporária | `PUT /clientes/:id/senha` `{ senha }` |
+| Gerar link de redefinição | `POST /clientes/:id/redefinicao-senha` (devolve `token` e `expira_em`) |
 | Exportar CSV (sem "Grupo" nem "Receita") | `GET /clientes` em todas as páginas |
 
 - **Ligado:** tudo, com `nome_exibicao`. A busca por CNPJ aceita letras, com ou sem pontuação.
+- **Mudar:** botão **"Gerar link de redefinição"** (na linha ou nos detalhes do cliente; some se o cliente estiver inativo, o que a API recusa com `409 USUARIO_INATIVO`). Mostra o link `${origem}/redefinir-senha?token=${token}` com o botão "Copiar" e o botão "Enviar pelo WhatsApp" (`wa.me/55<telefone>?text=...`), mais o horário de `expira_em`. **O token só aparece nesta resposta**: se a equipe fechar a janela, gera outro (o anterior deixa de valer). Confirmar a identidade do cliente antes de gerar. O `PUT /clientes/:id/senha` continua disponível.
 - **Mudar:** **novos cadastros**. Oferecer o filtro "Novos (7 dias)", que chama `GET /clientes?novos_dias=7` (do mais recente para o mais antigo; aceita de 1 a 365 e combina com `busca`), e o selo do menu e o card do painel descritos acima. O contador inclui clientes inativos. É só para a equipe consultar quando quiser: **não existe aprovação de cadastro** e nada fica bloqueado esperando revisão.
 
 ### Conteúdo (`pages/manager/Cms.tsx`)
@@ -282,7 +295,8 @@ Todas as rotas exigem token da **equipe** (`RequireRole` no front). A tela Equip
 
 ### Equipe (`pages/manager/Team.tsx`)
 - **Usa hoje:** `GET /admin/usuarios?tipo=equipe`, `POST /admin/usuarios`, `PATCH /admin/usuarios/:id`. Exige `pode_gerenciar_equipe`.
-- **Ligado:** tudo. **Mudar:** nada. (A rota antiga `GET /auth/users` foi removida; o front nunca a usou.)
+- **Mudar:** botão **"Gerar link de redefinição"** em cada usuário da equipe, menos na própria conta (a API devolve `409 OPERACAO_NAO_PERMITIDA`; ali vale a troca de senha em "Minha conta") → `POST /admin/usuarios/:id/redefinicao-senha`. Mesmo comportamento do botão de Clientes (link, copiar, WhatsApp, validade).
+- **Ligado:** o restante. (A rota antiga `GET /auth/users` foi removida; o front nunca a usou.)
 
 ### Saúde do sistema (`pages/manager/SystemHealth.tsx`)
 - **Usa hoje:** `GET /saude/detalhado` (fora de `/api/v1`). O campo novo `uploads` (`{ gravavel, arquivos }`) mostra se a pasta de fotos aceita gravação e quantos arquivos ela tem; com `gravavel: false`, o `status` geral vira `degradado`.

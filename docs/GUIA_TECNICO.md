@@ -20,6 +20,7 @@ Detalhes de configuração e operação da API. O passo a passo para rodar o pro
 15. [Cópia de imagem a partir de um link](#15-cópia-de-imagem-a-partir-de-um-link)
 16. [Envio em massa de fotos por ZIP](#16-envio-em-massa-de-fotos-por-zip)
 17. [Dados pessoais e privacidade (LGPD)](#17-dados-pessoais-e-privacidade-lgpd)
+18. [Redefinição de senha](#18-redefinição-de-senha)
 
 ---
 
@@ -59,6 +60,7 @@ node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"
 | `UPLOADS_DIR` | `./publico/uploads` | Pasta das fotos enviadas; em produção, fora do projeto ([uploads](#14-fotos-enviadas-uploads)) |
 | `BACKUP_DIR` | `../backups-fotos` | Pasta dos ZIPs gerados por `npm run backup:fotos` |
 | `BACKUP_FOTOS_MANTER` | `7` | Quantas cópias de fotos manter (1 a 365) |
+| `REDEFINICAO_SENHA_MINUTOS` | `60` | Validade do link de [redefinição de senha](#18-redefinição-de-senha), de 5 a 1440 minutos |
 | `LOG_LEVEL` | `info` (`silent` nos testes) | `debug`, `info`, `warn`, `error` ou `silent` |
 | `LOG_FORMAT` | `texto` em dev, `json` em produção | Formato dos logs |
 | `JSON_LIMIT` | `200kb` | Tamanho máximo do corpo JSON |
@@ -251,7 +253,7 @@ Fuso `America/Sao_Paulo`. A API lê arquivos colocados em `importacao/entrada/` 
 | `catalogo` | De hora em hora | `catalogo*.csv` ou `.xlsx` | Carga incremental: cria e atualiza, **sem desativar** os ausentes |
 | `carga-completa` | Meia-noite | `carga_completa*.csv` ou `.xlsx` | Importa tudo e desativa produtos ausentes (só se o arquivo não tiver erro) |
 | `estoque` | A cada 30 min | `estoque*.csv` ou `.xlsx` | Aplica só `sku` e `estoque` (outras colunas são ignoradas) |
-| `limpeza-eventos` | 3h | — | Apaga eventos de uso com mais de 12 meses |
+| `limpeza-eventos` | 3h | — | Apaga eventos de uso com mais de 12 meses e links de [redefinição de senha](#18-redefinição-de-senha) expirados ou usados há mais de 7 dias |
 
 Os arquivos são preparados e colocados na pasta pela própria equipe. Os horários dos três primeiros vêm das variáveis `JOB_CATALOGO_CRON`, `JOB_CARGA_COMPLETA_CRON` e `JOB_ESTOQUE_CRON` (cron de 5 campos, fuso de São Paulo; padrões `0 * * * *`, `0 0 * * *` e `*/30 * * * *`). Uma expressão inválida impede a API de subir, com a mensagem apontando a variável.
 
@@ -479,6 +481,7 @@ Esta seção descreve o que a API guarda e as medidas adotadas. Ela **não afirm
 | Eventos de navegação | `eventos` | Métricas: identificador de sessão anônimo, termo buscado, produto visto; `id_usuario` só se a pessoa estiver logada. **Não há IP nem user-agent.** |
 | Auditoria | `auditoria` | Quem fez o quê, com os campos alterados. Chaves de senha, hash, token e segredo nunca entram |
 | Notas da equipe sobre clientes e registro de contato de carrinho abandonado | `notas_cliente`, `carrinho_contatos` | Atendimento: texto livre, autor e data |
+| Links de redefinição de senha | `redefinicoes_senha` | Recuperar o acesso: **só o hash (SHA-256) do token**, nunca o token; validade curta (60 min), uso único, apagados pela limpeza diária 7 dias depois de expirarem ou serem usados (e junto com o usuário) |
 
 O CNPJ identifica pessoa jurídica, mas **e-mail, telefone e nome de contato podem ser dados de pessoas físicas**, e o texto livre das notas e das observações de contato também pode conter dados pessoais.
 
@@ -501,3 +504,52 @@ Decisões da empresa, não do código:
 1. Definir quem é o **responsável pelo tratamento** (e o contato do encarregado, se houver).
 2. Definir o **prazo de retenção** dos dados (clientes inativos, eventos, auditoria, notas) e como a limpeza será feita; hoje só os eventos têm limpeza automática (job `limpeza-eventos`, apaga o que tem mais de 12 meses).
 3. Publicar o texto da **política de privacidade** no site e, se couber, o aviso no cadastro.
+
+---
+
+## 18. Redefinição de senha
+
+Quem esquece a senha não recebe e-mail: a equipe gera um **link de uso único** e o envia por WhatsApp; a própria pessoa escolhe a nova senha. Contrato das rotas em [API.md, seção 20](API.md#20-redefinição-de-senha-por-link-equipe-e-público).
+
+### Fluxo
+1. A equipe confirma quem é o cliente (por WhatsApp) e usa "Gerar link" (`POST /clientes/:id/redefinicao-senha`; para a equipe, o gestor usa `POST /admin/usuarios/:id/redefinicao-senha`). A API devolve **uma única vez** o `token` e `expira_em`.
+2. A equipe envia o link. O front monta `/redefinir-senha?token=...`; a API só devolve o token e a validade.
+3. O usuário abre o link (o front chama `POST /auth/redefinir-senha/validar`) e escolhe a nova senha (`POST /auth/redefinir-senha`). Não há login automático.
+
+### Decisões de segurança
+- **Token aleatório:** `crypto.randomBytes(32)` em base64url (43 caracteres, 256 bits), impossível de adivinhar; por isso o SHA-256 simples basta no banco.
+- **Só o hash no banco:** `redefinicoes_senha.token_hash` (SHA-256 em hexadecimal, migration 024). Quem lê o banco ou um backup não consegue usar um link. O token em texto existe só na resposta de quem gera.
+- **Uso único, inclusive com concorrência:** a transação bloqueia a linha do token (`FOR UPDATE`) e a do usuário; de duas requisições simultâneas, só uma troca a senha. Ao concluir (ou ao gerar um link novo), os outros links pendentes do usuário são marcados como usados.
+- **Validade curta:** 60 minutos por padrão (`REDEFINICAO_SENHA_MINUTOS`, de 5 a 1440).
+- **Sem diferenciar o motivo:** inexistente, expirado, já usado ou usuário inativo geram a mesma resposta (`422 TOKEN_INVALIDO`, mesma mensagem), e a validação devolve só `{ valido }`, sem nome nem dados do usuário.
+- **Sessões antigas derrubadas:** a troca grava `senha_alterada_em` (mesmo helper da troca de senha), e os JWT emitidos antes passam a receber `401`.
+- **Token fora da URL e dos logs:** viaja no corpo do POST; o log de requisições guarda só método, rota sem query string, status, duração e id do usuário (nada do corpo). A auditoria nunca recebe token nem hash (o helper descarta chaves com `token` e `hash`; há teste).
+- **Limites:** gerar link, 20 por minuto por usuário; rotas públicas, 10 tentativas com falha a cada 15 minutos por IP (as duas dividem o contador; `valido: false` conta como falha). Como os demais limites, ficam na memória de cada instância.
+- **Identidade:** a API não verifica quem pediu o link; quem confirma a identidade é a equipe, por WhatsApp. Gestor não gera link para a própria conta (usa a troca de senha normal).
+
+### Administrador que perdeu a senha
+Se o único gestor da equipe esquecer a senha, ninguém consegue gerar o link pela API. Quem tem acesso ao servidor (EC2, com o `.env` de produção, também contra o RDS) roda:
+```bash
+npm run redefinir-senha-admin -- --email maria@empresa.com.br
+```
+O comando **não pede nem recebe senha** (nem digitada, nem por argumento, nem por variável de ambiente; `--senha` é recusado). Ele gera um token de redefinição pelo **mesmo mecanismo e a mesma tabela** das rotas da equipe (só o hash no banco, validade de 60 minutos ou `REDEFINICAO_SENHA_MINUTOS`, uso único) e imprime **apenas o token e a validade**:
+```
+Token: q3Zc0m9J1x7bT2p8Hk5Wn4RvYd6LsAeUfGi_OjMtXyE
+Validade: 2026-11-17T15:30:00.000Z (60 minutos)
+```
+Quem rodou o comando repassa o token ao administrador, que abre `/redefinir-senha?token=...` e escolhe a própria senha (a senha nunca passa pelo terminal nem por quem tem acesso ao servidor). Sem `--email`, o comando pergunta o e-mail. As mensagens de aviso saem no erro padrão, então a saída padrão traz só as duas linhas acima.
+- Só vale para usuário **ativo** da equipe com `pode_gerenciar_equipe`; qualquer outro e-mail é recusado sem gravar nada.
+- Invalida os tokens pendentes anteriores do administrador. A senha atual não muda até o token ser usado; ao usá-lo, as sessões abertas são encerradas, como em qualquer redefinição.
+- Fica no log e na auditoria (`usuario.redefinicao_senha_gerada_por_terminal`, sem `id_usuario`, pois quem age é o terminal; `criado_por` fica nulo), com a validade e **nunca com o token**. O uso do token fica registrado como `usuario.senha_redefinida_por_link`.
+- Quem digita o comando vê o token: rode só em sessão de terminal confiável e não deixe o token em histórico compartilhado ou chat além do necessário (ele vale 60 minutos e uma única vez).
+
+### Variável opcional
+| Variável | Padrão | Para que serve |
+|---|---|---|
+| `REDEFINICAO_SENHA_MINUTOS` | `60` | Validade do link, de 5 a 1440; fora disso a API não sobe |
+
+### Limpeza
+O job `limpeza-eventos` (3h) também apaga, em lotes, os links expirados ou usados há mais de 7 dias (`limparRedefinicoesAntigas`, em `servicos/redefinicaoSenha.js`). O `ultimo_resultado` do job traz `redefinicoes_senha.removidos`. Os links também caem junto com o usuário (`ON DELETE CASCADE`).
+
+### Publicação
+A migration 024 cria `redefinicoes_senha`: depois de publicar o código, rode `npm run migrar` na nuvem.

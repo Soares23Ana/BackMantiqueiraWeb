@@ -23,6 +23,7 @@ Para ter banners, campanha, contatos e pedidos em todos os status no ambiente lo
 17. [Carrinho e favoritos](#17-carrinho-e-favoritos)
 18. [Carrinhos abandonados](#18-carrinhos-abandonados-equipe)
 19. [Suporte: notas e auditoria](#19-suporte-notas-do-cliente-e-auditoria-equipe)
+20. [Redefinição de senha por link](#20-redefinição-de-senha-por-link-equipe-e-público)
 
 ---
 
@@ -39,7 +40,7 @@ Envie o token do login em todas as rotas protegidas:
 ```
 Authorization: Bearer <token>
 ```
-O token vale **8 horas** (configurável no servidor por `JWT_EXPIRES_IN`). A cada requisição a API confere se o usuário existe e está ativo; usuário desativado perde o acesso na hora (`401`). Trocar a senha (em `PATCH /minha-conta/senha`, pela senha temporária de `PUT /clientes/:id/senha` ou pelo gestor em `PATCH /admin/usuarios/:id`) invalida todos os tokens emitidos antes da troca (`401 NAO_AUTENTICADO`).
+O token vale **8 horas** (configurável no servidor por `JWT_EXPIRES_IN`). A cada requisição a API confere se o usuário existe e está ativo; usuário desativado perde o acesso na hora (`401`). Trocar a senha (em `PATCH /minha-conta/senha`, pelo link de [redefinição](#20-redefinição-de-senha-por-link-equipe-e-público), pela senha temporária de `PUT /clientes/:id/senha` ou pelo gestor em `PATCH /admin/usuarios/:id`) invalida todos os tokens emitidos antes da troca (`401 NAO_AUTENTICADO`).
 
 ### Perfis
 | Perfil (`usuario.tipo`) | Entra com | Acesso |
@@ -108,6 +109,8 @@ Parâmetros `pagina` (padrão 1) e `limite` (padrão e máximo variam por rota).
 |---|---|---|---|
 | POST | `/auth/register` | público | Cadastro de cliente |
 | POST | `/auth/login` | público | Login de cliente (CNPJ) ou equipe (e-mail) |
+| POST | `/auth/redefinir-senha/validar` | público | Confere se o link de redefinição ainda vale ([seção 20](#20-redefinição-de-senha-por-link-equipe-e-público)) |
+| POST | `/auth/redefinir-senha` | público | Troca a senha com o link de uso único (seção 20) |
 | GET | `/auth/me` | logado | Dados do usuário do token |
 | GET | `/minha-conta` | logado | Perfil e endereços |
 | PATCH | `/minha-conta` | logado | Altera nome, e-mail e telefone |
@@ -628,6 +631,7 @@ O estoque de todos os itens volta na mesma transação, com movimentação do ti
 | GET | `/clientes/:id/historico` | equipe | Linha do tempo do cliente (cadastro, pedidos, carrinho, acessos e notas) |
 | PUT | `/clientes/:id` | equipe | Atualiza dados operacionais |
 | PUT | `/clientes/:id/senha` | equipe | Define uma senha temporária |
+| POST | `/clientes/:id/redefinicao-senha` | equipe | Gera o link de redefinição de senha ([seção 20](#20-redefinição-de-senha-por-link-equipe-e-público)) |
 
 ### GET /clientes
 `?busca=&ordenar=&novos_dias=&pagina=&limite=&sem_cnpj=true` (padrão 20, máximo 100).
@@ -687,7 +691,7 @@ Clientes guardam só dados operacionais e comerciais (`razao_social`, `cnpj`, `t
 Um ou mais de: `razao_social`, `cnpj` (válido e único; corrigir limpa a pendência de `cnpj_original`), `telefone`, `ativo` (bloqueia/desbloqueia o login) e `enderecos` (lista; com `id_endereco` atualiza, sem ele cria; os omitidos não são removidos). `200`: `{ "mensagem": "Dados operacionais do cliente atualizados.", "cliente": { ... } }`. Erros: `422` (CNPJ inválido), `409 CNPJ_JA_CADASTRADO`, `404`.
 
 ### PUT /clientes/:id/senha
-Para o cliente que esqueceu a senha (não há recuperação por e-mail). A equipe define uma senha temporária, informa ao cliente por telefone/WhatsApp e orienta a troca em `PATCH /minha-conta/senha`.
+Para o cliente que esqueceu a senha (não há recuperação por e-mail). A equipe define uma senha temporária, informa ao cliente por telefone/WhatsApp e orienta a troca em `PATCH /minha-conta/senha`. Prefira o [link de redefinição](#20-redefinição-de-senha-por-link-equipe-e-público) (`POST /clientes/:id/redefinicao-senha`), em que o próprio cliente escolhe a senha e a equipe não a conhece.
 ```json
 { "senha": "Temporaria@2026" }
 ```
@@ -704,6 +708,7 @@ Todas exigem **gestor da equipe** (`pode_gerenciar_equipe: true`); os demais rec
 | GET | `/admin/usuarios` | Lista usuários (`?tipo=cliente\|equipe&ativo=true\|false&busca=&pagina=`) |
 | POST | `/admin/usuarios` | Cria usuário da equipe |
 | PATCH | `/admin/usuarios/:id` | Edita, concede/remove a marca, desativa/reativa |
+| POST | `/admin/usuarios/:id/redefinicao-senha` | Gera o link de redefinição de senha de um usuário da equipe ([seção 20](#20-redefinição-de-senha-por-link-equipe-e-público)) |
 
 ### POST /admin/usuarios
 ```json
@@ -902,7 +907,7 @@ Roda um job na hora, com a mesma trava do MySQL do agendamento. `:nome`: `catalo
 9. Imagens do catálogo (`/img/...`) são servidas pelo front; imagens enviadas pela API (`/arquivos/uploads/...`) ficam na pasta definida por `UPLOADS_DIR` (em produção, fora do projeto), com cópia de segurança agendada (`npm run backup:fotos`).
 
 **Autenticação**
-10. Não há recuperação de senha por e-mail. Cliente que esqueceu a senha: a equipe define uma temporária em `PUT /clientes/:id/senha` e o cliente troca em "Minha conta" (a troca não é obrigatória; a API não força). Usuário da equipe: o gestor redefine em `PATCH /admin/usuarios/:id`.
+10. Não há recuperação de senha por e-mail: a recuperação passa sempre pela equipe. O caminho preferido é o [link de uso único](#20-redefinição-de-senha-por-link-equipe-e-público) gerado pela equipe (`POST /clientes/:id/redefinicao-senha` ou `POST /admin/usuarios/:id/redefinicao-senha`), em que a pessoa escolhe a nova senha; a equipe continua podendo definir uma temporária em `PUT /clientes/:id/senha` (o cliente troca em "Minha conta"; a troca não é obrigatória) e o gestor redefine a senha da equipe em `PATCH /admin/usuarios/:id`. Quem perdeu o acesso de **último administrador** pede a quem tem acesso ao servidor para rodar `npm run redefinir-senha-admin -- --email x@y.com`, que gera um token para ele escolher a senha. O link depende de a equipe confirmar a identidade (hoje, por WhatsApp): a API não verifica quem pediu. A tabela `redefinicoes_senha` veio na migration 024: a nuvem precisa rodar `npm run migrar`.
 11. Não há refresh token: depois de 8 horas (ou o valor de `JWT_EXPIRES_IN`) o usuário precisa entrar de novo. "Sair" é só descartar o token no front (ele continua válido até expirar, a menos que o usuário seja desativado).
 12. Os limites de requisições ficam na memória de cada instância: com várias instâncias, o limite efetivo é multiplicado; reiniciar a API zera as contagens.
 
@@ -920,7 +925,7 @@ Roda um job na hora, com a mesma trava do MySQL do agendamento. `:nome`: `catalo
 19. `DELETE /produtos/:id` apenas desativa; não existe exclusão definitiva de produto. Já a exclusão de banner é definitiva e apaga a imagem.
 
 **Dados pessoais**
-20. Não existe endpoint de exclusão definitiva de cliente. `PUT /clientes/:id` com `ativo=false` desativa a conta e preserva o histórico de pedidos. Se o titular pedir a eliminação dos dados, o procedimento é manual, feito por quem administra o banco, e deve ser registrado (veja o [guia técnico](GUIA_TECNICO.md#17-dados-pessoais-e-privacidade-lgpd)).
+20. Não existe endpoint de exclusão definitiva de cliente. `PUT /clientes/:id` com `ativo=false` desativa a conta e preserva o histórico de pedidos. Se o titular pedir a eliminação dos dados, o procedimento é manual, feito por quem administra o banco, e deve ser registrado (veja o [guia técnico](GUIA_TECNICO.md#17-dados-pessoais-e-privacidade-lgpd)). Os links de redefinição de senha do cliente (`redefinicoes_senha`, só o hash do token) são apagados junto com a conta e, de qualquer forma, pela limpeza diária 7 dias depois de expirarem ou serem usados.
 
 **Ferramentas**
 21. Testando com `curl` no Windows, acentos no corpo da requisição podem chegar fora do UTF-8 (`"Em Separação"` dá `422`). Use Insomnia/Postman ou envie o corpo de um arquivo UTF-8 (`--data-binary @arquivo.json`). O navegador não tem esse problema.
@@ -1297,13 +1302,66 @@ Trilha de quem alterou o quê. Filtros: `entidade`, `id_entidade`, `id_usuario`,
 | `entidade` | `id_entidade` | `acao` |
 |---|---|---|
 | `produto` | id | `produto.criar`, `produto.editar`, `produto.ativar`, `produto.desativar`, `produto.estoque` (traz a `observacao` em `detalhe`) |
-| `cliente` | id | `cliente.editar`, `cliente.bloquear`, `cliente.desbloquear`, `cliente.senha_temporaria` |
+| `cliente` | id | `cliente.editar`, `cliente.bloquear`, `cliente.desbloquear`, `cliente.senha_temporaria`, `cliente.redefinicao_senha_gerada` |
 | `pedido` | id | `pedido.status`, `pedido.cancelar` (motivo em `detalhe`) |
 | `banner` | id | `banner.criar`, `banner.editar`, `banner.excluir`, `banner.reordenar` |
 | `popup` | `popup` | `popup.salvar`, `popup.ativar`, `popup.desativar`, `popup.imagem`, `popup.excluir` |
 | `bloco_cms` | chave | `bloco.salvar`, `bloco.ativar`, `bloco.desativar`, `bloco.excluir` |
 | `campanha` | id | `campanha.criar`, `campanha.editar`, `campanha.excluir` |
 | `configuracao` | chave | `configuracao.editar` |
-| `usuario` (contas da equipe) | id | `equipe.criar`, `equipe.editar` |
+| `usuario` (contas da equipe) | id | `equipe.criar`, `equipe.editar`, `usuario.redefinicao_senha_gerada`, `usuario.senha_redefinida_por_link` (feita pelo próprio usuário), `usuario.redefinicao_senha_gerada_por_terminal` (gerada no servidor, sem `id_usuario`) |
 
 Erros: `400 FILTRO_INVALIDO` (data fora do formato, `id_usuario` inválido, `ate` antes de `de`), `400 PAGINACAO_INVALIDA`.
+
+---
+
+## 20. Redefinição de senha por link (equipe e público)
+
+O usuário que esqueceu a senha não recebe e-mail. A equipe confirma quem é a pessoa (por WhatsApp), gera um **link de uso único** e o envia; a própria pessoa escolhe a nova senha. A API devolve só o `token` e a validade: o front monta o endereço `/redefinir-senha?token=...`. Em `PUT /clientes/:id/senha` a equipe continua podendo definir uma senha temporária (a equipe sabe qual é); o link é a alternativa em que ninguém além do usuário conhece a senha.
+
+| Método | Rota | Perfil | Descrição |
+|---|---|---|---|
+| POST | `/clientes/:id/redefinicao-senha` | equipe | Gera o link para um **cliente** |
+| POST | `/admin/usuarios/:id/redefinicao-senha` | gestor da equipe | Gera o link para um usuário da **equipe** (nunca a própria conta) |
+| POST | `/auth/redefinir-senha/validar` | público | Diz se o token ainda vale |
+| POST | `/auth/redefinir-senha` | público | Troca a senha com o token |
+
+### POST /clientes/:id/redefinicao-senha e POST /admin/usuarios/:id/redefinicao-senha (equipe)
+Sem corpo. `201`:
+```json
+{
+  "mensagem": "Link gerado. O token aparece só desta vez: envie-o ao usuário agora.",
+  "token": "q3Zc0m9J1x7bT2p8Hk5Wn4RvYd6LsAeUfGi_OjMtXyE",
+  "expira_em": "2026-11-17T15:30:00.000Z"
+}
+```
+- O **token só aparece nesta resposta**: no banco fica apenas o SHA-256 dele. Se a equipe perder o token, gera outro.
+- Vale **60 minutos** (`REDEFINICAO_SENHA_MINUTOS`, de 5 a 1440). Gerar um novo link invalida os anteriores ainda pendentes do mesmo usuário.
+- A rota de clientes só aceita usuário do tipo `cliente`; a de equipe só do tipo `equipe` e exige `pode_gerenciar_equipe`.
+- Erros: `404 NAO_ENCONTRADO` (não existe ou é do tipo errado), `409 USUARIO_INATIVO` (reative antes), `409 OPERACAO_NAO_PERMITIDA` (gestor tentando gerar para a própria conta: use `PATCH /minha-conta/senha`), `403 ACESSO_NEGADO`, `429` (mais de 20 por minuto por usuário).
+- Auditoria: `cliente.redefinicao_senha_gerada` e `usuario.redefinicao_senha_gerada`, com `expira_em` em `detalhe`. Nunca o token nem o hash.
+
+### POST /auth/redefinir-senha/validar (público)
+O front chama ao abrir `/redefinir-senha`, para mostrar o formulário ou o aviso de link vencido.
+```json
+{ "token": "q3Zc0m9J1x7bT2p8Hk5Wn4RvYd6LsAeUfGi_OjMtXyE" }
+```
+`200`: `{ "valido": true }` ou `{ "valido": false }` (inexistente, expirado, já usado ou usuário inativo: não diferencia). **Não devolve nome nem dados do usuário.** `422 VALIDACAO` se o corpo não trouxer `token`.
+
+### POST /auth/redefinir-senha (público)
+```json
+{ "token": "q3Zc0m9J1x7bT2p8Hk5Wn4RvYd6LsAeUfGi_OjMtXyE", "nova_senha": "NovaSenha@2026" }
+```
+`200`: `{ "mensagem": "Senha alterada. Entre com a nova senha." }`. **Não faz login automático**: o front leva a pessoa a `/login`.
+- A nova senha segue a regra das demais (8 a 72 caracteres). Senha inválida: `422 VALIDACAO` com `detalhes` por campo (`nova_senha`) e o token continua valendo.
+- Token inexistente, expirado, já usado ou de usuário inativo: **sempre a mesma resposta**, sem dizer o motivo:
+```json
+{ "sucesso": false, "mensagem": "Link inválido ou expirado. Peça um novo link à equipe.", "codigo": "TOKEN_INVALIDO" }
+```
+(`422`, com o `request_id` de toda resposta de erro.)
+- O link é de **uso único**, inclusive com duas requisições ao mesmo tempo: só uma vence. Ao trocar, as sessões abertas do usuário são encerradas (tokens anteriores recebem `401`) e os outros links pendentes dele são invalidados.
+- As duas rotas públicas dividem um limite por IP: depois de **10 tentativas com falha em 15 minutos** (token inválido, `valido: false` ou senha recusada), o IP recebe `429 MUITAS_TENTATIVAS`. Quem acerta não conta.
+- O token viaja no **corpo** do POST, nunca na URL da API, para não aparecer em logs de acesso. (A página `/redefinir-senha?token=...` é do front: ele deve ler o token da URL, enviar à API e tirar o token do endereço.)
+- Auditoria: `usuario.senha_redefinida_por_link`, sem token.
+
+Administrador que perdeu a senha e não tem outro gestor para gerar o link: `npm run redefinir-senha-admin -- --email x@y.com` no servidor gera o mesmo token e o imprime (sem pedir senha), para quem tem acesso ao servidor repassá-lo ao administrador, que escolhe a senha em `/redefinir-senha` (veja o [guia técnico](GUIA_TECNICO.md#18-redefinição-de-senha)).

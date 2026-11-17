@@ -41,11 +41,14 @@ npm run dev             # API em http://localhost:3000 (a API fica em /api/v1)
 npm test                # testes (usam o banco mantiqueira_test, apagado e recriado a cada execução)
 npm run uploads:mover   # copia as fotos de publico/uploads para a pasta definida em UPLOADS_DIR
 npm run backup:fotos    # gera um ZIP com a cópia de segurança das fotos enviadas
+npm run redefinir-senha-admin   # só no servidor: gera o token para um administrador que perdeu a senha escolher outra
 ```
 
 Os seeds podem rodar várias vezes. O `seed:dev` e o `seed:demo` se recusam a rodar em produção ou contra o RDS.
 
 Em produção (ex.: AWS), não use os seeds de teste: crie o primeiro administrador com `npm run criar-admin`, como descrito em [Primeiro acesso em produção](docs/GUIA_TECNICO.md#10-primeiro-acesso-em-produção).
+
+Senha esquecida: a equipe gera um link de uso único (`POST /api/v1/clientes/:id/redefinicao-senha`, ou `/admin/usuarios/:id/redefinicao-senha` para a equipe) e a própria pessoa escolhe a nova senha, sem e-mail ([Redefinição de senha](docs/GUIA_TECNICO.md#18-redefinição-de-senha)). Se o único administrador perder a senha, rode `npm run redefinir-senha-admin -- --email x@y.com` no servidor: o comando não pede senha, só imprime um token (e a validade, 60 minutos) para repassar ao administrador, que escolhe a própria senha em `/redefinir-senha?token=...`. Atualizando uma nuvem existente: a migration 024 criou a tabela `redefinicoes_senha`, então rode `npm run migrar`.
 
 ## Fotos dos produtos
 * As fotos enviadas ficam na pasta definida por `UPLOADS_DIR` (em produção, fora do projeto).
@@ -67,5 +70,5 @@ Criados pelo `seed:dev`, todos com a senha `Mantiqueira@2026`.
 
 ## Documentação
 * [`docs/API.md`](docs/API.md): contrato completo da API, com convenções, exemplos de requisição e resposta de cada endpoint e limitações conhecidas.
-* [`docs/GUIA_TECNICO.md`](docs/GUIA_TECNICO.md): variáveis opcionais, migrations, seeds, servidor, CORS, importação de CSV, jobs agendados, saúde, fotos enviadas, backup das fotos e dados pessoais e privacidade (LGPD).
+* [`docs/GUIA_TECNICO.md`](docs/GUIA_TECNICO.md): variáveis opcionais, migrations, seeds, servidor, CORS, importação de CSV, jobs agendados, saúde, fotos enviadas, backup das fotos, dados pessoais e privacidade (LGPD) e redefinição de senha.
 * [`docs/MAPA_FRONT_API.md`](docs/MAPA_FRONT_API.md): cada tela do front, os endpoints que ela usa e o que o front precisa mudar.
