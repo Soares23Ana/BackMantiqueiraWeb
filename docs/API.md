@@ -217,6 +217,8 @@ Depois da troca, **todos os tokens emitidos antes dela deixam de valer, inclusiv
 | PATCH | `/produtos/:id` | equipe | Altera os campos enviados |
 | DELETE | `/produtos/:id` | equipe | Desativa (não apaga) |
 | POST | `/produtos/:id/imagem` | equipe | Envia imagem (multipart) |
+| POST | `/produtos/:id/imagem/link` | equipe | Baixa a imagem de um link e guarda uma cópia |
+| POST | `/produtos/imagens/lote` | equipe | Envia fotos de vários produtos num ZIP (nome do arquivo = SKU) |
 | PATCH | `/produtos/:id/estoque` | equipe | Ajusta estoque com observação |
 | GET | `/produtos/:id/movimentacoes` | equipe | Histórico de estoque |
 
@@ -326,6 +328,23 @@ Desativa: some da vitrine e do checkout, mas continua no histórico e para a equ
 
 ### POST /produtos/:id/imagem (equipe)
 `multipart/form-data` com o arquivo no campo `imagem` (JPEG, PNG, WEBP ou GIF, até 5 MB; o conteúdo é conferido). Substitui `imagem_url` por `/arquivos/uploads/<uuid>.<ext>` e apaga o upload anterior. `200`: `{ "mensagem": "Imagem atualizada.", "produto": { ... } }`.
+
+### POST /produtos/:id/imagem/link (equipe)
+Body JSON: `{ "url": "https://..." }`. O servidor baixa a imagem e guarda uma cópia em `/arquivos/uploads/<uuid>.<ext>` (mesma regra do envio por arquivo: substitui `imagem_url` e apaga o upload anterior).
+- Aceita JPEG, PNG, WEBP e GIF, até 5 MB. SVG é recusado. O tipo é decidido pelo conteúdo (assinatura do arquivo), não só pelo `Content-Type`.
+- Só `http`/`https` (até 2048 caracteres, sem usuário e senha), até 3 redirecionamentos, tempo máximo de 10 s. Endereços internos são bloqueados (localhost, 127.x, redes privadas, 169.254.x.x etc.).
+- Limite: 30 requisições por minuto por usuário.
+- `200`: `{ "mensagem": "Imagem atualizada.", "produto": { ... } }`.
+- Erros `422` (campo `codigo`): `URL_INVALIDA`, `URL_NAO_PERMITIDA`, `IMAGEM_INVALIDA`, `IMAGEM_MUITO_GRANDE`, `IMAGEM_INACESSIVEL`. `404 PRODUTO_NAO_ENCONTRADO`. `429` se passar do limite.
+- A auditoria guarda só a URL de origem, sem a query string.
+
+### POST /produtos/imagens/lote (equipe)
+`multipart/form-data`: campo `arquivo` (`.zip`, até 20 MB) e campo `substituir` (`sim` ou `nao`; padrão `nao`).
+- O nome de cada foto, sem a extensão, deve ser o SKU do produto (ex.: `110606.jpg`). Pastas dentro do ZIP são aceitas (vale o último nome do caminho); maiúsculas/minúsculas não importam.
+- Limites: até 200 arquivos candidatos, 100 MB descompactados, 5 MB por imagem. Formatos: JPEG, PNG, WEBP, GIF (extensão e conteúdo são conferidos).
+- Se o mesmo SKU aparecer em mais de um arquivo, vale o primeiro válido e os outros vão para `duplicadas`. Produto que já tem imagem é ignorado, a menos que `substituir=sim` (os produtos do catálogo inicial já vêm com `/img/...`, então precisam de `substituir=sim`).
+- `200`: `{ "mensagem": "Envio em lote concluído.", "relatorio": { total_arquivos, aplicadas, ignoradas_ja_tem_imagem (número, conta cada arquivo), sem_produto[], formato_invalido[], grande_demais[], duplicadas[], falhas[], arquivos_ignorados_do_sistema (número), listas_cortadas[] } }`. Cada lista mostra no máximo 200 nomes; os nomes das listas que foram cortadas aparecem em `listas_cortadas`. Pastas, `__MACOSX/`, `.DS_Store` e arquivos ocultos não contam como candidatos (só entram em `arquivos_ignorados_do_sistema`).
+- Erros `422`: `ZIP_INVALIDO` (arquivo que não é `.zip` ou ZIP corrompido), `ZIP_MUITO_GRANDE` (mais de 20 MB, mais de 200 arquivos ou mais de 100 MB descompactados), `VALIDACAO` (arquivo ausente ou `substituir` inválido).
 
 ### PATCH /produtos/:id/estoque (equipe)
 Envie **um** de `quantidade` (novo valor) ou `ajuste` (soma/subtrai), sempre com `observacao` (3 a 500 caracteres):
@@ -837,6 +856,7 @@ Só esses dois campos. Versão, uptime, data de início e sincronizações ficam
   "status": "ok",
   "versao": "1.0.0",
   "banco": { "status": "conectado", "latencia_ms": 1, "migracoes_pendentes": [] },
+  "uploads": { "gravavel": true, "arquivos": 312 },
   "processo": { "iniciado_em": "2026-10-26T23:27:33.479Z", "uptime_segundos": 4, "node": "v24.20.0", "memoria_mb": 108 },
   "jobs": [
     { "nome": "estoque", "descricao": "A cada 30 min: ...", "expressao": "*/30 * * * *", "fuso": "America/Sao_Paulo", "ativo": true,
@@ -847,6 +867,8 @@ Só esses dois campos. Versão, uptime, data de início e sincronizações ficam
   "sincronizacoes": { "ultima": null, "ultima_catalogo": null, "ultima_carga_completa": null, "ultima_estoque": null, "ultima_importacao_manual": null }
 }
 ```
+`uploads`: estado da pasta de fotos enviadas: `gravavel` (boolean, a pasta aceita gravação?) e `arquivos` (quantos arquivos ela tem). O caminho não é exposto. Se `gravavel` for `false`, o `status` geral vira `degradado`.
+
 Por job: `ultima_execucao`, `ultimo_status` (`sucesso`, `falha` ou `ignorado`, quando outra instância estava rodando o job), `ultima_duracao_ms`, `proxima_execucao`, `falhas_seguidas`, `nova_tentativa_em` (quando há uma nova tentativa agendada), `atrasado` e `situacao` (`ok` ou `degradado`). O `status` geral fica `degradado` se algum job falhou **2 vezes seguidas** ou, estando agendado, **não rodou por mais de 2 intervalos** (além de banco fora do ar ou migrations pendentes). Uma falha de conexão ou deadlock ganha **uma nova tentativa automática após 1 minuto**; só depois dela a falha conta.
 
 ### POST /admin/jobs/:nome/executar (equipe)
@@ -877,7 +899,7 @@ Roda um job na hora, com a mesma trava do MySQL do agendamento. `:nome`: `catalo
 6. A razão social não é enviada pelo cliente: com `VALIDAR_CNPJ_RECEITA` ligado (produção), ela vem da Receita no cadastro; desligado (desenvolvimento, demonstração), clientes novos têm `razao_social: null` até a equipe preencher em `PUT /clientes/:id`. Use `nome_exibicao` para exibir.
 7. Os objetos de pedido em `historico_pedidos` (detalhes do cliente) vêm no formato do banco, mais simples que o de `GET /pedidos` (sem `pode_cancelar`, `total_itens` nem `sku` nos itens).
 8. Datas e horas vêm em UTC; converta para o fuso de Brasília na exibição.
-9. Imagens do catálogo (`/img/...`) são servidas pelo front; imagens enviadas pela API (`/arquivos/uploads/...`) ficam no disco do servidor e são perdidas se a instância for recriada (não há S3).
+9. Imagens do catálogo (`/img/...`) são servidas pelo front; imagens enviadas pela API (`/arquivos/uploads/...`) ficam na pasta definida por `UPLOADS_DIR` (em produção, fora do projeto), com cópia de segurança agendada (`npm run backup:fotos`).
 
 **Autenticação**
 10. Não há recuperação de senha por e-mail. Cliente que esqueceu a senha: a equipe define uma temporária em `PUT /clientes/:id/senha` e o cliente troca em "Minha conta" (a troca não é obrigatória; a API não força). Usuário da equipe: o gestor redefine em `PATCH /admin/usuarios/:id`.
@@ -1211,7 +1233,7 @@ Um carrinho é **abandonado** quando tem itens, está parado há pelo menos N di
 `GET /carrinhos-abandonados`: `pagina`, `limite` (padrão 20, máximo 100) e filtros `dias` (1 a 365; substitui a configuração nesta consulta), `busca` (nome, razão social, e-mail ou CNPJ) e `contatado=true|false`. "Contatado" significa que há um contato registrado **depois** da última atualização do carrinho: se o cliente mexer no carrinho e abandoná-lo de novo, ele volta a ficar sem contato.
 ```json
 {
-  "dias": 3,
+  "dias": 2,
   "carrinhos": [
     {
       "id_carrinho": 4,

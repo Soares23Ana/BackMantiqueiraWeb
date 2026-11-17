@@ -222,7 +222,7 @@ Todas as rotas exigem token da **equipe** (`RequireRole` no front). A tela Equip
 | Lista (inclusive inativos), busca, filtros e paginação | `GET /produtos?incluir_inativos=true&...` |
 | Categorias e marcas (listar, criar, renomear, ativar, excluir) | `/categorias` e `/marcas` (`GET`, `POST`, `PATCH`, `DELETE`, com `incluir_inativos=true`) |
 | Criar e editar produto | `POST /produtos`, `PATCH /produtos/:id` |
-| Foto do produto | `POST /produtos/:id/imagem` (multipart) |
+| Foto do produto | `POST /produtos/:id/imagem` (multipart); colar link: `POST /produtos/:id/imagem/link` (`{ url }`); envio em lote por ZIP (nome do arquivo = SKU): `POST /produtos/imagens/lote` (multipart: `arquivo`, `substituir`) |
 | Ativar/desativar | `PATCH /produtos/:id` `{ ativo }` |
 | Ajustar estoque (observação obrigatória) | `PATCH /produtos/:id/estoque` |
 | Histórico de estoque | `GET /produtos/:id/movimentacoes?limite=30` |
@@ -285,7 +285,7 @@ Todas as rotas exigem token da **equipe** (`RequireRole` no front). A tela Equip
 - **Ligado:** tudo. **Mudar:** nada. (A rota antiga `GET /auth/users` foi removida; o front nunca a usou.)
 
 ### Saúde do sistema (`pages/manager/SystemHealth.tsx`)
-- **Usa hoje:** `GET /saude/detalhado` (fora de `/api/v1`).
+- **Usa hoje:** `GET /saude/detalhado` (fora de `/api/v1`). O campo novo `uploads` (`{ gravavel, arquivos }`) mostra se a pasta de fotos aceita gravação e quantos arquivos ela tem; com `gravavel: false`, o `status` geral vira `degradado`.
 - **Ligado:** tudo. **Mudar:** nada.
 
 ## Prioridades
