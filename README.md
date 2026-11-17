@@ -19,7 +19,7 @@ Copie o `.env.example` para `.env` e preencha. A API valida as variáveis ao ini
 | Variável | Obrigatória |
 |---|---|
 | `JWT_SECRET` | Sempre. Pelo menos 32 caracteres, longa e aleatória |
-| `DB_HOST`, `DB_USER`, `DB_PASSWORD`, `DB_NAME` | Em produção (em desenvolvimento, o padrão é `localhost`, `root`, senha vazia e `mantiqueira_final`) |
+| `DB_HOST`, `DB_USER`, `DB_PASSWORD`, `DB_NAME` | Em produção (em desenvolvimento, o padrão é `localhost`, `root`, senha vazia e `mantiqueira_db`) |
 
 Para gerar o `JWT_SECRET`:
 ```bash
