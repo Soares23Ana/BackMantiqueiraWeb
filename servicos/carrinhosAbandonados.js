@@ -9,7 +9,7 @@ const DIA = 24 * 60 * 60 * 1000;
 
 /**
  * Carrinho abandonado: tem itens, está parado há pelo menos N dias (configuração "carrinho_abandonado_dias",
- * padrão 3) e o cliente (ativo) não fez pedido depois da última atualização do carrinho.
+ * padrão 2) e o cliente (ativo) não fez pedido depois da última atualização do carrinho.
  * "Contatado": a equipe registrou um contato depois da última atualização do carrinho (um carrinho mexido de novo
  * e abandonado outra vez volta a ficar sem contato).
  */

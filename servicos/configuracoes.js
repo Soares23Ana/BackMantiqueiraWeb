@@ -44,7 +44,7 @@ const DEFINICOES = {
     carrinho_abandonado_dias: {
         descricao: 'Dias parado para um carrinho com itens ser considerado abandonado.',
         publica: false,
-        padrao: '3',
+        padrao: '2',
         validar: (valor) => {
             const numero = Number(valor);
             if (typeof valor === 'boolean' || !Number.isSafeInteger(numero) || numero < 1 || numero > 365) {

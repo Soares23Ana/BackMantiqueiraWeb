@@ -64,9 +64,9 @@ describe('carrinhos abandonados', () => {
         await request(app).patch(`/api/v1/carrinhos-abandonados/${c.antigo.usuario.id_usuario}/contatado`).set('Authorization', cliente.auth).expect(403);
     });
 
-    test('lista o abandonado (parado há 3 dias ou mais, com itens, sem pedido depois), do mais recente ao mais antigo', async () => {
+    test('lista o abandonado (parado há 2 dias ou mais, com itens, sem pedido depois), do mais recente ao mais antigo', async () => {
         const resposta = await listar().expect(200);
-        assert.equal(resposta.body.dias, 3);
+        assert.equal(resposta.body.dias, 2);
         assert.deepEqual(ids(resposta), ['Mercado SemFone Ltda', 'Mercado Antigo Ltda']);
         assert.deepEqual(resposta.body.paginacao, { total: 2, pagina: 1, limite: 20, total_paginas: 1 });
 

@@ -815,7 +815,7 @@ Fora da janela de datas, ou com `ativo: false`, ou sem pop-up salvo: `{ "popup":
 | `horario_atendimento` | sim | texto até 200 caracteres |
 | `aviso_topo` | sim | texto até 200 caracteres |
 | `meta_reposicao` | não | inteiro de 1 a 1.000.000 (padrão 50) |
-| `carrinho_abandonado_dias` | não | inteiro de 1 a 365 (padrão 3): dias parado para um carrinho com itens ser abandonado |
+| `carrinho_abandonado_dias` | não | inteiro de 1 a 365 (padrão 2): dias parado para um carrinho com itens ser abandonado |
 | `estoque_faixa_alta` | não | inteiro de 1 a 10000 (padrão 50): acima dele o produto disponível aparece como "Mais de N disponíveis" |
 
 Erros: `422 VALIDACAO`, `404` (chave desconhecida).
@@ -1201,7 +1201,7 @@ Um produto desativado depois de entrar no carrinho continua na lista com `ativo:
 
 ## 18. Carrinhos abandonados (equipe)
 
-Um carrinho é **abandonado** quando tem itens, está parado há pelo menos N dias (configuração `carrinho_abandonado_dias`, inteiro de 1 a 365, padrão **3**) e o cliente (ativo) **não fez pedido depois da última atualização** do carrinho. Não há envio de e-mail nem valores em reais: a equipe fala com o cliente por conta própria (o `link_whatsapp` já vem com uma mensagem pronta).
+Um carrinho é **abandonado** quando tem itens, está parado há pelo menos N dias (configuração `carrinho_abandonado_dias`, inteiro de 1 a 365, padrão **2**) e o cliente (ativo) **não fez pedido depois da última atualização** do carrinho. Não há envio de e-mail nem valores em reais: a equipe fala com o cliente por conta própria (o `link_whatsapp` já vem com uma mensagem pronta).
 
 | Método | Rota | Descrição |
 |---|---|---|
