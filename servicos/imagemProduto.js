@@ -5,7 +5,7 @@ const { removerArquivo, removerUploadPorUrl, caminhoDoUpload, urlDoUpload } = re
  * Troca a imagem de um produto por um arquivo JÁ gravado na pasta de uploads: atualiza imagem_url, audita
  * e apaga o upload anterior. Usada pelo upload comum, pela cópia a partir de um link e pelo envio em lote.
  * Se a atualização no banco falhar, o arquivo gravado é apagado e o erro segue adiante.
- * Imagens externas ou do front (/img/...) não ficam no servidor, então nunca são apagadas.
+ * Imagens externas ou locais (/img/...) não ficam no servidor, então nunca são apagadas.
  * Devolve a imagem_url anterior.
  */
 async function aplicarImagemProduto({ produto, nomeArquivo, usuario, detalhe }) {

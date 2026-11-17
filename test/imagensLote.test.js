@@ -32,7 +32,7 @@ before(async () => {
     await criar('LOTE-A');
     await criar('LOTE-B');
     await criar('110606'); // no catálogo inicial: sku_antigo SKU-101
-    await criar('LOTE-FRONT', { imagem_url: '/img/lote-front.webp' });
+    await criar('LOTE-LOCAL', { imagem_url: '/img/lote-local.webp' });
     await criar('LOTE-E');
     await criar('LOTE-F');
 });
@@ -119,12 +119,12 @@ describe('POST /produtos/imagens/lote', () => {
         assert.equal((await Produto.findByPk(produto.id_produto)).imagem_url, null);
     });
 
-    test('produto que já tem imagem é ignorado; com substituir=sim troca e apaga o upload anterior (não o /img do front)', async () => {
-        const zip1 = montarZip({ 'LOTE-A.png': PNG, 'LOTE-FRONT.png': PNG });
+    test('produto que já tem imagem é ignorado; com substituir=sim troca e apaga o upload anterior (não o caminho local /img)', async () => {
+        const zip1 = montarZip({ 'LOTE-A.png': PNG, 'LOTE-LOCAL.png': PNG });
         const ignorado = (await enviar(zip1).expect(200)).body.relatorio;
         assert.equal(ignorado.aplicadas, 0);
         assert.equal(ignorado.ignoradas_ja_tem_imagem, 2);
-        assert.equal((await produtoDe('LOTE-FRONT')).imagem_url, '/img/lote-front.webp');
+        assert.equal((await produtoDe('LOTE-LOCAL')).imagem_url, '/img/lote-local.webp');
 
         const anterior = (await produtoDe('LOTE-A')).imagem_url;
         assert.ok(fs.existsSync(arquivoDe(anterior)));
@@ -134,7 +134,7 @@ describe('POST /produtos/imagens/lote', () => {
         assert.notEqual(novo, anterior);
         assert.equal(fs.existsSync(arquivoDe(anterior)), false);
         assert.ok(fs.existsSync(arquivoDe(novo)));
-        assert.match((await produtoDe('LOTE-FRONT')).imagem_url, /^\/arquivos\/uploads\//);
+        assert.match((await produtoDe('LOTE-LOCAL')).imagem_url, /^\/arquivos\/uploads\//);
 
         await enviar(zip1, { substituir: 'talvez' }).expect(422);
         await enviar(zip1, { substituir: 'nao' }).expect(200);
