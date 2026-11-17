@@ -1,14 +1,12 @@
 const fs = require('node:fs');
 const fsPromises = require('node:fs/promises');
-const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 const multer = require('multer');
-const { PASTA_UPLOADS, garantirPasta } = require('../lib/uploads');
+const { PASTA_LOTE: PASTA_TEMPORARIA, garantirPasta, limparSobrasTemporarias } = require('../lib/uploads');
 
 const LIMITE_ZIP_BYTES = 20 * 1024 * 1024;
 // O ZIP temporário fica no disco da pasta de uploads (pasta oculta), não em /tmp: em algumas distribuições o /tmp é
 // memória, e o envio em lote não pode consumir RAM da instância pequena.
-const PASTA_TEMPORARIA = path.join(PASTA_UPLOADS, '.lote');
 
 const multerZip = multer({
     storage: multer.diskStorage({
@@ -28,7 +26,7 @@ const multerZip = multer({
 
 // Recebe o ZIP em disco (campo "arquivo") e apaga o arquivo temporário quando a resposta termina.
 function receberZip(req, res, next) {
-    garantirPasta().then(() => {
+    garantirPasta().then(() => limparSobrasTemporarias()).then(() => {
         multerZip.single('arquivo')(req, res, (erro) => {
             if (req.file) {
                 res.once('close', () => fs.rm(req.file.path, { force: true }, () => {}));

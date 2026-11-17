@@ -24,6 +24,7 @@ let permitirLoopbackNosTestes;
 let baixarImagem;
 let ipBloqueado;
 let produto;
+let conexoes = 0;
 
 before(async () => {
     ({ app, sequelize } = await prepararApp());
@@ -79,6 +80,7 @@ before(async () => {
             default: res.writeHead(404); return res.end();
         }
     });
+    servidor.on('connection', () => { conexoes += 1; });
     await new Promise((resolve) => servidor.listen(0, '127.0.0.1', resolve));
     base = `http://127.0.0.1:${servidor.address().port}`;
     permitirLoopbackNosTestes(true);
@@ -214,6 +216,35 @@ describe('proteção contra acesso à rede interna (SSRF)', () => {
         } finally {
             permitirLoopbackNosTestes(true);
         }
+    });
+
+    test('endereços de loopback e metadados são recusados antes de qualquer conexão de rede', async () => {
+        const net = require('node:net');
+        const porta = servidor.address().port;
+        const alvos = [
+            `http://[::1]:${porta}/`, `http://2130706433:${porta}/`, `http://0:${porta}/`, `http://127.1:${porta}/`,
+            `http://0x7f.1:${porta}/`, `http://[::ffff:127.0.0.1]:${porta}/`, 'http://169.254.169.254/latest/meta-data/',
+            `http://localhost:${porta}/ok.png`
+        ];
+        const conectar = net.Socket.prototype.connect;
+        let tentativas = 0;
+        permitirLoopbackNosTestes(false);
+        conexoes = 0;
+        try {
+            for (const alvo of alvos) {
+                // Endereços escritos como IP nem chegam a abrir um socket; o nome (localhost) abre, mas o lookup o barra.
+                net.Socket.prototype.connect = function espiao(...args) { tentativas += 1; return conectar.apply(this, args); };
+                tentativas = 0;
+                const erro = await erroDe(baixarImagem(alvo));
+                net.Socket.prototype.connect = conectar;
+                assert.ok(['URL_NAO_PERMITIDA', 'URL_INVALIDA'].includes(erro && erro.codigo), alvo);
+                if (!alvo.includes('localhost')) assert.equal(tentativas, 0, `nenhuma conexão para ${alvo}`);
+            }
+        } finally {
+            net.Socket.prototype.connect = conectar;
+            permitirLoopbackNosTestes(true);
+        }
+        assert.equal(conexoes, 0, 'o servidor local não pode ter recebido nenhuma conexão');
     });
 
     test('mesmo com o loopback liberado nos testes, redes privadas e metadados continuam bloqueados', async () => {

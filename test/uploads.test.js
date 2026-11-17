@@ -139,3 +139,107 @@ describe('npm run backup:fotos', () => {
         assert.match(bom.stdout, /Arquivos: \d+/);
     });
 });
+
+describe('pasta temporária .lote e arquivos ocultos', () => {
+    const pastaLote = path.join(config.uploads.dir, '.lote');
+    const criarOculto = (nome, conteudo = 'x') => {
+        fs.mkdirSync(pastaLote, { recursive: true });
+        fs.writeFileSync(path.join(pastaLote, nome), conteudo);
+        fs.writeFileSync(path.join(config.uploads.dir, '.oculto-teste'), 'x');
+    };
+    const limpar = () => {
+        fs.rmSync(pastaLote, { recursive: true, force: true });
+        fs.rmSync(path.join(config.uploads.dir, '.oculto-teste'), { force: true });
+    };
+
+    test('o backup não inclui .lote nem arquivos ocultos', async () => {
+        const { fazerBackup } = require('../scripts/backup-fotos');
+        const raiz = fs.mkdtempSync(path.join(os.tmpdir(), 'mantiqueira-backup-oculto-'));
+        const origem = path.join(raiz, 'fotos');
+        fs.mkdirSync(path.join(origem, '.lote'), { recursive: true });
+        fs.writeFileSync(path.join(origem, '.lote', 'sobra.zip'), 'zip');
+        fs.writeFileSync(path.join(origem, '.oculto'), 'x');
+        fs.writeFileSync(path.join(origem, 'a.png'), PNG);
+        try {
+            const r = await fazerBackup({ origem, destino: path.join(raiz, 'bk'), manter: 2 });
+            assert.equal(r.arquivos, 1);
+            const conteudo = unzipSync(new Uint8Array(fs.readFileSync(r.caminho)));
+            assert.deepEqual(Object.keys(conteudo), ['a.png']);
+        } finally {
+            fs.rmSync(raiz, { recursive: true, force: true });
+        }
+    });
+
+    test('a contagem do /saude/detalhado não conta .lote nem arquivos ocultos', async () => {
+        const { estadoPastaUploads } = require('../lib/uploads');
+        limpar();
+        const antes = (await estadoPastaUploads()).arquivos;
+        criarOculto('sobra.zip');
+        try {
+            assert.equal((await estadoPastaUploads()).arquivos, antes);
+            const resposta = await request(app).get('/saude/detalhado').set('Authorization', equipe.auth).expect(200);
+            assert.equal(resposta.body.uploads.arquivos, antes);
+        } finally {
+            limpar();
+        }
+    });
+
+    test('uploads:mover não copia .lote nem arquivos ocultos', async () => {
+        const { moverUploads } = require('../scripts/mover-uploads');
+        const raiz = fs.mkdtempSync(path.join(os.tmpdir(), 'mantiqueira-mover-oculto-'));
+        const origem = path.join(raiz, 'origem');
+        const destino = path.join(raiz, 'destino');
+        fs.mkdirSync(path.join(origem, '.lote'), { recursive: true });
+        fs.writeFileSync(path.join(origem, '.lote', 'sobra.zip'), 'zip');
+        fs.writeFileSync(path.join(origem, '.oculto'), 'x');
+        fs.writeFileSync(path.join(origem, 'a.png'), 'A');
+        try {
+            const r = await moverUploads({ origem, destino });
+            assert.equal(r.copiados, 1);
+            assert.deepEqual(fs.readdirSync(destino), ['a.png']);
+        } finally {
+            fs.rmSync(raiz, { recursive: true, force: true });
+        }
+    });
+
+    test('GET /arquivos/uploads/.lote/qualquer-nome responde 404, mesmo existindo o arquivo', async () => {
+        criarOculto('visivel.zip', 'conteudo-secreto');
+        try {
+            assert.ok(fs.existsSync(path.join(pastaLote, 'visivel.zip')));
+            await request(app).get('/arquivos/uploads/.lote/visivel.zip').expect(404);
+            await request(app).get('/arquivos/uploads/.lote/qualquer-nome').expect(404);
+            await request(app).get('/arquivos/uploads/.oculto-teste').expect(404);
+            await request(app).get('/arquivos/uploads/%2e%6cote/visivel.zip').expect(404);
+        } finally {
+            limpar();
+        }
+    });
+
+    test('sobras com mais de 1 hora de .lote são apagadas: no início de cada lote e na subida da API', async () => {
+        const { prepararPastaUploads, limparSobrasTemporarias } = require('../lib/uploads');
+        const velho = (nome) => {
+            criarOculto(nome);
+            const antigo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+            fs.utimesSync(path.join(pastaLote, nome), antigo, antigo);
+        };
+        try {
+            // Função de limpeza: só o que passa de 1 hora.
+            velho('velho.zip');
+            fs.writeFileSync(path.join(pastaLote, 'recente.zip'), 'x');
+            assert.equal(await limparSobrasTemporarias(), 1);
+            assert.deepEqual(fs.readdirSync(pastaLote), ['recente.zip']);
+
+            // Na subida da API.
+            velho('velho-subida.zip');
+            await prepararPastaUploads();
+            assert.deepEqual(fs.readdirSync(pastaLote), ['recente.zip']);
+
+            // No início de cada lote (a requisição falha por falta de arquivo, mas a limpeza já rodou).
+            velho('velho-lote.zip');
+            await request(app).post('/api/v1/produtos/imagens/lote').set('Authorization', equipe.auth).expect(422);
+            assert.deepEqual(fs.readdirSync(pastaLote), ['recente.zip']);
+        } finally {
+            limpar();
+        }
+    });
+});
