@@ -643,7 +643,7 @@ async function enviarImagem(req, res) {
 }
 
 // POST /produtos/imagens/lote (equipe, multipart: "arquivo" = .zip, "substituir" = sim|nao). O nome de cada foto, sem a
-// extensão, é o SKU do produto (ou um sku_antigo do catálogo inicial). Devolve o relatório do que foi aplicado e do que foi ignorado.
+// extensão, é o SKU do produto no banco. Devolve o relatório do que foi aplicado e do que foi ignorado.
 async function enviarImagensEmLote(req, res) {
     if (!req.file) {
         throw new ErroApi(422, 'VALIDACAO', 'O arquivo .zip é obrigatório (campo "arquivo").');

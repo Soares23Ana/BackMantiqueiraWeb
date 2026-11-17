@@ -31,7 +31,10 @@ before(async () => {
     };
     await criar('LOTE-A');
     await criar('LOTE-B');
-    await criar('110606'); // no catálogo inicial: sku_antigo SKU-101
+    await criar('110606');
+    await criar('DUP-1');
+    await criar('DUP-2');
+    await criar('DUP-3');
     await criar('LOTE-LOCAL', { imagem_url: '/img/lote-local.webp' });
     await criar('LOTE-E');
     await criar('LOTE-F');
@@ -55,11 +58,11 @@ const arquivoDe = (url) => path.join(config.uploads.dir, url.replace('/arquivos/
 const arquivosDaPasta = () => fs.readdirSync(config.uploads.dir, { withFileTypes: true }).filter((i) => i.isFile()).map((i) => i.name);
 
 describe('POST /produtos/imagens/lote', () => {
-    test('aplica as fotos pelo SKU (ignorando pasta, maiúsculas e espaços) e pelo sku_antigo, e audita cada produto', async () => {
+    test('aplica as fotos pelo SKU (ignorando pasta, maiúsculas e espaços) e audita cada produto', async () => {
         const zip = montarZip({
             'fotos/  lote-a .PNG': PNG,
             'LOTE-B.jpeg': JPEG,
-            'SKU-101.webp': WEBP
+            '110606.webp': WEBP
         });
         const resposta = await enviar(zip).expect(200);
         const r = resposta.body.relatorio;
@@ -149,6 +152,35 @@ describe('POST /produtos/imagens/lote', () => {
         assert.deepEqual(r.sem_produto, ['NAO-EXISTE.png']);
         for (const nome of arquivosDaPasta()) assert.match(nome, /^[0-9a-f-]{36}\.(png|jpg|webp|gif)$/);
         assert.ok(!fs.existsSync(path.join(config.uploads.dir, '..', 'fora')));
+    });
+
+    test('duplicadas: vale o primeiro arquivo válido do produto, na ordem do ZIP', async () => {
+        const grande = Buffer.concat([PNG, Buffer.alloc(6 * 1024 * 1024)]);
+        // DUP-1: primeira inválida (assinatura falsa) e segunda válida -> aplica a segunda.
+        // DUP-2: duas válidas -> aplica a primeira; a segunda é duplicada.
+        // DUP-3: primeira grande demais, segunda válida (mesmo nome em outra pasta), terceira duplicada.
+        const zip = montarZip({
+            'a/DUP-1.png': Buffer.from('não sou PNG'),
+            'b/DUP-1.jpg': JPEG,
+            'DUP-2.png': PNG,
+            'DUP-2.jpg': JPEG,
+            'x/DUP-3.png': grande,
+            'y/DUP-3.png': PNG,
+            'z/DUP-3.png': PNG
+        }, 6);
+        const r = (await enviar(zip).expect(200)).body.relatorio;
+        assert.equal(r.aplicadas, 3);
+        assert.deepEqual(r.formato_invalido, ['DUP-1.png']);
+        assert.deepEqual(r.grande_demais, ['DUP-3.png']);
+        assert.deepEqual(r.duplicadas, ['DUP-2.jpg', 'DUP-3.png']);
+        assert.match((await produtoDe('DUP-1')).imagem_url, /\.jpg$/);
+        assert.match((await produtoDe('DUP-2')).imagem_url, /\.png$/);
+        assert.match((await produtoDe('DUP-3')).imagem_url, /\.png$/);
+    });
+
+    test('o casamento usa somente o SKU do banco: um nome que não é SKU vai para sem_produto', async () => {
+        const r = (await enviar(montarZip({ 'SKU-101.png': PNG })).expect(200)).body.relatorio;
+        assert.deepEqual(r.sem_produto, ['SKU-101.png']);
     });
 
     test('GIF é aceito', async () => {

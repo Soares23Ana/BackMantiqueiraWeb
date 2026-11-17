@@ -1,19 +1,13 @@
 const fs = require('node:fs/promises');
-const fsSync = require('node:fs');
-const path = require('node:path');
 const { fn, col, where } = require('sequelize');
 const { Produto } = require('../models');
 const { ErroApi } = require('../lib/erros');
 const logger = require('../lib/logger');
 const { abrirZip, ErroZip } = require('../lib/zip');
-const { lerCsv } = require('../lib/csv');
-const { decodificarArquivo } = require('../lib/planilha');
 const { assinaturaConfere, TIPO_POR_EXTENSAO, LIMITE_IMAGEM_BYTES } = require('../lib/imagem');
 const { caminhoDoUpload, novoNomeDeUpload, removerArquivo } = require('../lib/uploads');
 const { aplicarImagemProduto } = require('./imagemProduto');
 
-// O sku_antigo não é uma coluna do banco: só existe no catálogo inicial (a importação troca o SKU do produto existente).
-const ARQUIVO_CATALOGO = path.join(__dirname, '..', 'seeds', 'catalogo_inicial.csv');
 const MAXIMO_ARQUIVOS = 200;
 const MAXIMO_DESCOMPACTADO = 100 * 1024 * 1024;
 const MAXIMO_ITENS_LISTA = 200;
@@ -28,32 +22,11 @@ function ehDoSistema(segmentos) {
     return segmentos.some((segmento) => segmento === '__MACOSX' || (segmento.startsWith('.') && segmento !== '.' && segmento !== '..'));
 }
 
-// Casa o nome do arquivo (sem pasta e sem extensão, sem espaços nas pontas, sem diferenciar maiúsculas) com o SKU
-// do produto; se não achar, com o sku_antigo. O nome interno do ZIP nunca é usado para gravar nada.
-async function produtoPorSku(chave) {
+// Casa o nome do arquivo (sem pasta e sem extensão, sem espaços nas pontas, sem diferenciar maiúsculas) somente com o
+// SKU gravado no banco. O nome interno do ZIP nunca é usado para gravar nada.
+async function acharProduto(chave) {
     const candidatos = await Produto.findAll({ where: where(fn('LOWER', col('sku')), chave), limit: 5 });
     return candidatos.find((produto) => String(produto.sku).trim().toLowerCase() === chave) || null;
-}
-
-// Mapa sku_antigo (minúsculas) -> sku atual, lido do catálogo inicial. Sem o arquivo, o mapa fica vazio.
-function carregarMapaSkuAntigo(arquivo) {
-    const mapa = new Map();
-    try {
-        const { registros } = lerCsv(decodificarArquivo(fsSync.readFileSync(arquivo)));
-        for (const { valores } of registros) {
-            if (valores.sku && valores.sku_antigo) mapa.set(valores.sku_antigo.trim().toLowerCase(), valores.sku.trim().toLowerCase());
-        }
-    } catch (erro) {
-        if (erro.code !== 'ENOENT') logger.warn('Não foi possível ler o catálogo para o sku_antigo.', { erro: erro.message });
-    }
-    return mapa;
-}
-
-async function acharProduto(chave, mapaSkuAntigo) {
-    const direto = await produtoPorSku(chave);
-    if (direto) return direto;
-    const atual = mapaSkuAntigo.get(chave);
-    return atual ? produtoPorSku(atual) : null;
 }
 
 function relatorioVazio() {
@@ -76,7 +49,7 @@ function relatorioVazio() {
  * descompactada. Uma imagem com problema nunca derruba as outras.
  * Lança ErroApi 422 (ZIP_INVALIDO, ZIP_MUITO_GRANDE) para problemas do ZIP como um todo.
  */
-async function aplicarImagensEmLote({ caminhoZip, substituir = false, usuario, arquivoCatalogo = ARQUIVO_CATALOGO }) {
+async function aplicarImagensEmLote({ caminhoZip, substituir = false, usuario }) {
     const relatorio = relatorioVazio();
 
     let zip;
@@ -114,7 +87,6 @@ async function aplicarImagensEmLote({ caminhoZip, substituir = false, usuario, a
         relatorio.total_arquivos = candidatas.length;
 
         const produtosTratados = new Set();
-        const mapaSkuAntigo = carregarMapaSkuAntigo(arquivoCatalogo);
         const registrar = (lista, nome) => {
             if (relatorio[lista].length < MAXIMO_ITENS_LISTA) relatorio[lista].push(nome.slice(0, MAXIMO_NOME));
             else if (!relatorio.listas_cortadas.includes(lista)) relatorio.listas_cortadas.push(lista);
@@ -131,17 +103,17 @@ async function aplicarImagensEmLote({ caminhoZip, substituir = false, usuario, a
                     continue;
                 }
 
-                const produto = await acharProduto(chave, mapaSkuAntigo);
+                const produto = await acharProduto(chave);
                 if (!produto) {
                     registrar('sem_produto', nome);
                     continue;
                 }
-                // Uma foto por produto: vale a primeira que casou (mesmo SKU em extensões diferentes, ou SKU e sku_antigo).
+                // Uma foto por produto: vale a primeira (na ordem do ZIP) que for válida e dentro do limite. Foto inválida ou
+                // grande demais não reserva o produto; só as que vêm depois de uma aplicada são duplicadas.
                 if (produtosTratados.has(produto.id_produto)) {
                     registrar('duplicadas', nome);
                     continue;
                 }
-                produtosTratados.add(produto.id_produto);
 
                 if (!substituir && produto.imagem_url) {
                     relatorio.ignoradas_ja_tem_imagem += 1;
@@ -181,6 +153,7 @@ async function aplicarImagensEmLote({ caminhoZip, substituir = false, usuario, a
                     registrar('falhas', nome);
                     continue;
                 }
+                produtosTratados.add(produto.id_produto);
                 relatorio.aplicadas += 1;
             } catch (erro) {
                 logger.error('Falha ao tratar imagem do lote.', { erro });
