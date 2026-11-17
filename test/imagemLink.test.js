@@ -44,6 +44,14 @@ before(async () => {
             case '/falso.png': return enviar('image/png', Buffer.from('isto não é um PNG de verdade'));
             case '/svg': return enviar('image/svg+xml', '<svg xmlns="http://www.w3.org/2000/svg"/>');
             case '/svg-disfarcado': return enviar('image/png', '<svg xmlns="http://www.w3.org/2000/svg"></svg>');
+            case '/octet-jpeg': res.writeHead(200, { 'Content-Type': 'application/octet-stream' }); return res.end(JPEG);
+            case '/binary-png': res.writeHead(200, { 'Content-Type': 'binary/octet-stream; charset=x' }); return res.end(PNG);
+            case '/sem-tipo': res.writeHead(200); return res.end(PNG);
+            case '/octet-texto': res.writeHead(200, { 'Content-Type': 'application/octet-stream' }); return res.end('não sou imagem');
+            case '/sem-tipo-texto': res.writeHead(200); return res.end('não sou imagem');
+            case '/html': return enviar('text/html', PNG);
+            case '/json': return enviar('application/json', PNG);
+            case '/declara-jpeg-e-e-png': return enviar('image/jpeg', PNG);
             case '/vazio': return enviar('image/png', Buffer.alloc(0));
             case '/grande': {
                 // Sem Content-Length: o limite precisa interromper o download em andamento.
@@ -151,6 +159,29 @@ describe('POST /produtos/:id/imagem/link', () => {
 
     test('arquivo que não é imagem, SVG, assinatura falsa e vazio: 422 IMAGEM_INVALIDA, sem deixar resíduos', async () => {
         for (const caminho of ['/texto', '/falso.png', '/svg', '/svg-disfarcado', '/vazio']) {
+            const resposta = await colar(`${base}${caminho}`).expect(422);
+            assert.equal(resposta.body.codigo, 'IMAGEM_INVALIDA', caminho);
+        }
+        assert.deepEqual(semResiduos(), []);
+    });
+
+    test('Content-Type ausente ou octet-stream: o tipo vem da assinatura do arquivo', async () => {
+        const dono = await criarUsuario('equipe');
+        const colar = (url) => colarComo(url, dono.auth);
+        const jpeg = (await colar(`${base}/octet-jpeg`).expect(200)).body.produto.imagem_url;
+        assert.match(jpeg, /\.jpg$/);
+        assert.deepEqual(fs.readFileSync(arquivoDe(jpeg)), JPEG);
+        const png = (await colar(`${base}/binary-png`).expect(200)).body.produto.imagem_url;
+        assert.match(png, /\.png$/);
+        const semTipo = (await colar(`${base}/sem-tipo`).expect(200)).body.produto.imagem_url;
+        assert.match(semTipo, /\.png$/);
+        assert.equal(fs.existsSync(arquivoDe(png)), false, 'a imagem anterior foi apagada');
+    });
+
+    test('octet-stream ou sem tipo com conteúdo que não é imagem, outros tipos e tipo que não bate: IMAGEM_INVALIDA', async () => {
+        const dono = await criarUsuario('equipe');
+        const colar = (url) => colarComo(url, dono.auth);
+        for (const caminho of ['/octet-texto', '/sem-tipo-texto', '/html', '/json', '/svg', '/declara-jpeg-e-e-png']) {
             const resposta = await colar(`${base}${caminho}`).expect(422);
             assert.equal(resposta.body.codigo, 'IMAGEM_INVALIDA', caminho);
         }

@@ -20,7 +20,7 @@ const { pipeline } = require('node:stream/promises');
 const { randomUUID } = require('node:crypto');
 const config = require('../config/ambiente');
 const { ErroApi } = require('../lib/erros');
-const { assinaturaConfere, lerCabecalho, LIMITE_IMAGEM_BYTES, TIPOS_IMAGEM } = require('../lib/imagem');
+const { assinaturaConfere, detectarTipoImagem, lerCabecalho, LIMITE_IMAGEM_BYTES, TIPOS_IMAGEM } = require('../lib/imagem');
 const { PASTA_UPLOADS, EXTENSAO_POR_TIPO, garantirPasta, novoNomeDeUpload, caminhoDoUpload } = require('../lib/uploads');
 
 const MAXIMO_URL = 2048;
@@ -188,9 +188,15 @@ function requisitar(url, { permitirLoopback, sinal }) {
     });
 }
 
-function tipoDaResposta(resposta) {
+const TIPOS_GENERICOS = ['application/octet-stream', 'binary/octet-stream'];
+
+// Content-Type de imagem: o tipo declarado precisa bater com a assinatura. Ausente ou genérico (octet-stream):
+// o tipo sai da assinatura do arquivo. Qualquer outro: recusado, sem baixar o corpo.
+function interpretarContentType(resposta) {
     const bruto = String(resposta.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
-    return TIPOS_IMAGEM.includes(bruto) ? bruto : null;
+    if (TIPOS_IMAGEM.includes(bruto)) return { declarado: bruto };
+    if (bruto === '' || TIPOS_GENERICOS.includes(bruto)) return { declarado: null };
+    return null;
 }
 
 class LimiteDeTamanho extends Transform {
@@ -209,8 +215,8 @@ class LimiteDeTamanho extends Transform {
 
 // Grava a resposta num arquivo temporário (oculto) da pasta de uploads, confere e só então dá o nome final.
 async function salvarResposta(resposta, sinal) {
-    const tipo = tipoDaResposta(resposta);
-    if (!tipo) {
+    const contentType = interpretarContentType(resposta);
+    if (!contentType) {
         resposta.resume();
         throw erroImagemInvalida();
     }
@@ -225,7 +231,8 @@ async function salvarResposta(resposta, sinal) {
         await pipeline(resposta, new LimiteDeTamanho(LIMITE_IMAGEM_BYTES), fs.createWriteStream(temporario, { flags: 'wx' }), { signal: sinal });
         const info = await fsp.stat(temporario);
         const cabecalho = await lerCabecalho(temporario);
-        if (info.size === 0 || !assinaturaConfere(tipo, cabecalho)) throw erroImagemInvalida();
+        const tipo = contentType.declarado || detectarTipoImagem(cabecalho);
+        if (info.size === 0 || !tipo || !assinaturaConfere(tipo, cabecalho)) throw erroImagemInvalida();
         const nomeArquivo = novoNomeDeUpload(tipo);
         await fsp.rename(temporario, caminhoDoUpload(nomeArquivo));
         return { nomeArquivo, tipo, tamanho: info.size, extensao: EXTENSAO_POR_TIPO[tipo] };
