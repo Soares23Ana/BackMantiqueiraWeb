@@ -162,4 +162,4 @@ if (require.main === module) {
     principal();
 }
 
-module.exports = { lerArgumentos, validarDados, criarAdmin, verificarSemAdministrador, perguntarOculto, confirmado, Recusa };
+module.exports = { lerArgumentos, validarDados, criarAdmin, verificarSemAdministrador, perguntar, perguntarOculto, confirmado, Recusa };

@@ -116,6 +116,12 @@ function validarAmbiente(env) {
         erros.push('BACKUP_FOTOS_MANTER deve ser um inteiro entre 1 e 365.');
     }
 
+    // Validade do link de redefinição de senha, em minutos (5 a 1440; padrão 60).
+    const redefinicaoSenhaMinutos = inteiro(env.REDEFINICAO_SENHA_MINUTOS, 60);
+    if (!(redefinicaoSenhaMinutos >= 5 && redefinicaoSenhaMinutos <= 1440)) {
+        erros.push('REDEFINICAO_SENHA_MINUTOS deve ser um inteiro entre 5 e 1440.');
+    }
+
     const niveisLog = ['debug', 'info', 'warn', 'error', 'silent'];
     const nivelLog = env.LOG_LEVEL || (teste ? 'silent' : 'info');
     if (!niveisLog.includes(nivelLog)) {
@@ -140,6 +146,7 @@ function validarAmbiente(env) {
             limiteJson: env.JSON_LIMIT || '200kb',
             // Por IP: requisições por minuto em /api/v1, tentativas de login com falha a cada 15 min e cadastros por hora.
             limites: { global: limiteGlobal, login: limiteLogin, cadastro: limiteCadastro },
+            redefinicaoSenhaMinutos,
             // Jobs agendados (carga do catálogo e estoque). Desligados nos testes.
             jobs: {
                 ativos: env.JOBS_ATIVOS ? env.JOBS_ATIVOS === 'true' : !teste,

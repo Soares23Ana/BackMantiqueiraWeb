@@ -77,6 +77,35 @@ const limitadorImagemLink = rateLimit({
     message: respostaLimite
 });
 
+// Geração de link de redefinição de senha (rotas da equipe): por usuário.
+const limitadorRedefinicaoGerar = rateLimit({
+    windowMs: 60 * 1000,
+    limit: 20,
+    keyGenerator: (req) => `redefinicao:${req.usuario.id ?? req.usuario.id_usuario}`,
+    standardHeaders: 'draft-8',
+    legacyHeaders: false,
+    message: respostaLimite
+});
+
+// Rotas públicas de redefinição de senha (validar e redefinir): por IP, 10 tentativas a cada 15 min. As duas rotas
+// dividem o mesmo contador. Contam as que falham, inclusive a validação que responde 200 com { valido: false }
+// (res.locals.tokenInvalido); quem acerta não é bloqueado.
+function criarLimitadorRedefinicaoPublica(limite = config.teste ? 10000 : 10) {
+    return rateLimit({
+        windowMs: 15 * 60 * 1000,
+        limit: limite,
+        requestWasSuccessful: (req, res) => res.statusCode < 400 && !res.locals.tokenInvalido,
+        skipSuccessfulRequests: true,
+        standardHeaders: 'draft-8',
+        legacyHeaders: false,
+        message: corpoErro(429, {
+            mensagem: 'Muitas tentativas. Tente novamente em alguns minutos.',
+            codigo: 'MUITAS_TENTATIVAS'
+        })
+    });
+}
+const limitadorRedefinicaoPublica = criarLimitadorRedefinicaoPublica();
+
 // Enquanto a primeira conexão com o banco não acontece, a API responde 503 em vez de erros genéricos.
 function exigirBanco(req, res, next) {
     if (estado.conectado) {
@@ -131,5 +160,6 @@ function tratarErros(erro, req, res, next) {
 
 module.exports = {
     limitadorGlobal, limitadorLogin, limitadorCadastro, limitadorEventos, limitadorCep, limitadorCnpj, limitadorImagemLink,
+    limitadorRedefinicaoGerar, limitadorRedefinicaoPublica, criarLimitadorRedefinicaoPublica,
     exigirBanco, rotaNaoEncontrada, tratarErros
 };

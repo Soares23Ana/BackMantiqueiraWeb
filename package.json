@@ -18,6 +18,7 @@
     "uploads:mover": "node scripts/mover-uploads.js",
     "backup:fotos": "node scripts/backup-fotos.js",
     "criar-admin": "node scripts/criar-admin.js",
+    "redefinir-senha-admin": "node scripts/redefinir-senha-admin.js",
     "test": "node --test --test-concurrency=1 \"test/**/*.test.js\""
   },
   "keywords": [],

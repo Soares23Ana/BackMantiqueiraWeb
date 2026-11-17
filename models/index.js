@@ -20,6 +20,7 @@ const Favorito = require('./Favorito');
 const CarrinhoContato = require('./CarrinhoContato');
 const NotaCliente = require('./NotaCliente');
 const Auditoria = require('./Auditoria');
+const RedefinicaoSenha = require('./RedefinicaoSenha');
 
 Usuario.hasOne(Carrinho, { foreignKey: 'id_usuario', as: 'carrinho' });
 Carrinho.belongsTo(Usuario, { foreignKey: 'id_usuario', as: 'usuario' });
@@ -160,5 +161,6 @@ module.exports = {
     Favorito,
     CarrinhoContato,
     NotaCliente,
-    Auditoria
+    Auditoria,
+    RedefinicaoSenha
 };

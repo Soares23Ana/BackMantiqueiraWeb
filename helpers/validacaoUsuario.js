@@ -208,5 +208,6 @@ module.exports = {
     validarPerfilProprio,
     validarTrocaSenha,
     lancarSeHouverErros,
+    exigirObjeto,
     criarValidador
 };

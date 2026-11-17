@@ -317,6 +317,22 @@ CREATE TABLE `produtos` (
   CONSTRAINT `ck_produtos_multiplo` CHECK ((`multiplo_venda` >= 1))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
+CREATE TABLE `redefinicoes_senha` (
+  `id_redefinicao` int NOT NULL AUTO_INCREMENT,
+  `id_usuario` int NOT NULL,
+  `token_hash` char(64) NOT NULL,
+  `criado_em` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `expira_em` datetime NOT NULL,
+  `usado_em` datetime DEFAULT NULL,
+  `criado_por` int DEFAULT NULL,
+  PRIMARY KEY (`id_redefinicao`),
+  UNIQUE KEY `uq_redefinicoes_senha_token` (`token_hash`),
+  KEY `idx_redefinicoes_senha_usuario` (`id_usuario`),
+  KEY `fk_redefinicoes_senha_criador` (`criado_por`),
+  CONSTRAINT `fk_redefinicoes_senha_criador` FOREIGN KEY (`criado_por`) REFERENCES `usuarios` (`id_usuario`) ON DELETE SET NULL,
+  CONSTRAINT `fk_redefinicoes_senha_usuario` FOREIGN KEY (`id_usuario`) REFERENCES `usuarios` (`id_usuario`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
 CREATE TABLE `schema_migrations` (
   `versao` varchar(20) NOT NULL,
   `nome` varchar(200) NOT NULL,
@@ -400,4 +416,5 @@ INSERT INTO schema_migrations (versao, nome, checksum) VALUES
 ('020', 'suporte_notas_auditoria', '253f198e45a064a310ab3c5280cc08e965ec2b2b422723a5ea7be0c9783f2427'),
 ('021', 'produto_nome_erp', 'db573e0e0f6e4549876a5dff4733e44b9fd54a076f791f0c852d20880820fed7'),
 ('022', 'categoria_subcategoria', '43a2a93f0e6cd3866b142a589263a724dde78a8df14e13a9d7c94f968e8e75fe'),
-('023', 'sincronizacao_estoque_descontado', '875209a73b4cefba3db54e42cb92114c54129357573b8f7b2f277064b8719ab4');
+('023', 'sincronizacao_estoque_descontado', '875209a73b4cefba3db54e42cb92114c54129357573b8f7b2f277064b8719ab4'),
+('024', 'redefinicoes_senha', 'b66ca28f2562bf5471e8fbdf08bd063d63cc7342f1f45ebbccb99a8ad5b151f3');

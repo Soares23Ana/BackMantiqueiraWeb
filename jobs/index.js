@@ -5,6 +5,7 @@ const { ErroApi } = require('../lib/erros');
 const { executarComTrava } = require('../lib/travaMysql');
 const { processarPastaComTrava } = require('../servicos/sincronizacao');
 const { limparEventosAntigos } = require('../servicos/eventos');
+const { limparRedefinicoesAntigas } = require('../servicos/redefinicaoSenha');
 
 const FUSO = 'America/Sao_Paulo';
 // Quantas falhas seguidas (ou intervalos sem rodar) deixam o status geral como "degradado".
@@ -38,8 +39,8 @@ const DEFINICOES = [
     {
         nome: 'limpeza-eventos',
         expressao: '0 3 * * *',
-        descricao: '3h: apaga eventos de uso com mais de 12 meses.',
-        executar: () => limparEventosAntigos()
+        descricao: '3h: apaga eventos de uso com mais de 12 meses e links de redefinição de senha expirados ou usados há mais de 7 dias.',
+        executar: async () => ({ ...(await limparEventosAntigos()), redefinicoes_senha: await limparRedefinicoesAntigas() })
     }
 ];
 

@@ -3,6 +3,8 @@ const adminUsuarioControlador = require('../controllers/adminUsuarioControlador'
 const autenticarToken = require('../middlewares/authMiddleware');
 const { exigirEquipe, exigirGestaoDeEquipe } = require('../middlewares/roleMiddleware');
 const { executarAgora } = require('../jobs');
+const { limitadorRedefinicaoGerar } = require('../middlewares/seguranca');
+const redefinicaoSenhaControlador = require('../controllers/redefinicaoSenhaControlador');
 
 const router = express.Router();
 
@@ -18,5 +20,6 @@ router.use(autenticarToken, exigirGestaoDeEquipe);
 router.get('/usuarios', adminUsuarioControlador.listar);
 router.post('/usuarios', adminUsuarioControlador.criar);
 router.patch('/usuarios/:id', adminUsuarioControlador.atualizar);
+router.post('/usuarios/:id/redefinicao-senha', limitadorRedefinicaoGerar, redefinicaoSenhaControlador.gerarParaEquipe);
 
 module.exports = router;
