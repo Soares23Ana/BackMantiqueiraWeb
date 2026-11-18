@@ -736,7 +736,7 @@ Todas: **equipe**. "Estoque baixo" = produto ativo com estoque menor ou igual ao
 | Método | Rota | Resposta |
 |---|---|---|
 | GET | `/painel` | `{ "pedidos_pendentes": 0, "estoque_baixo": 5, "clientes_ativos": 1 }` |
-| GET | `/painel/contadores` | `{ "pedidos_pendentes": 0, "estoque_baixo": 5, "clientes_novos_7_dias": 2, "carrinhos_abandonados": 1 }` |
+| GET | `/painel/contadores` | `{ "pedidos_pendentes": 0, "estoque_baixo": 5, "clientes_novos_7_dias": 2, "carrinhos_abandonados": 1, "redefinicoes_pendentes": 1 }` (`redefinicoes_pendentes`: pedidos de nova senha dos clientes ainda sem atendimento) |
 | GET | `/painel/alertas-reposicao` | Ver abaixo |
 
 `pedidos_pendentes` conta `Aguardando Separação` + `Em Separação`; `clientes_ativos` conta clientes não bloqueados; `clientes_novos_7_dias` conta os clientes cadastrados nos últimos 7 dias (ativos ou não). É só informativo: não há aprovação de cadastro e nada fica bloqueado esperando revisão. Para ver quem são, use `GET /clientes?novos_dias=7`.
@@ -869,9 +869,16 @@ Só esses dois campos. Versão, uptime, data de início e sincronizações ficam
       "ultima_duracao_ms": 142, "falhas_seguidas": 0, "nova_tentativa_em": null, "atrasado": false, "situacao": "ok",
       "ultimo_resultado": [], "ultimo_erro": null }
   ],
+  "rede": { "trust_proxy": 1, "recebeu_x_forwarded_for": true, "site_url_definida": true, "avisos": [] },
   "sincronizacoes": { "ultima": null, "ultima_catalogo": null, "ultima_carga_completa": null, "ultima_estoque": null, "ultima_importacao_manual": null }
 }
 ```
+`rede`: diagnóstico de proxy e de endereço público, **só informativo: os avisos nunca mudam o `status` geral**. `trust_proxy` é o número configurado em `TRUST_PROXY` (ou `false` se não estiver definido); `recebeu_x_forwarded_for` diz se **esta** requisição trouxe o cabeçalho `X-Forwarded-For` (sinal de que há um proxy na frente); `site_url_definida` é só um boolean (o valor de `SITE_URL` não é exposto); `avisos` é uma lista de textos em português, vazia quando está tudo certo. Avisos possíveis:
+- `"A API parece estar atrás de um proxy, mas TRUST_PROXY não está definido: todos os visitantes contam como um único IP nos limites."` (a requisição trouxe `X-Forwarded-For` e `TRUST_PROXY` não está definido);
+- `"SITE_URL não definida: o link de redefinição de senha usa a origem de quem chama a API."` (`NODE_ENV=production` sem `SITE_URL`).
+
+Na subida em produção sem `SITE_URL`, a API registra esse mesmo aviso uma vez no log.
+
 `uploads`: estado da pasta de fotos enviadas: `gravavel` (boolean, a pasta aceita gravação?) e `arquivos` (quantos arquivos ela tem). O caminho não é exposto. Se `gravavel` for `false`, o `status` geral vira `degradado`.
 
 Por job: `ultima_execucao`, `ultimo_status` (`sucesso`, `falha` ou `ignorado`, quando outra instância estava rodando o job), `ultima_duracao_ms`, `proxima_execucao`, `falhas_seguidas`, `nova_tentativa_em` (quando há uma nova tentativa agendada), `atrasado` e `situacao` (`ok` ou `degradado`). O `status` geral fica `degradado` se algum job falhou **2 vezes seguidas** ou, estando agendado, **não rodou por mais de 2 intervalos** (além de banco fora do ar ou migrations pendentes). Uma falha de conexão ou deadlock ganha **uma nova tentativa automática após 1 minuto**; só depois dela a falha conta.
@@ -907,7 +914,7 @@ Roda um job na hora, com a mesma trava do MySQL do agendamento. `:nome`: `catalo
 9. Imagens do catálogo (`/img/...`) são servidas pelo front; imagens enviadas pela API (`/arquivos/uploads/...`) ficam na pasta definida por `UPLOADS_DIR` (em produção, fora do projeto), com cópia de segurança agendada (`npm run backup:fotos`).
 
 **Autenticação**
-10. Não há recuperação de senha por e-mail: a recuperação passa sempre pela equipe. O caminho preferido é o [link de uso único](#20-redefinição-de-senha-por-link-equipe-e-público) gerado pela equipe (`POST /clientes/:id/redefinicao-senha` ou `POST /admin/usuarios/:id/redefinicao-senha`), em que a pessoa escolhe a nova senha; a equipe continua podendo definir uma temporária em `PUT /clientes/:id/senha` (o cliente troca em "Minha conta"; a troca não é obrigatória) e o gestor redefine a senha da equipe em `PATCH /admin/usuarios/:id`. Quem perdeu o acesso de **último administrador** pede a quem tem acesso ao servidor para rodar `npm run redefinir-senha-admin -- --email x@y.com`, que gera um token para ele escolher a senha. O link depende de a equipe confirmar a identidade (hoje, por WhatsApp): a API não verifica quem pediu. A tabela `redefinicoes_senha` veio na migration 024: a nuvem precisa rodar `npm run migrar`.
+10. Não há recuperação de senha por e-mail nem envio automático de WhatsApp: o cliente registra o pedido no login e a equipe envia o link (o sistema deixa a conversa pronta; enviar é um clique da pessoa). A recuperação passa sempre pela equipe. O caminho preferido é o [link de uso único](#20-redefinição-de-senha-por-link-equipe-e-público) gerado pela equipe (`POST /clientes/:id/redefinicao-senha` ou `POST /admin/usuarios/:id/redefinicao-senha`), em que a pessoa escolhe a nova senha; a equipe continua podendo definir uma temporária em `PUT /clientes/:id/senha` (o cliente troca em "Minha conta"; a troca não é obrigatória) e o gestor redefine a senha da equipe em `PATCH /admin/usuarios/:id`. Quem perdeu o acesso de **último administrador** pede a quem tem acesso ao servidor para rodar `npm run redefinir-senha-admin -- --email x@y.com`, que gera um token para ele escolher a senha. O link depende de a equipe confirmar a identidade (hoje, por WhatsApp): a API não verifica quem pediu. A tabela `redefinicoes_senha` veio na migration 024: a nuvem precisa rodar `npm run migrar`.
 11. Não há refresh token: depois de 8 horas (ou o valor de `JWT_EXPIRES_IN`) o usuário precisa entrar de novo. "Sair" é só descartar o token no front (ele continua válido até expirar, a menos que o usuário seja desativado).
 12. Os limites de requisições ficam na memória de cada instância: com várias instâncias, o limite efetivo é multiplicado; reiniciar a API zera as contagens.
 
@@ -1302,7 +1309,7 @@ Trilha de quem alterou o quê. Filtros: `entidade`, `id_entidade`, `id_usuario`,
 | `entidade` | `id_entidade` | `acao` |
 |---|---|---|
 | `produto` | id | `produto.criar`, `produto.editar`, `produto.ativar`, `produto.desativar`, `produto.estoque` (traz a `observacao` em `detalhe`) |
-| `cliente` | id | `cliente.editar`, `cliente.bloquear`, `cliente.desbloquear`, `cliente.senha_temporaria`, `cliente.redefinicao_senha_gerada` |
+| `cliente` | id | `cliente.editar`, `cliente.bloquear`, `cliente.desbloquear`, `cliente.senha_temporaria`, `cliente.redefinicao_senha_gerada`; do pedido de nova senha: `pedido_senha.criado` (`usuario: null`: quem pede é o próprio cliente, sem login), `pedido_senha.link_enviado` e `pedido_senha.dispensado` (feitas pela equipe). Os três trazem `id_pedido` em `detalhe` (`link_enviado` também `expira_em`), nunca CNPJ, token ou link |
 | `pedido` | id | `pedido.status`, `pedido.cancelar` (motivo em `detalhe`) |
 | `banner` | id | `banner.criar`, `banner.editar`, `banner.excluir`, `banner.reordenar` |
 | `popup` | `popup` | `popup.salvar`, `popup.ativar`, `popup.desativar`, `popup.imagem`, `popup.excluir` |
@@ -1311,13 +1318,15 @@ Trilha de quem alterou o quê. Filtros: `entidade`, `id_entidade`, `id_usuario`,
 | `configuracao` | chave | `configuracao.editar` |
 | `usuario` (contas da equipe) | id | `equipe.criar`, `equipe.editar`, `usuario.redefinicao_senha_gerada`, `usuario.senha_redefinida_por_link` (feita pelo próprio usuário), `usuario.redefinicao_senha_gerada_por_terminal` (gerada no servidor, sem `id_usuario`) |
 
+**`usuario` pode ser `null`** e o front precisa tratar: acontece em `pedido_senha.criado` (pedido feito pelo cliente na tela de login) e em `usuario.redefinicao_senha_gerada_por_terminal` (ação feita pelo terminal do servidor). Não há filtro por `acao`: filtre por `entidade`/`id_entidade` e agrupe no front pelo prefixo da `acao` (o texto antes do ponto).
+
 Erros: `400 FILTRO_INVALIDO` (data fora do formato, `id_usuario` inválido, `ate` antes de `de`), `400 PAGINACAO_INVALIDA`.
 
 ---
 
 ## 20. Redefinição de senha por link (equipe e público)
 
-O usuário que esqueceu a senha não recebe e-mail. A equipe confirma quem é a pessoa (por WhatsApp), gera um **link de uso único** e o envia; a própria pessoa escolhe a nova senha. A API devolve só o `token` e a validade: o front monta o endereço `/redefinir-senha?token=...`. Em `PUT /clientes/:id/senha` a equipe continua podendo definir uma senha temporária (a equipe sabe qual é); o link é a alternativa em que ninguém além do usuário conhece a senha.
+O usuário que esqueceu a senha não recebe e-mail. **Fluxo recomendado para o cliente:** ele pede a nova senha na tela de login (`POST /auth/redefinicao-senha/solicitar`), a equipe vê o pedido no painel (selo `redefinicoes_pendentes`) e usa `enviar-link`, que gera o link e deixa a conversa do WhatsApp pronta; a pessoa da equipe só aperta enviar (o envio automático exigiria a API oficial do WhatsApp Business). Nos demais casos, a equipe confirma quem é a pessoa (por WhatsApp), gera um **link de uso único** e o envia; a própria pessoa escolhe a nova senha. A API devolve só o `token` e a validade: o front monta o endereço `/redefinir-senha?token=...`. Em `PUT /clientes/:id/senha` a equipe continua podendo definir uma senha temporária (a equipe sabe qual é); o link é a alternativa em que ninguém além do usuário conhece a senha.
 
 | Método | Rota | Perfil | Descrição |
 |---|---|---|---|
@@ -1325,6 +1334,10 @@ O usuário que esqueceu a senha não recebe e-mail. A equipe confirma quem é a 
 | POST | `/admin/usuarios/:id/redefinicao-senha` | gestor da equipe | Gera o link para um usuário da **equipe** (nunca a própria conta) |
 | POST | `/auth/redefinir-senha/validar` | público | Diz se o token ainda vale |
 | POST | `/auth/redefinir-senha` | público | Troca a senha com o token |
+| POST | `/auth/redefinicao-senha/solicitar` | público | O **cliente** pede uma nova senha informando o CNPJ (a equipe é avisada no painel) |
+| GET | `/redefinicoes-senha/pedidos` | equipe | Lista os pedidos de nova senha (padrão: só os pendentes) |
+| POST | `/redefinicoes-senha/pedidos/:id/enviar-link` | equipe | Gera o link do pedido e devolve o telefone e a mensagem prontos para o WhatsApp |
+| POST | `/redefinicoes-senha/pedidos/:id/dispensar` | equipe | Dá o pedido como dispensado (a equipe não reconhece o pedido) |
 
 ### POST /clientes/:id/redefinicao-senha e POST /admin/usuarios/:id/redefinicao-senha (equipe)
 Sem corpo. `201`:
@@ -1340,6 +1353,63 @@ Sem corpo. `201`:
 - A rota de clientes só aceita usuário do tipo `cliente`; a de equipe só do tipo `equipe` e exige `pode_gerenciar_equipe`.
 - Erros: `404 NAO_ENCONTRADO` (não existe ou é do tipo errado), `409 USUARIO_INATIVO` (reative antes), `409 OPERACAO_NAO_PERMITIDA` (gestor tentando gerar para a própria conta: use `PATCH /minha-conta/senha`), `403 ACESSO_NEGADO`, `429` (mais de 20 por minuto por usuário).
 - Auditoria: `cliente.redefinicao_senha_gerada` e `usuario.redefinicao_senha_gerada`, com `expira_em` em `detalhe`. Nunca o token nem o hash.
+
+### POST /auth/redefinicao-senha/solicitar (público)
+O cliente que esqueceu a senha informa o CNPJ na tela de login. Corpo: `{ "documento": "11.222.333/0001-81" }` (CNPJ com ou sem pontuação; só esse campo). A resposta é **sempre a mesma** (`200`, mesmo corpo), exista o CNPJ ou não, esteja o cliente ativo ou inativo, e mesmo que seja uma conta da equipe ou do gestor:
+```json
+{ "mensagem": "Se o CNPJ estiver cadastrado, a equipe da Mantiqueira vai entrar em contato pelo WhatsApp para enviar o link." }
+```
+- Só **cliente ativo** gera pedido. Equipe e gestor **nunca** geram pedido por essa rota (a equipe recupera a senha pelo gestor ou por `npm run redefinir-senha-admin`).
+- A resposta leva no mínimo ~250 ms em qualquer caso, para o tempo não revelar se o CNPJ existe.
+- Cada cliente tem **no máximo um pedido pendente**: pedido repetido só **renova o `criado_em`** do pendente, sem duplicar.
+- Erros: `422 VALIDACAO` (CNPJ com formato inválido, ausente, ou campo extra; isso não revela se o CNPJ existe) e `429 MUITAS_TENTATIVAS`.
+- **Limites de taxa:** **5 pedidos a cada 15 minutos por IP** (`PEDIDO_SENHA_LIMITE_IP`) e **3 por hora por CNPJ informado** (`PEDIDO_SENHA_LIMITE_CNPJ`). Contam todos os pedidos, também os que dão certo, e o limite por CNPJ vale igual para CNPJ que não existe.
+- Auditoria: `pedido_senha.criado` (sem usuário logado, sem CNPJ).
+
+### GET /redefinicoes-senha/pedidos (equipe)
+`?status=pendente|atendido|dispensado|expirado` (padrão `pendente`), `pagina` e `limite` (padrão 20, máximo 100). Do pedido mais antigo para o mais novo. `200`:
+```json
+{
+  "pedidos": [
+    {
+      "id_pedido": 3,
+      "status": "pendente",
+      "criado_em": "2026-11-17T21:10:00.000Z",
+      "atendido_em": null,
+      "cliente": {
+        "id_usuario": 7, "nome_exibicao": "Mercadinho LTDA", "razao_social": "Mercadinho LTDA", "nome": "Maria Souza",
+        "cnpj": "11.222.333/0001-81", "telefone": "19999990000", "ativo": true
+      }
+    }
+  ],
+  "paginacao": { "total": 1, "pagina": 1, "limite": 20, "total_paginas": 1 }
+}
+```
+Nunca traz token nem link. `400 REQUISICAO_INVALIDA` para um `status` desconhecido. `GET /painel/contadores` traz `redefinicoes_pendentes` (pedidos pendentes), para o selo do menu "Clientes".
+
+### POST /redefinicoes-senha/pedidos/:id/enviar-link (equipe)
+Sem corpo. Numa **única transação**, gera o link de uso único do cliente (os links pendentes dele deixam de valer) e marca o pedido como `atendido` (`atendido_em`, `atendido_por`). `201`:
+Os campos são `link`, `expira_em`, `telefone_whatsapp` e `mensagem` (o texto pronto para o WhatsApp, com saudação, o link e a validade em minutos). Exemplo:
+```json
+{
+  "mensagem": "Olá, Mercadinho! Aqui é a equipe da Mantiqueira Distribuidora. Segue o link para você criar uma nova senha: https://www.mantiqueira.com.br/redefinir-senha?token=q3Zc0m9J1x7bT2p8Hk5Wn4RvYd6LsAeUfGi_OjMtXyE\nO link vale por 60 minutos e só pode ser usado uma vez. Se você não pediu, é só ignorar esta mensagem.",
+  "link": "https://www.mantiqueira.com.br/redefinir-senha?token=q3Zc0m9J1x7bT2p8Hk5Wn4RvYd6LsAeUfGi_OjMtXyE",
+  "expira_em": "2026-11-17T22:10:00.000Z",
+  "telefone_whatsapp": "5519999990000"
+}
+```
+- **`telefone_whatsapp`**: só dígitos, com DDI 55 (normaliza o telefone cadastrado; aceita DDD + 8 ou 9 dígitos, com ou sem 55 e com zero na frente). Se não der para normalizar, vem `null` e a resposta ganha **`aviso`** pedindo para contatar o cliente de outro jeito (o link foi gerado e o pedido, atendido). O front abre `https://wa.me/<telefone_whatsapp>?text=<mensagem codificada>`.
+- **Endereço do link:** `SITE_URL` (se definida), senão a origem de quem chamou (o front), senão o host da API. O link só existe nesta resposta: no banco fica apenas o hash do token.
+- Erros: `404 NAO_ENCONTRADO` (pedido inexistente), `409 PEDIDO_NAO_PENDENTE` (já atendido, dispensado ou expirado), `409 USUARIO_INATIVO` (o cliente foi desativado depois do pedido; o pedido continua pendente), `403`, `401` e `429` (mais de 20 links por minuto por usuário).
+- Auditoria: `pedido_senha.link_enviado` com `id_pedido` e `expira_em`. Nunca o token nem o link.
+
+### POST /redefinicoes-senha/pedidos/:id/dispensar (equipe)
+Sem corpo. Para o pedido que a equipe não reconhece. `200`: `{ "mensagem": "Pedido dispensado.", "id_pedido": 3, "status": "dispensado" }`. Erros: `404 NAO_ENCONTRADO`, `409 PEDIDO_NAO_PENDENTE`. Auditoria: `pedido_senha.dispensado`.
+
+### Como o pedido é atendido e limpo
+- Fica **atendido** quando a equipe usa `enviar-link`, e também quando gera o link pela rota antiga (`POST /clientes/:id/redefinicao-senha`), define uma senha temporária (`PUT /clientes/:id/senha`) ou o cliente troca a senha com um link. Depois de resolvido, um novo pedido do mesmo cliente volta a aparecer.
+- O job `limpeza-eventos` marca como **`expirado`** os pedidos pendentes há mais de **7 dias** e apaga os resolvidos (atendidos, dispensados ou expirados) há mais de **30 dias**; os números saem em `redefinicoes_senha` do relatório do job (`pedidos_expirados`, `pedidos_removidos`).
+- Os pedidos ficam na tabela `pedidos_redefinicao_senha` (migrations 025 e 026). O envio final pelo WhatsApp é feito por uma pessoa: o sistema só deixa a conversa pronta.
 
 ### POST /auth/redefinir-senha/validar (público)
 O front chama ao abrir `/redefinir-senha`, para mostrar o formulário ou o aviso de link vencido.

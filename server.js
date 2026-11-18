@@ -8,6 +8,7 @@ try {
 }
 
 const logger = require('./lib/logger');
+const { AVISO_SITE_URL } = require('./lib/rede');
 const sequelize = require('./db/conn');
 const { conectarComRetry, interromperConexao } = require('./db/conexao');
 const { aoEncerrar, instalarHandlers } = require('./lib/encerramento');
@@ -16,6 +17,10 @@ const { iniciarJobs, pararJobs } = require('./jobs');
 const { prepararPastaUploads } = require('./lib/uploads');
 
 instalarHandlers();
+
+if (config.producao && !config.siteUrl) {
+    logger.warn(AVISO_SITE_URL);
+}
 
 prepararPastaUploads().catch((erro) => {
     logger.error('Não foi possível preparar a pasta de uploads.', { erro: erro.message });

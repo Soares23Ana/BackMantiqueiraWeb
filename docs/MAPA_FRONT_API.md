@@ -117,7 +117,7 @@ O front **já está ligado à API** em quase tudo: `src/api/client.ts` envia o t
 |---|---|
 | Entrar | `POST /auth/login` `{ identificador, senha }` |
 | Sessão salva | `GET /auth/me` |
-| Esqueci a senha | Continua abrindo o WhatsApp da equipe (não chama a API); a recuperação é pelo link gerado pela equipe, na página [Redefinir senha](#redefinir-senha-pagesresetpasswordtsx-rota-nova-redefinir-senha) |
+| Esqueci a senha | `POST /auth/redefinicao-senha/solicitar` `{ documento }` (CNPJ com ou sem pontuação) → sempre a mesma mensagem (`200`); o pedido aparece no painel da equipe. Depois a pessoa recebe o link pelo WhatsApp e usa a página [Redefinir senha](#redefinir-senha-pagesresetpasswordtsx-rota-nova-redefinir-senha) |
 
 - **Ligado:** tela única; a equipe vai para `/gestor`, o cliente para `/minha-conta` (ou para onde estava). `429 MUITAS_TENTATIVAS` tem mensagem própria. "Esqueci a senha" orienta a falar com a equipe.
 - **Mudar:** a regra de e-mail ou CNPJ. Hoje `Login.tsx` trata como e-mail qualquer texto com letra (`/[@a-z]/i`), então um **CNPJ alfanumérico** seria tratado como e-mail e perderia a máscara. A regra da API é só o `@`: com `@` é e-mail da equipe; sem `@` é CNPJ. Ver [CNPJ alfanumérico](#cnpj-alfanumérico).
@@ -259,6 +259,10 @@ Todas as rotas exigem token da **equipe** (`RequireRole` no front). A tela Equip
 | Detalhes e edição | `GET /clientes/:id/detalhes`, `PUT /clientes/:id` |
 | Senha temporária | `PUT /clientes/:id/senha` `{ senha }` |
 | Gerar link de redefinição | `POST /clientes/:id/redefinicao-senha` (devolve `token` e `expira_em`) |
+| Pedidos de nova senha (faixa no topo) | `GET /redefinicoes-senha/pedidos?status=pendente` |
+| Enviar link do pedido | `POST /redefinicoes-senha/pedidos/:id/enviar-link` → `{ link, expira_em, telefone_whatsapp, mensagem }`; o front abre `https://wa.me/<telefone_whatsapp>?text=<mensagem>` |
+| Dispensar pedido | `POST /redefinicoes-senha/pedidos/:id/dispensar` |
+| Selo do menu "Clientes" | `GET /painel/contadores` → `redefinicoes_pendentes` |
 | Exportar CSV (sem "Grupo" nem "Receita") | `GET /clientes` em todas as páginas |
 
 - **Ligado:** tudo, com `nome_exibicao`. A busca por CNPJ aceita letras, com ou sem pontuação.
@@ -300,7 +304,15 @@ Todas as rotas exigem token da **equipe** (`RequireRole` no front). A tela Equip
 
 ### Saúde do sistema (`pages/manager/SystemHealth.tsx`)
 - **Usa hoje:** `GET /saude/detalhado` (fora de `/api/v1`). O campo novo `uploads` (`{ gravavel, arquivos }`) mostra se a pasta de fotos aceita gravação e quantos arquivos ela tem; com `gravavel: false`, o `status` geral vira `degradado`.
-- **Ligado:** tudo. **Mudar:** nada.
+- **Ligado:** tudo. **Mudar (opcional):** exibir o bloco novo `rede` (`trust_proxy`, `recebeu_x_forwarded_for`, `site_url_definida`, `avisos`). Mostre cada texto de `avisos` como um alerta amarelo; ele **não** muda o `status` geral, então não pinte a página de "degradado" por causa dele. Sem avisos, não mostre nada.
+
+### Atividade da equipe (tela nova, ex.: `pages/manager/Activity.tsx`)
+- **Rota:** `GET /auditoria` (equipe). Filtros: `entidade`, `id_entidade`, `id_usuario`, `de` e `ate` (`AAAA-MM-DD`, inclusive, horário de Brasília), `pagina` e `limite` (padrão 50, máximo 200); do mais recente para o mais antigo. **Não há filtro por `acao`**: se quiser filtrar por tipo de ação, faça no front sobre a página carregada.
+- **Linha:** `{ id_auditoria, usuario, acao, entidade, id_entidade, resumo, criado_em }`. **`usuario` pode ser `null`** (pedido de nova senha feito pelo cliente no login e ações feitas pelo terminal do servidor): mostre "Cliente (sem login)" ou "Servidor".
+- **`resumo`** (pode ser `null`): `alteracoes` = `{ campo: { antes, depois } }` em edições; `depois` = objeto criado; `antes` = objeto excluído; `detalhe` = extras seguros (motivo, observação, `id_pedido`, `expira_em`). Mostre `alteracoes` como "campo: antes → depois". Nunca vem senha, hash, token, link nem preço; textos longos chegam cortados em 200 caracteres.
+- **Entidades:** `produto`, `cliente`, `pedido`, `banner`, `popup`, `bloco_cms`, `campanha`, `configuracao`, `usuario`. Para o filtro "Entidade", use esta lista. O `id_entidade` é texto (pode ser uma chave, como `popup`). Lista completa de `acao` na [tabela da API](API.md#get-auditoria).
+- **Pedido de nova senha** aparece como `pedido_senha.criado`, `pedido_senha.link_enviado` e `pedido_senha.dispensado` (entidade `cliente`, `id_entidade` = id do cliente, `detalhe.id_pedido`).
+- **Paginação:** `paginacao: { total, pagina, limite, total_paginas }`. Datas em UTC (ISO): converta para Brasília ao exibir.
 
 ## Prioridades
 

@@ -52,7 +52,7 @@ node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"
 | `LOGIN_LIMITE` | `10` | Tentativas de login com falha a cada 15 min, por IP |
 | `CADASTRO_LIMITE` | `10` | Cadastros por hora, por IP |
 | `CORS_ORIGINS` | — | Origens do front liberadas além das padrão ([CORS](#6-cors)) |
-| `TRUST_PROXY` | — | `1` quando a API fica atrás de proxy (ex.: Nginx na EC2), para os limites verem o IP real |
+| `TRUST_PROXY` | — | `1` quando a API fica atrás de proxy (ex.: Nginx na EC2), para os limites verem o IP real (sem isso, todos os visitantes contam como um IP só) |
 | `JOBS_ATIVOS` | `true` (exceto nos testes) | `false` desliga os [jobs agendados](#8-jobs-agendados) |
 | `JOB_CATALOGO_CRON`, `JOB_CARGA_COMPLETA_CRON`, `JOB_ESTOQUE_CRON` | `0 * * * *`, `0 0 * * *`, `*/30 * * * *` | Horários dos jobs (cron de 5 campos); validados ao iniciar |
 | `IMPORTACAO_DIR` | `./importacao` | Pasta com `entrada/`, `processados/` e `rejeitados/` usada pelos jobs |
@@ -71,7 +71,23 @@ node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"
 A equipe (funcionário, gerente, admin) não é criada por variável: o gestor cria em `POST /api/v1/admin/usuarios`.
 
 ### Na nuvem
-Configure `NODE_ENV=production`, `DB_HOST` com o endpoint do AWS RDS e `CORS_ORIGINS` com o endereço do front-end (várias origens separadas por vírgula). Defina `TRUST_PROXY=1` quando a API estiver atrás de um proxy, como Nginx.
+Configure `NODE_ENV=production`, `DB_HOST` com o endpoint do AWS RDS e `CORS_ORIGINS` com o endereço do front-end (várias origens separadas por vírgula). Defina `TRUST_PROXY=1` quando a API estiver atrás de um proxy, como Nginx, e `SITE_URL` (ex.: `https://www.mantiqueira.com.br`) para o link de redefinição de senha.
+
+**Por que `TRUST_PROXY` importa:** sem ele, a API enxerga o IP do Nginx em toda requisição, então todos os visitantes contam como **um único IP** nos limites (login: 10 falhas/15 min; pedido de nova senha: 5/15 min; global: 600/min) e o site inteiro pode ser bloqueado por poucas tentativas. `GET /saude/detalhado` (bloco `rede`) avisa quando vê `X-Forwarded-For` sem `TRUST_PROXY`.
+
+**Trecho mínimo do Nginx** para o proxy da API (ajuste a porta ao `PORT` do `.env`):
+```nginx
+location /api/ {
+    proxy_pass http://127.0.0.1:3000;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+```
+O mesmo vale para `/arquivos/` e `/saude` se passarem pelo Nginx.
+
+**Migrations 025 e 026 (pedido de nova senha):** a 026 **evolui a tabela criada pela 025** (`RENAME TABLE solicitacoes_redefinicao TO pedidos_redefinicao_senha` + `ALTER TABLE`), então as **duas** precisam ser aplicadas, **em ordem**, com `npm run migrar` (o runner já segue a ordem). Confira com `npm run migrar:status`: a lista de pendentes deve ficar vazia. Antes de migrar, faça **backup/snapshot do RDS**. O DDL do MySQL **não é transacional**: se a 026 falhar no meio, o banco pode ficar pela metade; nesse caso **restaure o snapshot e avise a equipe de desenvolvimento** em vez de tentar rodar de novo.
 
 > O `.env` tem dados sensíveis e é ignorado pelo Git (`.gitignore`). Para compartilhar a estrutura das variáveis com a equipe, use o `.env.example`.
 
@@ -271,7 +287,7 @@ Os arquivos são preparados e colocados na pasta pela própria equipe. Os horár
 ## 9. Saúde
 
 - **`GET /saude`** (público, fora de `/api/v1`): só `status` e `banco`. Responde `200` com `{ "status": "ok", "banco": "conectado" }` ou `503` com `{ "status": "degradado", "banco": "indisponivel" }` quando o banco não responde. Fica fora do limite de requisições, para servir de health check do balanceador.
-- **`GET /saude/detalhado`** (equipe): versão da API, banco (latência e migrations pendentes), processo (data de início, uptime, memória, versão do Node), jobs (última e próxima execução, último resultado ou erro), pasta de uploads (gravável e quantidade de arquivos) e data da última sincronização de cada tipo.
+- **`GET /saude/detalhado`** (equipe): versão da API, banco (latência e migrations pendentes), processo (data de início, uptime, memória, versão do Node), jobs (última e próxima execução, último resultado ou erro), pasta de uploads (gravável e quantidade de arquivos) data da última sincronização de cada tipo e o bloco `rede`: `trust_proxy` (número configurado ou `false`), `recebeu_x_forwarded_for`, `site_url_definida` e `avisos` em português (proxy sem `TRUST_PROXY`; produção sem `SITE_URL`). Os avisos **não alteram** o `status` geral e o bloco nunca traz valores de variáveis, só booleanos e o número de `TRUST_PROXY`. Na subida em produção sem `SITE_URL`, a API registra um único `warn` no log.
 
 Os exemplos de resposta estão em [API.md](API.md#12-saúde).
 
@@ -481,6 +497,7 @@ Esta seção descreve o que a API guarda e as medidas adotadas. Ela **não afirm
 | Eventos de navegação | `eventos` | Métricas: identificador de sessão anônimo, termo buscado, produto visto; `id_usuario` só se a pessoa estiver logada. **Não há IP nem user-agent.** |
 | Auditoria | `auditoria` | Quem fez o quê, com os campos alterados. Chaves de senha, hash, token e segredo nunca entram |
 | Notas da equipe sobre clientes e registro de contato de carrinho abandonado | `notas_cliente`, `carrinho_contatos` | Atendimento: texto livre, autor e data |
+| Pedidos de nova senha do cliente | `pedidos_redefinicao_senha` | Avisar a equipe de que o cliente pediu uma nova senha: só o id do cliente, o status e as datas (nunca token nem link); pendentes viram `expirado` em 7 dias e os resolvidos são apagados em 30 |
 | Links de redefinição de senha | `redefinicoes_senha` | Recuperar o acesso: **só o hash (SHA-256) do token**, nunca o token; validade curta (60 min), uso único, apagados pela limpeza diária 7 dias depois de expirarem ou serem usados (e junto com o usuário) |
 
 O CNPJ identifica pessoa jurídica, mas **e-mail, telefone e nome de contato podem ser dados de pessoas físicas**, e o texto livre das notas e das observações de contato também pode conter dados pessoais.
@@ -543,13 +560,33 @@ Quem rodou o comando repassa o token ao administrador, que abre `/redefinir-senh
 - Fica no log e na auditoria (`usuario.redefinicao_senha_gerada_por_terminal`, sem `id_usuario`, pois quem age é o terminal; `criado_por` fica nulo), com a validade e **nunca com o token**. O uso do token fica registrado como `usuario.senha_redefinida_por_link`.
 - Quem digita o comando vê o token: rode só em sessão de terminal confiável e não deixe o token em histórico compartilhado ou chat além do necessário (ele vale 60 minutos e uma única vez).
 
-### Variável opcional
+### Pedido de nova senha pelo cliente (migrations 025 e 026)
+Fecha o ciclo "cliente esqueceu a senha": **pedido registrado, aviso no painel e envio do link com um clique**. Contrato em [API.md, seção 20](API.md#20-redefinição-de-senha-por-link-equipe-e-público).
+
+1. Na tela de login, o cliente informa o CNPJ (`POST /auth/redefinicao-senha/solicitar { documento }`).
+2. O pedido fica **pendente** em `pedidos_redefinicao_senha` e o contador `redefinicoes_pendentes` de `GET /painel/contadores` acende o selo do menu.
+3. A equipe abre a lista (`GET /redefinicoes-senha/pedidos`) e usa `POST /redefinicoes-senha/pedidos/:id/enviar-link`: **numa só transação** a API gera o link (reutilizando `gerarLink`, que invalida os links pendentes do cliente) e marca o pedido como atendido. A resposta traz o link, a validade, o telefone no formato do WhatsApp (só dígitos, DDI 55) e a mensagem pronta; o front abre o `wa.me` e a pessoa só aperta enviar. Pedido que a equipe não reconhece vira `dispensado`.
+
+**Por que o último passo é de uma pessoa:** mandar a mensagem sozinho exigiria a **API oficial do WhatsApp Business** (conta verificada, modelos de mensagem aprovados pela Meta e custo por conversa). Fica como evolução futura; hoje o sistema gera tudo e deixa a conversa pronta.
+
+**Decisões de segurança**
+- **Resposta idêntica, sempre:** mesmo status e mesmo corpo para CNPJ existente, inexistente, de cliente inativo e de conta da equipe/gestor. Só **cliente ativo** gera pedido; equipe e gestor nunca (eles recuperam a senha pelo gestor ou por `npm run redefinir-senha-admin`). O formato inválido responde `422`, o que não revela existência.
+- **Tempo:** a rota responde em no mínimo ~250 ms nos dois caminhos, para a latência não distinguir "achou" de "não achou". Nenhum log de erro ou resposta cita o CNPJ.
+- **Limites de taxa** (`middlewares/seguranca.js`): **5 por IP a cada 15 min** e **3 por CNPJ por hora**, ajustáveis por `PEDIDO_SENHA_LIMITE_IP` e `PEDIDO_SENHA_LIMITE_CNPJ`. O limite por CNPJ vale também para CNPJ que não existe. A chave lê só o campo `documento` (`lib/chavePedidoSenha.js`): `seguranca.js` continua sem ler `req.body`.
+- **Um pedido pendente por cliente:** garantido pelo banco (coluna gerada `pendente_de` com índice único), mesmo com pedidos simultâneos; pedido repetido só renova o `criado_em`.
+- **Nada sensível guardado:** a tabela e a auditoria nunca têm token nem link; a trilha (`pedido_senha.criado`, `pedido_senha.link_enviado`, `pedido_senha.dispensado`) guarda só o id do pedido e a validade, e nem o CNPJ.
+- **Link só na resposta de quem envia:** a listagem nunca devolve token nem link. O endereço usa `SITE_URL` (ou a origem do front, ou o host da API).
+
+### Variáveis opcionais
 | Variável | Padrão | Para que serve |
 |---|---|---|
 | `REDEFINICAO_SENHA_MINUTOS` | `60` | Validade do link, de 5 a 1440; fora disso a API não sobe |
+| `PEDIDO_SENHA_LIMITE_IP` | `5` | Pedidos de nova senha por IP a cada 15 minutos (inteiro maior que zero) |
+| `PEDIDO_SENHA_LIMITE_CNPJ` | `3` | Pedidos de nova senha por CNPJ informado por hora (inteiro maior que zero) |
+| `SITE_URL` | — | Endereço público do site (sem caminho, ex.: `https://www.mantiqueira.com.br`) para montar o link; sem ela vale a origem de quem chama |
 
 ### Limpeza
-O job `limpeza-eventos` (3h) também apaga, em lotes, os links expirados ou usados há mais de 7 dias (`limparRedefinicoesAntigas`, em `servicos/redefinicaoSenha.js`). O `ultimo_resultado` do job traz `redefinicoes_senha.removidos`. Os links também caem junto com o usuário (`ON DELETE CASCADE`).
+O job `limpeza-eventos` (3h) também apaga, em lotes, os links expirados ou usados há mais de 7 dias (`limparRedefinicoesAntigas`, em `servicos/redefinicaoSenha.js`), marca como `expirado` os pedidos de nova senha pendentes há mais de 7 dias e apaga os pedidos resolvidos há mais de 30 dias (`pedidos_expirados` e `pedidos_removidos` no relatório). O `ultimo_resultado` do job traz `redefinicoes_senha.removidos`. Os links também caem junto com o usuário (`ON DELETE CASCADE`).
 
 ### Publicação
-A migration 024 cria `redefinicoes_senha`: depois de publicar o código, rode `npm run migrar` na nuvem.
+A migration 024 cria `redefinicoes_senha`; a 025 criou a tabela dos pedidos do cliente e a **026** a evolui para `pedidos_redefinicao_senha` (status e um único pendente por cliente), preservando os pedidos que já existirem. Depois de publicar o código, rode `npm run migrar` na nuvem, na ordem e com o snapshot do RDS descritos em [Na nuvem](#na-nuvem) (a 026 depende da 025 e DDL não é transacional).

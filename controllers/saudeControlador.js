@@ -5,6 +5,8 @@ const { listarPendentes } = require('../db/migracoes');
 const { ultimaSincronizacao } = require('../servicos/sincronizacao');
 const { situacaoJobs } = require('../jobs');
 const { estadoPastaUploads } = require('../lib/uploads');
+const config = require('../config/ambiente');
+const { avaliarRede } = require('../lib/rede');
 
 const iniciadoEm = new Date();
 
@@ -60,6 +62,8 @@ async function verificarSaudeDetalhada(req, res) {
         },
         jobs,
         uploads,
+        // Só informativo: os avisos não mudam o status geral.
+        rede: avaliarRede(config, Boolean(req.get('x-forwarded-for'))),
         sincronizacoes: bancoOk ? {
             ultima: await dataUltimaSincronizacao(),
             ultima_catalogo: await dataUltimaSincronizacao('catalogo'),

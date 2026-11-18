@@ -285,6 +285,24 @@ CREATE TABLE `pedidos` (
   CONSTRAINT `fk_pedidos_funcionario` FOREIGN KEY (`id_funcionario`) REFERENCES `usuarios` (`id_usuario`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
+CREATE TABLE `pedidos_redefinicao_senha` (
+  `id_pedido` int NOT NULL AUTO_INCREMENT,
+  `id_usuario` int NOT NULL,
+  `status` enum('pendente','atendido','dispensado','expirado') NOT NULL DEFAULT 'pendente',
+  `criado_em` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `atualizado_em` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `atendido_em` datetime DEFAULT NULL,
+  `atendido_por` int DEFAULT NULL,
+  `pendente_de` int GENERATED ALWAYS AS (if((`status` = _utf8mb4'pendente'),`id_usuario`,NULL)) VIRTUAL,
+  PRIMARY KEY (`id_pedido`),
+  UNIQUE KEY `uq_pedidos_redefinicao_pendente` (`pendente_de`),
+  KEY `idx_solicitacoes_redefinicao_usuario` (`id_usuario`,`atendido_em`),
+  KEY `fk_solicitacoes_redefinicao_atendente` (`atendido_por`),
+  KEY `idx_pedidos_redefinicao_status` (`status`,`criado_em`),
+  CONSTRAINT `fk_solicitacoes_redefinicao_atendente` FOREIGN KEY (`atendido_por`) REFERENCES `usuarios` (`id_usuario`) ON DELETE SET NULL,
+  CONSTRAINT `fk_solicitacoes_redefinicao_usuario` FOREIGN KEY (`id_usuario`) REFERENCES `usuarios` (`id_usuario`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
 CREATE TABLE `produtos` (
   `id_produto` int NOT NULL AUTO_INCREMENT,
   `sku` varchar(40) NOT NULL,
@@ -417,4 +435,6 @@ INSERT INTO schema_migrations (versao, nome, checksum) VALUES
 ('021', 'produto_nome_erp', 'db573e0e0f6e4549876a5dff4733e44b9fd54a076f791f0c852d20880820fed7'),
 ('022', 'categoria_subcategoria', '43a2a93f0e6cd3866b142a589263a724dde78a8df14e13a9d7c94f968e8e75fe'),
 ('023', 'sincronizacao_estoque_descontado', '875209a73b4cefba3db54e42cb92114c54129357573b8f7b2f277064b8719ab4'),
-('024', 'redefinicoes_senha', 'b66ca28f2562bf5471e8fbdf08bd063d63cc7342f1f45ebbccb99a8ad5b151f3');
+('024', 'redefinicoes_senha', 'b66ca28f2562bf5471e8fbdf08bd063d63cc7342f1f45ebbccb99a8ad5b151f3'),
+('025', 'solicitacoes_redefinicao', '557c63db121b5a89eb1c5d404dd48cd41831a4a8c561cd1cf69eecb511af00c1'),
+('026', 'pedidos_redefinicao_senha', '70f2becd38422876020b42eee2c7ccbcba89f8e0b40d9e9caad7cbcbf0680489');
