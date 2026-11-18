@@ -8,6 +8,7 @@ const { Usuario, RedefinicaoSenha } = require('../models');
 const { agoraParaTrocaDeSenha } = require('../models/Usuario');
 const { criarValidador, exigirObjeto, lancarSeHouverErros } = require('../helpers/validacaoUsuario');
 const { registrarAuditoria } = require('./auditoria');
+const pedidos = require('./pedidosRedefinicaoSenha');
 const logger = require('../lib/logger');
 
 // 32 bytes aleatórios em base64url dão sempre 43 caracteres.
@@ -22,10 +23,12 @@ const hashDoToken = (token) => createHash('sha256').update(token).digest('hex');
  * Gera um link de uso único para o usuário (só o hash do token vai para o banco) e invalida os pendentes.
  * tipoEsperado: "cliente" ou "equipe". Devolve { token, expira_em }; o token em texto existe só nesta resposta.
  */
-async function gerarLink({ idUsuario, tipoEsperado, criadoPor }) {
+async function gerarLink({ idUsuario, tipoEsperado, criadoPor, transacao: transacaoDeFora, marcarPedidos = true }) {
     const token = randomBytes(32).toString('base64url');
     const expiraEm = new Date(Date.now() + config.redefinicaoSenhaMinutos * 60 * 1000);
-    const usuario = await sequelize.transaction(async (transacao) => {
+    // Quem chama pode passar a própria transação (ex.: atender um pedido de nova senha, tudo ou nada).
+    const naTransacao = (fn) => (transacaoDeFora ? fn(transacaoDeFora) : sequelize.transaction(fn));
+    const usuario = await naTransacao(async (transacao) => {
         const alvo = Number.isSafeInteger(Number(idUsuario)) && Number(idUsuario) > 0
             ? await Usuario.findOne({
                 where: { id_usuario: Number(idUsuario), tipo: tipoEsperado },
@@ -48,6 +51,8 @@ async function gerarLink({ idUsuario, tipoEsperado, criadoPor }) {
             { id_usuario: alvo.id_usuario, token_hash: hashDoToken(token), expira_em: expiraEm, criado_por: criadoPor },
             { transaction: transacao }
         );
+        // O pedido de nova senha do cliente (se houver) foi atendido: a equipe gerou o link.
+        if (marcarPedidos) await pedidos.marcarAtendidos(alvo.id_usuario, criadoPor, transacao);
         return alvo;
     });
     return { id_usuario: usuario.id_usuario, token, expira_em: expiraEm };
@@ -103,6 +108,7 @@ async function redefinirSenha({ token, novaSenha }) {
             { usado_em: agora },
             { where: { id_usuario: usuario.id_usuario, usado_em: null }, transaction: transacao }
         );
+        await pedidos.marcarAtendidos(usuario.id_usuario, null, transacao);
         return usuario.id_usuario;
     });
 
@@ -129,7 +135,7 @@ async function limparRedefinicoesAntigas({ tamanhoLote = 1000 } = {}) {
         total += removidos;
         if (removidos < tamanhoLote) break;
     }
-    return { removidos: total, anteriores_a: limite.toISOString() };
+    return { removidos: total, anteriores_a: limite.toISOString(), ...(await pedidos.limparPedidosAntigos({ tamanhoLote })) };
 }
 
 module.exports = {

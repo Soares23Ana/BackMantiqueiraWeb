@@ -32,6 +32,7 @@ const metricasRoutes = require('./routes/metricas');
 const carrinhoRoutes = require('./routes/carrinho');
 const carrinhosAbandonadosRoutes = require('./routes/carrinhosAbandonados');
 const auditoriaRoutes = require('./routes/auditoria');
+const redefinicoesSenhaRoutes = require('./routes/redefinicoesSenha');
 const cepRoutes = require('./routes/cep');
 const cnpjRoutes = require('./routes/cnpj');
 const autenticarToken = require('./middlewares/authMiddleware');
@@ -104,6 +105,7 @@ function criarApp() {
     api.use('/favoritos', carrinhoRoutes.favoritos);
     api.use('/carrinhos-abandonados', carrinhosAbandonadosRoutes);
     api.use('/auditoria', auditoriaRoutes);
+    api.use('/redefinicoes-senha', redefinicoesSenhaRoutes);
 
     app.use('/api/v1', limitadorGlobal, api);
 

@@ -117,6 +117,23 @@ function validarAmbiente(env) {
     }
 
     // Validade do link de redefinição de senha, em minutos (5 a 1440; padrão 60).
+    // Pedido público de nova senha (POST /auth/redefinicao-senha/solicitar): por IP a cada 15 min e por CNPJ a cada hora.
+    const pedidoSenhaIp = inteiro(env.PEDIDO_SENHA_LIMITE_IP, teste ? 10000 : 5);
+    const pedidoSenhaCnpj = inteiro(env.PEDIDO_SENHA_LIMITE_CNPJ, teste ? 10000 : 3);
+    if (!(pedidoSenhaIp >= 1) || !(pedidoSenhaCnpj >= 1)) {
+        erros.push('PEDIDO_SENHA_LIMITE_IP e PEDIDO_SENHA_LIMITE_CNPJ devem ser inteiros maiores que zero.');
+    }
+    // Endereço público do site, usado para montar o link de redefinição (sem barra no fim). Opcional.
+    let siteUrl = null;
+    if (env.SITE_URL) {
+        try {
+            const url = new URL(env.SITE_URL);
+            if (!['http:', 'https:'].includes(url.protocol) || url.origin !== env.SITE_URL.replace(/\/$/, '')) throw new Error();
+            siteUrl = url.origin;
+        } catch {
+            erros.push('SITE_URL deve ser um endereço http(s) sem caminho (ex.: https://www.mantiqueira.com.br).');
+        }
+    }
     const redefinicaoSenhaMinutos = inteiro(env.REDEFINICAO_SENHA_MINUTOS, 60);
     if (!(redefinicaoSenhaMinutos >= 5 && redefinicaoSenhaMinutos <= 1440)) {
         erros.push('REDEFINICAO_SENHA_MINUTOS deve ser um inteiro entre 5 e 1440.');
@@ -146,6 +163,8 @@ function validarAmbiente(env) {
             limiteJson: env.JSON_LIMIT || '200kb',
             // Por IP: requisições por minuto em /api/v1, tentativas de login com falha a cada 15 min e cadastros por hora.
             limites: { global: limiteGlobal, login: limiteLogin, cadastro: limiteCadastro },
+            pedidoSenha: { limiteIp: pedidoSenhaIp, limiteCnpj: pedidoSenhaCnpj },
+            siteUrl,
             redefinicaoSenhaMinutos,
             // Jobs agendados (carga do catálogo e estoque). Desligados nos testes.
             jobs: {

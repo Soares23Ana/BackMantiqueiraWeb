@@ -545,20 +545,25 @@ Pedido, itens, baixa de estoque, movimentações e histórico são gravados na m
 | `id_cliente` | Pedidos de um cliente |
 | `de`, `ate` | Data do pedido, `AAAA-MM-DD` (inclusive) |
 | `busca` | Número do pedido, ou nome, razão social, e-mail ou CNPJ do cliente |
+| `visto` | `false`: só os não vistos pela equipe; `true`: só os já vistos. Outro valor: `400 FILTRO_INVALIDO` |
 | `pagina`, `limite` | Padrão 20, máximo 100 |
 
-Cada pedido traz, além dos campos do checkout, `cliente`, `funcionario` (quem mudou o status por último) e `proximo_status`:
+Cada pedido traz, além dos campos do checkout, `cliente`, `funcionario` (quem mudou o status por último), `proximo_status` e o visto da equipe (`visto`, `visto_em`):
 ```json
 {
   "cliente": { "id_usuario": 2, "nome": "Maria Souza", "razao_social": null, "nome_exibicao": "Maria Souza",
                "cnpj": "11.222.333/0001-81", "email": "compras@mercadinho.com", "telefone": "19999990000" },
   "funcionario": { "id_usuario": 1, "nome": "Administrador", "cargo": "Administrador" },
-  "proximo_status": "Saiu para Entrega"
+  "proximo_status": "Saiu para Entrega",
+  "visto": true,
+  "visto_em": "2026-10-26T23:30:00.000Z"
 }
 ```
 
+**Visto da equipe:** `visto` (boolean) e `visto_em` (ISO 8601, ou `null` quando `visto` é `false`) existem só para a equipe, na listagem e no detalhe; o cliente nunca recebe esses campos. O visto é **compartilhado**: o pedido novo nasce `visto: false`; quando alguém da equipe abre o detalhe (`GET /pedidos/:id_pedido`), muda o status ou cancela, ele vira `visto: true` para todos e o primeiro `visto_em` nunca é sobrescrito. A listagem não marca nada, e o status do pedido é independente do visto.
+
 ### GET /pedidos/:id_pedido
-Equipe vê qualquer pedido; cliente só os próprios (o de outro cliente responde `404 PEDIDO_NAO_ENCONTRADO`). Inclui o `historico`:
+Equipe vê qualquer pedido; cliente só os próprios (o de outro cliente responde `404 PEDIDO_NAO_ENCONTRADO`). **Para a equipe, abrir o detalhe marca o pedido como visto** (a resposta já vem com `visto: true` e `visto_em`; cliente nunca marca). Inclui o `historico`:
 ```json
 "historico": [
   { "status_anterior": null, "status_novo": "Aguardando Separação", "observacao": null,
@@ -736,10 +741,10 @@ Todas: **equipe**. "Estoque baixo" = produto ativo com estoque menor ou igual ao
 | Método | Rota | Resposta |
 |---|---|---|
 | GET | `/painel` | `{ "pedidos_pendentes": 0, "estoque_baixo": 5, "clientes_ativos": 1 }` |
-| GET | `/painel/contadores` | `{ "pedidos_pendentes": 0, "estoque_baixo": 5, "clientes_novos_7_dias": 2, "carrinhos_abandonados": 1, "redefinicoes_pendentes": 1 }` (`redefinicoes_pendentes`: pedidos de nova senha dos clientes ainda sem atendimento) |
+| GET | `/painel/contadores` | `{ "pedidos_pendentes": 0, "pedidos_novos": 3, "estoque_baixo": 5, "clientes_novos_7_dias": 2, "carrinhos_abandonados": 1, "redefinicoes_pendentes": 1 }` (`pedidos_novos`: pedidos que ninguém da equipe abriu ainda, é o selo "Pedidos" do menu; `redefinicoes_pendentes`: pedidos de nova senha dos clientes ainda sem atendimento) |
 | GET | `/painel/alertas-reposicao` | Ver abaixo |
 
-`pedidos_pendentes` conta `Aguardando Separação` + `Em Separação`; `clientes_ativos` conta clientes não bloqueados; `clientes_novos_7_dias` conta os clientes cadastrados nos últimos 7 dias (ativos ou não). É só informativo: não há aprovação de cadastro e nada fica bloqueado esperando revisão. Para ver quem são, use `GET /clientes?novos_dias=7`.
+`pedidos_pendentes` conta `Aguardando Separação` + `Em Separação`; `pedidos_novos` conta os pedidos com `visto_em` nulo, de qualquer status (veja "Visto da equipe" em `GET /pedidos`); `clientes_ativos` conta clientes não bloqueados; `clientes_novos_7_dias` conta os clientes cadastrados nos últimos 7 dias (ativos ou não). É só informativo: não há aprovação de cadastro e nada fica bloqueado esperando revisão. Para ver quem são, use `GET /clientes?novos_dias=7`.
 
 ```json
 {

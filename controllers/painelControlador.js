@@ -3,6 +3,7 @@ const sequelize = require('../db/conn');
 const { Usuario, Produto, Pedido } = require('../models');
 const configuracoes = require('../servicos/configuracoes');
 const { contarAbandonados } = require('../servicos/carrinhosAbandonados');
+const { contarPendentes: contarPedidosDeSenha } = require('../servicos/pedidosRedefinicaoSenha');
 
 // Estoque baixo: produto ativo com estoque menor ou igual ao estoque mínimo do próprio produto.
 const ESTOQUE_BAIXO = {
@@ -34,15 +35,20 @@ async function obterEstatisticas(req, res) {
 // GET /painel/contadores: badges do menu, incluindo os clientes cadastrados nos últimos 7 dias (só informativo)
 // e os carrinhos abandonados ainda sem contato da equipe.
 async function obterContadores(req, res) {
-    const [indicadores, clientesNovos, carrinhosAbandonados] = await Promise.all([
+    const [indicadores, pedidosNovos, clientesNovos, carrinhosAbandonados, redefinicoesPendentes] = await Promise.all([
         contarIndicadoresOperacionais(),
+        // Selo "Pedidos": pedidos que ninguém da equipe abriu ainda (visto_em nulo), de qualquer status.
+        Pedido.count({ where: { visto_em: null } }),
         Usuario.count({ where: { tipo: 'cliente', criado_em: { [Op.gte]: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) } } }),
-        contarAbandonados({ contatado: false })
+        contarAbandonados({ contatado: false }),
+        contarPedidosDeSenha()
     ]);
     return res.status(200).json({
         ...indicadores,
+        pedidos_novos: pedidosNovos,
         clientes_novos_7_dias: clientesNovos,
-        carrinhos_abandonados: carrinhosAbandonados
+        carrinhos_abandonados: carrinhosAbandonados,
+        redefinicoes_pendentes: redefinicoesPendentes
     });
 }
 

@@ -273,6 +273,8 @@ CREATE TABLE `pedidos` (
   `data_entrega` datetime DEFAULT NULL,
   `status` enum('Aguardando Separação','Em Separação','Saiu para Entrega','Entregue','Cancelado') NOT NULL DEFAULT 'Aguardando Separação',
   `motivo_cancelamento` varchar(500) DEFAULT NULL,
+  `visto_em` datetime DEFAULT NULL,
+  `visto_por` int DEFAULT NULL,
   `atualizado_em` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id_pedido`),
   UNIQUE KEY `uq_pedidos_cliente_chave` (`id_cliente`,`chave_idempotencia`),
@@ -280,9 +282,12 @@ CREATE TABLE `pedidos` (
   KEY `idx_pedidos_status_data` (`status`,`data_pedido`),
   KEY `idx_pedidos_cliente_data` (`id_cliente`,`data_pedido`),
   KEY `fk_pedidos_endereco` (`id_endereco`),
+  KEY `idx_pedidos_visto_em` (`visto_em`),
+  KEY `fk_pedidos_visto_por` (`visto_por`),
   CONSTRAINT `fk_pedidos_cliente` FOREIGN KEY (`id_cliente`) REFERENCES `usuarios` (`id_usuario`),
   CONSTRAINT `fk_pedidos_endereco` FOREIGN KEY (`id_endereco`) REFERENCES `enderecos` (`id_endereco`) ON DELETE SET NULL,
-  CONSTRAINT `fk_pedidos_funcionario` FOREIGN KEY (`id_funcionario`) REFERENCES `usuarios` (`id_usuario`) ON DELETE SET NULL
+  CONSTRAINT `fk_pedidos_funcionario` FOREIGN KEY (`id_funcionario`) REFERENCES `usuarios` (`id_usuario`) ON DELETE SET NULL,
+  CONSTRAINT `fk_pedidos_visto_por` FOREIGN KEY (`visto_por`) REFERENCES `usuarios` (`id_usuario`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 CREATE TABLE `pedidos_redefinicao_senha` (
@@ -437,4 +442,5 @@ INSERT INTO schema_migrations (versao, nome, checksum) VALUES
 ('023', 'sincronizacao_estoque_descontado', '875209a73b4cefba3db54e42cb92114c54129357573b8f7b2f277064b8719ab4'),
 ('024', 'redefinicoes_senha', 'b66ca28f2562bf5471e8fbdf08bd063d63cc7342f1f45ebbccb99a8ad5b151f3'),
 ('025', 'solicitacoes_redefinicao', '557c63db121b5a89eb1c5d404dd48cd41831a4a8c561cd1cf69eecb511af00c1'),
-('026', 'pedidos_redefinicao_senha', '70f2becd38422876020b42eee2c7ccbcba89f8e0b40d9e9caad7cbcbf0680489');
+('026', 'pedidos_redefinicao_senha', '70f2becd38422876020b42eee2c7ccbcba89f8e0b40d9e9caad7cbcbf0680489'),
+('027', 'pedidos_visto', '45cf7940a4a71e3ad8837efd182e7b96b87246e3267f205afb4d5e040397fae9');

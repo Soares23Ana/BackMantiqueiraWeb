@@ -55,6 +55,9 @@ function apresentarPedido(pedido, usuario, { comHistorico = false } = {}) {
         dados.cliente = pedido.cliente ? apresentarCliente(pedido.cliente) : null;
         dados.funcionario = pedido.funcionario || null;
         dados.proximo_status = servicoPedidos.PROXIMO_STATUS[pedido.status] || null;
+        // Visto compartilhado da equipe; o cliente nunca recebe estes campos.
+        dados.visto = pedido.visto_em !== null && pedido.visto_em !== undefined;
+        dados.visto_em = pedido.visto_em || null;
     }
     if (comHistorico) {
         dados.historico = (pedido.historico || []).map((registro) => ({
@@ -86,6 +89,14 @@ function lerStatus(valor) {
         throw new ErroApi(400, 'FILTRO_INVALIDO', `Status inválido: ${invalido}. Use: ${STATUS_PEDIDO.join(', ')}.`);
     }
     return lista;
+}
+
+// ?visto=true|false (equipe): só os já vistos ou só os não vistos.
+function lerVisto(valor) {
+    if (valor === undefined) return null;
+    if (valor === 'true') return true;
+    if (valor === 'false') return false;
+    throw new ErroApi(400, 'FILTRO_INVALIDO', 'Use visto=true ou visto=false.');
 }
 
 // Período em datas locais (AAAA-MM-DD), inclusivo nas duas pontas.
@@ -135,6 +146,8 @@ async function listarPedidos(req, res) {
         }
         where.id_cliente = idCliente;
     }
+    const visto = lerVisto(req.query.visto);
+    if (visto !== null) where.visto_em = visto ? { [Op.ne]: null } : null;
     const periodo = lerPeriodo(req.query.de, req.query.ate);
     if (periodo) where.data_pedido = periodo;
 
@@ -205,6 +218,13 @@ async function obterPedido(req, res) {
     const ehDono = pedido && Number(pedido.id_cliente) === Number(req.usuario.id);
     if (!pedido || (!ehEquipe(req.usuario) && !ehDono)) {
         throw new ErroApi(404, 'PEDIDO_NAO_ENCONTRADO', 'Pedido não encontrado.');
+    }
+    // Abrir o detalhe conta como visto para toda a equipe (só equipe; só se ainda não foi visto).
+    if (ehEquipe(req.usuario) && !pedido.visto_em) {
+        await servicoPedidos.marcarVisto(pedido.id_pedido, req.usuario);
+        // Se outro acesso simultâneo marcou primeiro, mostra o visto dele, não o nosso.
+        const atual = await Pedido.findByPk(pedido.id_pedido, { attributes: ['visto_em'] });
+        pedido.visto_em = atual ? atual.visto_em : null;
     }
     return res.status(200).json({ pedido: apresentarPedido(pedido, req.usuario, { comHistorico: true }) });
 }

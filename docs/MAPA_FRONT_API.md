@@ -202,7 +202,7 @@ Os dois `422` vêm com `detalhes: [{ campo: "cnpj", mensagem }]`. **O front já 
 Todas as rotas exigem token da **equipe** (`RequireRole` no front). A tela Equipe só aparece para `pode_gerenciar_equipe`.
 
 ### Barra lateral (`pages/manager/ManagerLayout.tsx`)
-- **Usa hoje:** `GET /painel/contadores` a cada troca de rota, para os selos de Pedidos (`pedidos_pendentes`) e Produtos (`estoque_baixo`).
+- **Usa hoje:** `GET /painel/contadores` a cada troca de rota, para os selos de Pedidos e Produtos (`estoque_baixo`). **Mudar:** o selo de Pedidos passa a ler `pedidos_novos` (pedidos ainda não vistos pela equipe; cai quando alguém abre o pedido) em vez de `pedidos_pendentes`, que continua na API para o Painel.
 - **Mudar:** ler também `clientes_novos_7_dias` e mostrá-lo como selo de "Clientes" (a interface `Contadores` só declara os dois campos antigos).
 
 ### Painel (`pages/manager/Overview.tsx`)
@@ -218,8 +218,8 @@ Todas as rotas exigem token da **equipe** (`RequireRole` no front). A tela Equip
 ### Pedidos (`pages/manager/Orders.tsx`)
 | Ação | Endpoint |
 |---|---|
-| Lista, busca, status e paginação | `GET /pedidos?status=&busca=&pagina=&limite=` |
-| Detalhe com linha do tempo | `GET /pedidos/:id` (`historico`, `proximo_status`, `pode_cancelar`) |
+| Lista, busca, status e paginação | `GET /pedidos?status=&busca=&visto=&pagina=&limite=` (cada pedido traz `visto` e `visto_em`; `visto=false` lista só os não vistos; destacar os não vistos na lista) |
+| Detalhe com linha do tempo | `GET /pedidos/:id` (`historico`, `proximo_status`, `pode_cancelar`). Abrir o detalhe marca o pedido como visto para toda a equipe: depois de abrir, o front deve rebuscar `GET /painel/contadores` para o selo cair |
 | Avançar status (com observação opcional) | `PATCH /pedidos/:id/status` `{ status, observacao? }` |
 | Cancelar (motivo obrigatório) | `POST /pedidos/:id/cancelar` `{ motivo }` |
 | Exportar CSV | `GET /pedidos` em todas as páginas |

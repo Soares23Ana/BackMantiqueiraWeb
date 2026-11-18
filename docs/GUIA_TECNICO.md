@@ -95,7 +95,7 @@ O mesmo vale para `/arquivos/` e `/saude` se passarem pelo Nginx.
 
 ## 2. Banco de dados e migrations
 
-A estrutura do banco é versionada em `migrations/` (`001_*.sql`, `002_*.js`, ...). A API **não altera o banco sozinha** (o `sequelize.sync()` foi removido).
+A estrutura do banco é versionada em `migrations/` (`001` a `027`: `001_*.sql`, `002_*.js`, ...). A API **não altera o banco sozinha** (o `sequelize.sync()` foi removido).
 
 ```bash
 npm run migrar          # cria o banco se não existir e aplica as migrations pendentes
@@ -107,6 +107,8 @@ npm run migrar:status   # só lista o que está pendente
 - Ao subir, a API avisa no log se houver migrations pendentes.
 
 A `013_cnpj_alfanumerico` passa a aceitar o CNPJ alfanumérico da Receita: a restrição `ck_usuarios_cnpj` exige 12 caracteres `[0-9A-Z]` (maiúsculos) seguidos de 2 dígitos, em `VARCHAR(14)`. Os CNPJs numéricos já gravados continuam válidos.
+
+**Migration 027 (selo de pedidos não vistos):** adiciona `pedidos.visto_em` (DATETIME, NULL = ninguém da equipe abriu), `pedidos.visto_por` (id do usuário da equipe, com FK `ON DELETE SET NULL`, então excluir o usuário não é barrado) e o índice `idx_pedidos_visto_em`. **Na mesma migration, todos os pedidos que já existem são marcados como vistos** (`visto_em = NOW()`, `visto_por` nulo), para o selo não nascer enorme no primeiro dia; ela só faz isso na primeira vez (se a coluna já existir, não remarca nada). Rode `npm run migrar` e faça snapshot antes, como nas demais.
 
 Para alterar o banco, **crie uma migration nova** com o próximo número (nunca edite uma já aplicada; o runner detecta pelo checksum) e depois rode `npm run schema:gerar` para atualizar o `BancoMantiqueira.sql`.
 
@@ -401,6 +403,12 @@ A API consulta serviços públicos com o `fetch` nativo do Node (sem dependênci
 
 ### Histórico do cliente
 - `GET /clientes/:id/historico` (`servicos/historicoCliente.js`) lê as fontes numa só consulta `UNION ALL` (cadastro, pedidos, `pedido_historico`, carrinho, contatos do carrinho, eventos do cliente e notas), ordena e pagina no banco e monta título e detalhe em JavaScript. Não há tabela própria de histórico: ele sempre reflete o estado atual das tabelas de origem. Usa `JSON_TABLE` (MySQL 8) para somar as unidades do carrinho.
+
+### Pedidos não vistos (selo do menu)
+- O visto é **compartilhado**: quando qualquer pessoa da equipe abre o pedido (`GET /pedidos/:id_pedido`) ou age sobre ele (muda o status ou cancela), `visto_em` e `visto_por` são gravados uma única vez e o pedido sai da contagem de **toda** a equipe. O status do pedido é independente do visto.
+- A marcação é atômica (`UPDATE ... WHERE visto_em IS NULL`, em `marcarVisto` de `servicos/pedidos.js`): em acessos simultâneos o primeiro vence e quem vê depois não troca `visto_por`. Usa `silent: true`, então não altera `atualizado_em`.
+- Cliente nunca marca e nunca recebe `visto`/`visto_em`. A listagem não marca nada. O ato de ver não vai para a auditoria.
+- `pedidos_novos` de `GET /painel/contadores` conta `visto_em IS NULL` (qualquer status, inclusive um pedido que o cliente cancelou antes de a equipe abrir). `pedidos_pendentes` segue contando por status.
 
 ### Categorias em dois níveis
 - `categorias.id_pai` (migration 022) liga a subcategoria à categoria principal. O índice único `(chave_pai, nome)`, em que `chave_pai` é uma coluna gerada (`IFNULL(id_pai, 0)`), garante nome único dentro do mesmo pai, inclusive entre as principais; a migration renomeia (`" (2)"`) nomes repetidos que já existissem. A profundidade máxima (2) é validada na API (`taxonomiaControlador`).

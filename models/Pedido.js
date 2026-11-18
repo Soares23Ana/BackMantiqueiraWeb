@@ -58,6 +58,15 @@ const Pedido = sequelize.define('Pedido', {
         type: DataTypes.STRING(500),
         allowNull: true
     },
+    // Visto compartilhado pela equipe: NULL = nenhum da equipe abriu/agiu ainda. visto_por é o primeiro a ver.
+    visto_em: {
+        type: DataTypes.DATE,
+        allowNull: true
+    },
+    visto_por: {
+        type: DataTypes.INTEGER,
+        allowNull: true
+    },
     atualizado_em: {
         type: DataTypes.DATE,
         allowNull: false,

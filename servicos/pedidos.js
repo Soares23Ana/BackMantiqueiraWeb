@@ -3,6 +3,7 @@ const sequelize = require('../db/conn');
 const { Produto, Pedido, ItemPedido, Endereco, PedidoHistorico, Carrinho } = require('../models');
 const logger = require('../lib/logger');
 const { ErroApi } = require('../lib/erros');
+const { ehEquipe } = require('../lib/perfis');
 const { alterarEstoque, disponibilidade } = require('./estoque');
 const { registrarAuditoria } = require('./auditoria');
 
@@ -271,6 +272,20 @@ async function bloquearPedido(idPedido, transacao) {
 }
 
 /**
+ * Marca o pedido como visto pela equipe (visto compartilhado). Atômico: o UPDATE só pega quem ainda está sem
+ * visto_em, então em acessos simultâneos o primeiro vence e os outros não mudam nada. silent: não mexe em atualizado_em.
+ * Só vale para a equipe; cliente nunca marca. Devolve true se esta chamada foi quem marcou.
+ */
+async function marcarVisto(idPedido, usuario, transacao = null) {
+    if (!ehEquipe(usuario)) return false;
+    const [afetados] = await Pedido.update(
+        { visto_em: new Date(), visto_por: usuario.id },
+        { where: { id_pedido: idPedido, visto_em: null }, silent: true, transaction: transacao }
+    );
+    return afetados > 0;
+}
+
+/**
  * Avança o status (equipe). Só aceita o próximo passo do fluxo; para cancelar, use cancelarPedido.
  * Registra quem mudou (id_funcionario e histórico) e a data de entrega ao entregar.
  */
@@ -284,6 +299,7 @@ async function avancarStatus(idPedido, novoStatus, usuario, observacao = null) {
                 `Não é possível mudar de "${anterior}" para "${novoStatus}".`,
                 { status_atual: anterior, proximo_permitido: PROXIMO_STATUS[anterior] || null });
         }
+        await marcarVisto(atual.id_pedido, usuario, transacao);
         await atual.update({
             status: novoStatus,
             id_funcionario: usuario.id,
@@ -345,6 +361,7 @@ async function cancelarPedido(idPedido, usuario, motivo) {
         }
 
         const anterior = atual.status;
+        await marcarVisto(atual.id_pedido, usuario, transacao);
         await atual.update({
             status: 'Cancelado',
             motivo_cancelamento: motivo,
@@ -372,6 +389,7 @@ module.exports = {
     lerChaveIdempotencia,
     avancarStatus,
     cancelarPedido,
+    marcarVisto,
     podeCancelar,
     PROXIMO_STATUS
 };

@@ -2,11 +2,13 @@ const express = require('express');
 const router = express.Router();
 const usuarioControlador = require('../controllers/usuarioControlador');
 const autenticarToken = require('../middlewares/authMiddleware');
-const { limitadorLogin, limitadorCadastro, limitadorRedefinicaoPublica } = require('../middlewares/seguranca');
+const { limitadorLogin, limitadorCadastro, limitadorRedefinicaoPublica, limitadorPedidoSenhaIp, limitadorPedidoSenhaCnpj } = require('../middlewares/seguranca');
+const pedidosRedefinicaoSenhaControlador = require('../controllers/pedidosRedefinicaoSenhaControlador');
 const redefinicaoSenhaControlador = require('../controllers/redefinicaoSenhaControlador');
 
 router.post('/register', limitadorCadastro, usuarioControlador.cadastrar);
 router.post('/login', limitadorLogin, usuarioControlador.autenticar);
+router.post('/redefinicao-senha/solicitar', limitadorPedidoSenhaIp, limitadorPedidoSenhaCnpj, pedidosRedefinicaoSenhaControlador.solicitar);
 router.post('/redefinir-senha/validar', limitadorRedefinicaoPublica, redefinicaoSenhaControlador.validar);
 router.post('/redefinir-senha', limitadorRedefinicaoPublica, redefinicaoSenhaControlador.redefinir);
 router.get('/me', autenticarToken, usuarioControlador.obterSessao);

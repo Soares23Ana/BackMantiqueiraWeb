@@ -1,6 +1,7 @@
-const { rateLimit } = require('express-rate-limit');
+const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
 const { BaseError, ConnectionError } = require('sequelize');
 const config = require('../config/ambiente');
+const { documentoDoPedido } = require('../lib/chavePedidoSenha');
 const logger = require('../lib/logger');
 const { ErroApi, corpoErro } = require('../lib/erros');
 const { estado } = require('../db/conexao');
@@ -106,6 +107,39 @@ function criarLimitadorRedefinicaoPublica(limite = config.teste ? 10000 : 10) {
 }
 const limitadorRedefinicaoPublica = criarLimitadorRedefinicaoPublica();
 
+// Pedido público de nova senha (POST /auth/redefinicao-senha/solicitar). Dois limites que contam TODOS os pedidos, também
+// os que dão certo: por IP (5 a cada 15 min) e por CNPJ informado (3 por hora, exista o CNPJ ou não, para o limite não
+// revelar nada). Os dois valores vêm de PEDIDO_SENHA_LIMITE_IP e PEDIDO_SENHA_LIMITE_CNPJ.
+const respostaLimitePedidoSenha = corpoErro(429, {
+    mensagem: 'Muitos pedidos de nova senha. Tente novamente mais tarde ou fale com a equipe pelo WhatsApp.',
+    codigo: 'MUITAS_TENTATIVAS'
+});
+function criarLimitadorPedidoSenhaIp(limite = config.pedidoSenha.limiteIp) {
+    return rateLimit({
+        windowMs: 15 * 60 * 1000,
+        limit: limite,
+        standardHeaders: 'draft-8',
+        legacyHeaders: false,
+        message: respostaLimitePedidoSenha
+    });
+}
+function criarLimitadorPedidoSenhaCnpj(limite = config.pedidoSenha.limiteCnpj) {
+    return rateLimit({
+        windowMs: 60 * 60 * 1000,
+        limit: limite,
+        // A chave é o documento normalizado (sem olhar se existe); sem documento legível, cai para o IP.
+        keyGenerator: (req) => {
+            const documento = documentoDoPedido(req);
+            return documento ? `pedido-senha:${documento}` : ipKeyGenerator(req.ip);
+        },
+        standardHeaders: 'draft-8',
+        legacyHeaders: false,
+        message: respostaLimitePedidoSenha
+    });
+}
+const limitadorPedidoSenhaIp = criarLimitadorPedidoSenhaIp();
+const limitadorPedidoSenhaCnpj = criarLimitadorPedidoSenhaCnpj();
+
 // Enquanto a primeira conexão com o banco não acontece, a API responde 503 em vez de erros genéricos.
 function exigirBanco(req, res, next) {
     if (estado.conectado) {
@@ -161,5 +195,6 @@ function tratarErros(erro, req, res, next) {
 module.exports = {
     limitadorGlobal, limitadorLogin, limitadorCadastro, limitadorEventos, limitadorCep, limitadorCnpj, limitadorImagemLink,
     limitadorRedefinicaoGerar, limitadorRedefinicaoPublica, criarLimitadorRedefinicaoPublica,
+    limitadorPedidoSenhaIp, limitadorPedidoSenhaCnpj, criarLimitadorPedidoSenhaIp, criarLimitadorPedidoSenhaCnpj,
     exigirBanco, rotaNaoEncontrada, tratarErros
 };

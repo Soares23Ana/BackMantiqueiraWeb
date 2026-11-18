@@ -39,7 +39,7 @@ const DEFINICOES = [
     {
         nome: 'limpeza-eventos',
         expressao: '0 3 * * *',
-        descricao: '3h: apaga eventos de uso com mais de 12 meses e links de redefinição de senha expirados ou usados há mais de 7 dias.',
+        descricao: '3h: apaga eventos de uso com mais de 12 meses e links de redefinição de senha expirados ou usados há mais de 7 dias; pedidos de nova senha pendentes há mais de 7 dias viram expirados e os resolvidos há mais de 30 dias são apagados.',
         executar: async () => ({ ...(await limparEventosAntigos()), redefinicoes_senha: await limparRedefinicoesAntigas() })
     }
 ];
