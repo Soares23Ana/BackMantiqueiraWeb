@@ -480,6 +480,7 @@ async function definirSenhaTemporaria(req, res) {
         throw new ErroApi(404, 'NAO_ENCONTRADO', 'Cliente não encontrado.');
     }
     await cliente.update({ senha: await bcrypt.hash(corpo.senha, CUSTO_BCRYPT), senha_alterada_em: agoraParaTrocaDeSenha() });
+    await require('../servicos/solicitacoesRedefinicao').marcarAtendidas(idCliente, req.usuario.id);
     logger.info('Senha temporária definida para cliente.', { id_cliente: idCliente, por: req.usuario.id });
     // A trilha registra só que a senha foi redefinida, nunca o valor nem o hash.
     await registrarAuditoria({

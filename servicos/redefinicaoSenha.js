@@ -8,6 +8,7 @@ const { Usuario, RedefinicaoSenha } = require('../models');
 const { agoraParaTrocaDeSenha } = require('../models/Usuario');
 const { criarValidador, exigirObjeto, lancarSeHouverErros } = require('../helpers/validacaoUsuario');
 const { registrarAuditoria } = require('./auditoria');
+const solicitacoes = require('./solicitacoesRedefinicao');
 const logger = require('../lib/logger');
 
 // 32 bytes aleatórios em base64url dão sempre 43 caracteres.
@@ -48,6 +49,8 @@ async function gerarLink({ idUsuario, tipoEsperado, criadoPor }) {
             { id_usuario: alvo.id_usuario, token_hash: hashDoToken(token), expira_em: expiraEm, criado_por: criadoPor },
             { transaction: transacao }
         );
+        // O pedido de nova senha do cliente (se houver) foi atendido: a equipe gerou o link.
+        await solicitacoes.marcarAtendidas(alvo.id_usuario, criadoPor, transacao);
         return alvo;
     });
     return { id_usuario: usuario.id_usuario, token, expira_em: expiraEm };
@@ -103,6 +106,7 @@ async function redefinirSenha({ token, novaSenha }) {
             { usado_em: agora },
             { where: { id_usuario: usuario.id_usuario, usado_em: null }, transaction: transacao }
         );
+        await solicitacoes.marcarAtendidas(usuario.id_usuario, null, transacao);
         return usuario.id_usuario;
     });
 

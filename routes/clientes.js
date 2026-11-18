@@ -10,6 +10,7 @@ const router = express.Router();
 const acessoGestor = [autenticarToken, exigirEquipe];
 
 router.get('/', ...acessoGestor, clienteControlador.listarClientes);
+router.get('/redefinicoes-pendentes', ...acessoGestor, redefinicaoSenhaControlador.listarPendentes);
 router.get('/:id/detalhes', ...acessoGestor, clienteControlador.obterDetalhesCliente);
 router.get('/:id/historico', ...acessoGestor, clienteControlador.obterHistoricoCliente);
 router.get('/:id/notas', ...acessoGestor, suporteControlador.listarNotas);

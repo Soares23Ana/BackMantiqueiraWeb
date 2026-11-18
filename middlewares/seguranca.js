@@ -106,6 +106,22 @@ function criarLimitadorRedefinicaoPublica(limite = config.teste ? 10000 : 10) {
 }
 const limitadorRedefinicaoPublica = criarLimitadorRedefinicaoPublica();
 
+// Pedido de nova senha feito pelo cliente (POST /auth/solicitar-redefinicao): por IP, 5 por hora. Conta todos os
+// pedidos, também os que dão certo, para ninguém encher a lista da equipe.
+function criarLimitadorSolicitacaoRedefinicao(limite = config.teste ? 10000 : 5) {
+    return rateLimit({
+        windowMs: 60 * 60 * 1000,
+        limit: limite,
+        standardHeaders: 'draft-8',
+        legacyHeaders: false,
+        message: corpoErro(429, {
+            mensagem: 'Muitos pedidos de nova senha. Tente novamente mais tarde ou fale com a equipe pelo WhatsApp.',
+            codigo: 'MUITAS_TENTATIVAS'
+        })
+    });
+}
+const limitadorSolicitacaoRedefinicao = criarLimitadorSolicitacaoRedefinicao();
+
 // Enquanto a primeira conexão com o banco não acontece, a API responde 503 em vez de erros genéricos.
 function exigirBanco(req, res, next) {
     if (estado.conectado) {
@@ -161,5 +177,6 @@ function tratarErros(erro, req, res, next) {
 module.exports = {
     limitadorGlobal, limitadorLogin, limitadorCadastro, limitadorEventos, limitadorCep, limitadorCnpj, limitadorImagemLink,
     limitadorRedefinicaoGerar, limitadorRedefinicaoPublica, criarLimitadorRedefinicaoPublica,
+    limitadorSolicitacaoRedefinicao, criarLimitadorSolicitacaoRedefinicao,
     exigirBanco, rotaNaoEncontrada, tratarErros
 };

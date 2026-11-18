@@ -736,7 +736,7 @@ Todas: **equipe**. "Estoque baixo" = produto ativo com estoque menor ou igual ao
 | Método | Rota | Resposta |
 |---|---|---|
 | GET | `/painel` | `{ "pedidos_pendentes": 0, "estoque_baixo": 5, "clientes_ativos": 1 }` |
-| GET | `/painel/contadores` | `{ "pedidos_pendentes": 0, "estoque_baixo": 5, "clientes_novos_7_dias": 2, "carrinhos_abandonados": 1 }` |
+| GET | `/painel/contadores` | `{ "pedidos_pendentes": 0, "estoque_baixo": 5, "clientes_novos_7_dias": 2, "carrinhos_abandonados": 1, "redefinicoes_pendentes": 1 }` |
 | GET | `/painel/alertas-reposicao` | Ver abaixo |
 
 `pedidos_pendentes` conta `Aguardando Separação` + `Em Separação`; `clientes_ativos` conta clientes não bloqueados; `clientes_novos_7_dias` conta os clientes cadastrados nos últimos 7 dias (ativos ou não). É só informativo: não há aprovação de cadastro e nada fica bloqueado esperando revisão. Para ver quem são, use `GET /clientes?novos_dias=7`.
@@ -1325,6 +1325,8 @@ O usuário que esqueceu a senha não recebe e-mail. A equipe confirma quem é a 
 | POST | `/admin/usuarios/:id/redefinicao-senha` | gestor da equipe | Gera o link para um usuário da **equipe** (nunca a própria conta) |
 | POST | `/auth/redefinir-senha/validar` | público | Diz se o token ainda vale |
 | POST | `/auth/redefinir-senha` | público | Troca a senha com o token |
+| POST | `/auth/solicitar-redefinicao` | público | O **cliente** pede uma nova senha informando o CNPJ (a equipe é avisada) |
+| GET | `/clientes/redefinicoes-pendentes` | equipe | Pedidos de nova senha ainda sem atendimento |
 
 ### POST /clientes/:id/redefinicao-senha e POST /admin/usuarios/:id/redefinicao-senha (equipe)
 Sem corpo. `201`:
@@ -1340,6 +1342,33 @@ Sem corpo. `201`:
 - A rota de clientes só aceita usuário do tipo `cliente`; a de equipe só do tipo `equipe` e exige `pode_gerenciar_equipe`.
 - Erros: `404 NAO_ENCONTRADO` (não existe ou é do tipo errado), `409 USUARIO_INATIVO` (reative antes), `409 OPERACAO_NAO_PERMITIDA` (gestor tentando gerar para a própria conta: use `PATCH /minha-conta/senha`), `403 ACESSO_NEGADO`, `429` (mais de 20 por minuto por usuário).
 - Auditoria: `cliente.redefinicao_senha_gerada` e `usuario.redefinicao_senha_gerada`, com `expira_em` em `detalhe`. Nunca o token nem o hash.
+
+### POST /auth/solicitar-redefinicao (público)
+O cliente que esqueceu a senha informa o CNPJ na tela de login. Corpo: `{ "cnpj": "11.222.333/0001-81" }` (com ou sem pontuação; só esse campo). A resposta é **sempre a mesma** (`200`), exista o CNPJ ou não, para a rota não revelar quais CNPJs estão cadastrados:
+```json
+{ "mensagem": "Pedido recebido. Se o CNPJ estiver cadastrado, a equipe vai entrar em contato em breve." }
+```
+- Só **cliente ativo** gera pedido. CNPJ inexistente, inválido ou de cliente inativo responde igual e não grava nada.
+- Cada cliente tem **no máximo um pedido pendente**: pedidos repetidos não criam linhas novas.
+- Erros: `422 VALIDACAO` (CNPJ ausente, vazio ou campo extra) e `429 MUITAS_TENTATIVAS` (mais de **5 por hora por IP**, contando todos os pedidos).
+
+### GET /clientes/redefinicoes-pendentes (equipe)
+Pedidos de nova senha ainda sem atendimento, do mais antigo para o mais novo. `200`:
+```json
+{
+  "solicitacoes": [
+    {
+      "id_solicitacao": 3,
+      "solicitado_em": "2026-11-17T21:10:00.000Z",
+      "cliente": { "id_usuario": 7, "nome_exibicao": "Mercadinho LTDA", "cnpj": "11.222.333/0001-81", "telefone": "19999990000", "email": "compras@mercadinho.com", "ativo": true }
+    }
+  ],
+  "total": 1
+}
+```
+- `GET /painel/contadores` traz `redefinicoes_pendentes` (o mesmo número de `total`), para o selo do menu "Clientes".
+- O pedido é dado como **atendido** (sai da lista) quando a equipe gera o link de redefinição (`POST /clientes/:id/redefinicao-senha`), define uma senha temporária (`PUT /clientes/:id/senha`) ou o cliente troca a senha com o link. Um novo pedido depois disso volta a aparecer.
+- Os pedidos ficam na tabela `solicitacoes_redefinicao` (migration 025).
 
 ### POST /auth/redefinir-senha/validar (público)
 O front chama ao abrir `/redefinir-senha`, para mostrar o formulário ou o aviso de link vencido.

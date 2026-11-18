@@ -2,6 +2,8 @@ const { ErroApi } = require('../lib/erros');
 const logger = require('../lib/logger');
 const { registrarAuditoria } = require('../servicos/auditoria');
 const servico = require('../servicos/redefinicaoSenha');
+const solicitacoes = require('../servicos/solicitacoesRedefinicao');
+const { criarValidador, exigirObjeto, lancarSeHouverErros } = require('../helpers/validacaoUsuario');
 
 async function gerar(req, res, { tipoEsperado, acao, entidade }) {
     const idUsuario = req.params.id;
@@ -53,4 +55,21 @@ async function redefinir(req, res) {
     return res.status(200).json({ mensagem: 'Senha alterada. Entre com a nova senha.' });
 }
 
-module.exports = { gerarParaCliente, gerarParaEquipe, validar, redefinir };
+// POST /auth/solicitar-redefinicao { cnpj } (público): o cliente pede uma nova senha. A resposta é sempre a mesma.
+async function solicitar(req, res) {
+    exigirObjeto(req.body);
+    const v = criarValidador();
+    v.camposPermitidos(req.body, ['cnpj']);
+    if (typeof req.body.cnpj !== 'string' || !req.body.cnpj.trim() || req.body.cnpj.length > 30) v.erro('cnpj', 'Informe o CNPJ.');
+    lancarSeHouverErros(v.erros);
+    await solicitacoes.registrar(req.body.cnpj);
+    return res.status(200).json({ mensagem: solicitacoes.MENSAGEM_PUBLICA });
+}
+
+// GET /clientes/redefinicoes-pendentes (equipe): pedidos de nova senha ainda sem atendimento.
+async function listarPendentes(req, res) {
+    const pedidos = await solicitacoes.listarPendentes();
+    return res.status(200).json({ solicitacoes: pedidos, total: pedidos.length });
+}
+
+module.exports = { gerarParaCliente, gerarParaEquipe, validar, redefinir, solicitar, listarPendentes };
